@@ -697,16 +697,12 @@ main section {
   overflow: hidden;
   cursor: zoom-in;
   position: relative;
-  box-shadow:
-    0 0 0 1px var(--accent-soft),
-    0 26px 44px -30px rgba(21, 19, 15, 0.55);
+  box-shadow: 0 26px 44px -30px rgba(21, 19, 15, 0.55);
   transition: box-shadow 0.5s var(--ease);
 }
 
 .gallery-btn:hover {
-  box-shadow:
-    0 0 0 1px var(--accent),
-    0 30px 52px -30px rgba(21, 19, 15, 0.6);
+  box-shadow: 0 30px 52px -30px rgba(21, 19, 15, 0.6);
 }
 
 .gallery-btn img {
@@ -718,15 +714,6 @@ main section {
   transition: transform 1.1s var(--ease), filter 0.6s var(--ease);
 }
 
-/* Fine keyline inside the mat, drawn over the edge of the photo. */
-.gallery-btn::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border: 1px solid rgba(255, 253, 249, 0.7);
-  pointer-events: none;
-  z-index: 1;
-}
 
 .gallery-btn:hover img {
   transform: scale(1.035);

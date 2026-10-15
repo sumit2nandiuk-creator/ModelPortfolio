@@ -270,7 +270,15 @@
       e.stopPropagation();
     }, true);
 
+    // Recalculate slide positions after the screen size changes (rotation, address bar,
+    // split view). Skipped mid-gesture or mid-slide; the next move lays them out anyway.
+    function relayout() {
+      if (drag || busy) return;
+      layout(false, 0);
+    }
+
     return {
+      relayout: relayout,
       goTo: function (i) { goTo(i, !reducedMotion); },
       step: step,
       current: function () { return index; },
@@ -295,6 +303,7 @@
     ? Array.prototype.slice.call(heroSection.querySelectorAll('.carousel-dot'))
     : [];
   var hero = null;
+  var viewerCarousel = null; // the photo viewer's carousel; set below when the viewer exists
 
   if (heroRoot) {
     hero = createCarousel(heroRoot, {
@@ -311,6 +320,20 @@
     hero.reset(0);
     hero.resume();
   }
+
+  // Keep the cover slides aligned with the real screen width. Without this, a size change
+  // after load leaves the neighbouring photos partly visible at the edges.
+  var resizeTimer = null;
+  function relayoutCarousels() {
+    if (hero) hero.relayout();
+    if (viewerCarousel) viewerCarousel.relayout();
+  }
+  window.addEventListener('resize', function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(relayoutCarousels, 60);
+  }, { passive: true });
+  window.addEventListener('orientationchange', relayoutCarousels);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', relayoutCarousels);
 
   // ---- Photo viewer --------------------------------------------------------
   var dialog = document.getElementById('lightbox');
@@ -347,7 +370,7 @@
       caption.hidden = !text;
     }
 
-    var viewer = createCarousel(stage, {
+    viewerCarousel = createCarousel(stage, {
       onChange: function (i) {
         loadAround(i);
         showCaption(i);
@@ -369,7 +392,7 @@
       });
       dialog.classList.toggle('is-single', list.length < 2);
       if (hero) hero.pause();
-      viewer.reset(start);
+      viewerCarousel.reset(start);
       dialog.showModal();
       closeBtn.focus({ preventScroll: true });
     }
@@ -400,13 +423,13 @@
       });
     }
 
-    prevBtn.addEventListener('click', function () { viewer.step(-1); });
-    nextBtn.addEventListener('click', function () { viewer.step(1); });
+    prevBtn.addEventListener('click', function () { viewerCarousel.step(-1); });
+    nextBtn.addEventListener('click', function () { viewerCarousel.step(1); });
     closeBtn.addEventListener('click', function () { dialog.close(); });
 
     dialog.addEventListener('keydown', function (e) {
-      if (e.key === 'ArrowLeft') { e.preventDefault(); viewer.step(-1); }
-      else if (e.key === 'ArrowRight') { e.preventDefault(); viewer.step(1); }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); viewerCarousel.step(-1); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); viewerCarousel.step(1); }
     });
 
     // The part of the screen the photo actually covers (the photo is letterboxed to fit).
@@ -436,7 +459,7 @@
     });
 
     dialog.addEventListener('close', function () {
-      viewer.cancel();
+      viewerCarousel.cancel();
       stage.textContent = '';
       if (hero) hero.resume();
     });

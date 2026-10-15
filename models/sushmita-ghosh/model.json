@@ -7,60 +7,112 @@
     "Placeholder biography: replace this text with the model's own story, training, and career highlights. Two or three short paragraphs work best."
   ],
   "stats": [
-    { "label": "Height", "value": "5′4″" },
-    { "label": "Eyes", "value": "Black" },
-    { "label": "Hair", "value": "Black" },
-    { "label": "Languages", "value": "English · Bengali · Hindi" }
+    {
+      "label": "Height",
+      "value": "5′4″"
+    },
+    {
+      "label": "Eyes",
+      "value": "Black"
+    },
+    {
+      "label": "Hair",
+      "value": "Black"
+    },
+    {
+      "label": "Languages",
+      "value": "English · Bengali · Hindi"
+    }
   ],
   "seo": {
     "description": "Sushmita Ghosh – editorial, runway and commercial model. Portfolio, videos and bookings."
   },
-  "cover": {
-    "file": "cover.jpg",
-    "alt": "Bridal portrait in a red and gold Bengali wedding saree, with a white shola crown, gold jewellery and a red bindi"
-  },
+  "cover": [
+    {
+      "file": "cover.jpg",
+      "alt": "Bridal portrait in a red and gold Bengali wedding saree, with a white shola crown, gold jewellery and a red bindi"
+    },
+    {
+      "file": "IMG_6566.jpeg",
+      "alt": "Bride in a red and gold saree with a white floral hair piece and gold jewellery, against a warm brown backdrop"
+    },
+    {
+      "file": "IMG_6567.jpeg",
+      "alt": "Woman in an orange saree holding a tray of marigolds and a white offering on a red backdrop"
+    },
+    {
+      "file": "IMG_6568.jpeg",
+      "alt": "Woman in an orange silk saree and dark green blouse with gold jewellery, beside a row of candles"
+    },
+    {
+      "file": "IMG_6569.jpeg",
+      "alt": "Bride in a red veil and red saree with gold jewellery, in front of a window with flowers"
+    },
+    {
+      "file": "IMG_6571.jpeg",
+      "alt": "Bride in a white shola crown and red veil with gold jewellery, in front of a red curtain"
+    },
+    {
+      "file": "IMG_6572.jpeg",
+      "alt": "Bride in a white shola crown and a red saree with a green border and gold jewellery"
+    },
+    {
+      "file": "IMG_6573.jpeg",
+      "alt": "Woman in a white saree with a red border, gold jewellery and red and white bangles, under a chandelier"
+    },
+    {
+      "file": "IMG_6574.jpeg",
+      "alt": "Woman in a red blouse and white saree with gold bangles, holding a gold ornament by her face"
+    }
+  ],
   "photos": [
     {
-      "file": "editorial-heels.jpg",
-      "title": "Stiletto study",
-      "category": "Editorial",
-      "year": "2025",
-      "alt": "Designer stiletto heels on a cream paper backdrop"
+      "file": "IMG_6566.jpeg",
+      "title": "Red and gold",
+      "category": "Bridal",
+      "alt": "Bride in a red and gold saree with a white floral hair piece and gold jewellery, against a warm brown backdrop"
     },
     {
-      "file": "beauty-perfume.jpg",
-      "title": "Rose & gold",
-      "category": "Beauty",
-      "year": "2025",
-      "alt": "Glass perfume bottle with rose petals on black marble"
+      "file": "IMG_6567.jpeg",
+      "title": "Puja tray",
+      "category": "Traditional",
+      "alt": "Woman in an orange saree holding a tray of marigolds and a white offering on a red backdrop"
     },
     {
-      "file": "lookbook-coat.jpg",
-      "title": "Camel wool",
-      "category": "Lookbook",
-      "year": "2024",
-      "alt": "Folded camel wool coat and leather handbag on sand-coloured backdrop"
+      "file": "IMG_6568.jpeg",
+      "title": "Orange silk",
+      "category": "Traditional",
+      "alt": "Woman in an orange silk saree and dark green blouse with gold jewellery, beside a row of candles"
     },
     {
-      "file": "editorial-velvet.jpg",
-      "title": "Emerald folds",
-      "category": "Editorial",
-      "year": "2024",
-      "alt": "Sculptural emerald velvet fabric lit with dramatic shadows"
+      "file": "IMG_6569.jpeg",
+      "title": "Red veil",
+      "category": "Bridal",
+      "alt": "Bride in a red veil and red saree with gold jewellery, in front of a window with flowers"
     },
     {
-      "file": "campaign-summer.jpg",
-      "title": "Summer edit",
-      "category": "Campaign",
-      "year": "2024",
-      "alt": "Tortoiseshell sunglasses and silk scarf on a terracotta backdrop"
+      "file": "IMG_6571.jpeg",
+      "title": "Shola crown",
+      "category": "Bridal",
+      "alt": "Bride in a white shola crown and red veil with gold jewellery, in front of a red curtain"
     },
     {
-      "file": "runway-arch.jpg",
-      "title": "Marble arch",
-      "category": "Runway",
-      "year": "2023",
-      "alt": "White sculptural marble arch casting a long shadow in an empty hall"
+      "file": "IMG_6572.jpeg",
+      "title": "Green border",
+      "category": "Bridal",
+      "alt": "Bride in a white shola crown and a red saree with a green border and gold jewellery"
+    },
+    {
+      "file": "IMG_6573.jpeg",
+      "title": "White and red",
+      "category": "Bridal",
+      "alt": "Woman in a white saree with a red border, gold jewellery and red and white bangles, under a chandelier"
+    },
+    {
+      "file": "IMG_6574.jpeg",
+      "title": "Gold and white",
+      "category": "Bridal",
+      "alt": "Woman in a red blouse and white saree with gold bangles, holding a gold ornament by her face"
     }
   ],
   "videos": [

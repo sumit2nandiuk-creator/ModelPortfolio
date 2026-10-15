@@ -63,8 +63,8 @@ heavily commented by example in `models/_template/model.json`.
 | `bio` | Array of paragraphs for the About section. |
 | `stats` | Array of `{ "label", "value" }` shown as the measurements list. |
 | `seo.description`, `seo.noindex` | Search-engine description, and `true` to keep the page out of search results (both optional). |
-| `cover` | Hero image: `{ "file", "alt" }`. |
-| `photos` | Gallery entries: `{ "file", "title", "category", "year", "alt" }`. Each distinct `category` gets a filter button automatically. |
+| `cover` | Hero slideshow: a list of `{ "file", "alt" }`. The first photo shows first; visitors swipe or tap the dots to move through the rest. One entry (or a single `{ "file", "alt" }` object) shows a still photo. |
+| `photos` | Gallery entries: `{ "file", "title", "category", "year", "alt" }`. Each distinct `category` gets a filter button automatically. Tapping a photo opens it in the viewer, where it can be swiped to the next or previous one. |
 | `videos` | Video entries: `{ "file", "poster", "title", "category", "description" }`. |
 | `contact` | `email`, `phone`, `whatsapp` (phone numbers with at least 8 digits; the WhatsApp card links to `wa.me`), and optional `instagram`, `linkedin`, `tiktok`, `imdb`, `website` (full `https://` URLs). Empty values are hidden. Unused fields such as the old `location` and `representation` are ignored. |
 

@@ -58,202 +58,308 @@
     });
   });
 
-  // ---- Lightbox ----------------------------------------------------------
-  var dialog = document.getElementById('lightbox');
-  if (dialog && typeof dialog.showModal === 'function') {
-    var img = document.getElementById('lb-img');
-    var caption = document.getElementById('lb-caption');
-    var figure = dialog.querySelector('.lb-figure');
-    var prev = dialog.querySelector('.lb-prev');
-    var next = dialog.querySelector('.lb-next');
-    var close = dialog.querySelector('.lb-close');
+  // ---- Carousel ------------------------------------------------------------
+  // Slides sit side by side. While you drag, the slide under your finger moves
+  // with it, and the neighbour on that side is already in place, so it comes
+  // along. Slides wrap around, so the first and last photo are neighbours.
+  var SLIDE_MS = 520;
+  var SNAP_BACK_MS = 440;
+  var EASE = 'cubic-bezier(0.25, 0.8, 0.25, 1)';
 
-    // Slow, deliberate timing so the slide is easy to follow.
-    var SLIDE_OUT_MS = 520;
-    var SLIDE_IN_MS = 680;
-    var SNAP_BACK_MS = 440;
-    var EASE = 'cubic-bezier(0.25, 0.8, 0.25, 1)';
-
-    var list = [];
+  function createCarousel(root, options) {
+    options = options || {};
     var index = 0;
-    var busy = false;
+    var dx = 0;          // live drag offset in px
+    var busy = false;    // true while a slide is animating
+    var drag = null;     // gesture in progress
+    var suppressUntil = 0; // clicks before this time came from the end of a drag
     var timers = [];
-    var swipe = null;
+    var autoTimer = null;
+
+    function slides() {
+      return Array.prototype.slice.call(root.querySelectorAll('.carousel-slide'));
+    }
+
+    function width() {
+      return root.clientWidth || window.innerWidth;
+    }
 
     function later(ms, fn) {
       timers.push(setTimeout(fn, ms));
     }
 
-    function clearTimers() {
+    function stopAutoplay() {
+      clearTimeout(autoTimer);
+      autoTimer = null;
+    }
+
+    function restartAutoplay() {
+      stopAutoplay();
+      if (!options.autoplay || reducedMotion || slides().length < 2) return;
+      autoTimer = setTimeout(function () { step(1); }, options.autoplay);
+    }
+
+    // Puts every slide where it belongs for the current index and drag offset.
+    function place(animate, ms) {
+      var els = slides();
+      var n = els.length;
+      var w = width();
+      els.forEach(function (el, i) {
+        var d = (i - index + n) % n;
+        if (d > n / 2) d -= n;                              // nearest way round
+        if (n === 2 && i !== index) d = dx < 0 ? 1 : -1;    // one neighbour: show it on the side being dragged
+        el.style.transition = animate ? 'transform ' + ms + 'ms ' + EASE : 'none';
+        el.style.transform = 'translate3d(' + (d * w + dx) + 'px, 0, 0)';
+        el.classList.toggle('is-current', i === index);
+        el.inert = i !== index;
+      });
+      void root.offsetWidth; // apply the starting position before any transition runs
+    }
+
+    function notify() {
+      if (options.onChange) options.onChange(index);
+    }
+
+    function goTo(next, animate) {
+      var n = slides().length;
+      if (n < 2) return;
+      index = ((next % n) + n) % n;
+      dx = 0;
+      busy = !!animate;
+      place(animate, SLIDE_MS);
+      if (animate) later(SLIDE_MS, function () { busy = false; });
+      notify();
+      restartAutoplay();
+    }
+
+    function step(delta) {
+      goTo(index + delta, !reducedMotion);
+    }
+
+    function snapBack() {
+      dx = 0;
+      busy = !reducedMotion; // only lock input while the slide is actually sliding back
+      place(!reducedMotion, SNAP_BACK_MS);
+      if (busy) later(SNAP_BACK_MS, function () { busy = false; });
+    }
+
+    function cancel() {
       timers.forEach(clearTimeout);
       timers = [];
+      busy = false;
+      drag = null;
+      dx = 0;
+      suppressUntil = 0;
+      stopAutoplay();
     }
 
-    // Moves the photo panel. When `animate` is true it glides over `ms`.
-    function place(px, opacity, animate, ms) {
-      void figure.offsetWidth; // flush pending styles so the transition starts here
-      figure.style.transition = animate
-        ? 'transform ' + ms + 'ms ' + EASE + ', opacity ' + ms + 'ms ' + EASE
-        : 'none';
-      figure.style.transform = 'translate3d(' + px + 'px, 0, 0)';
-      figure.style.opacity = String(opacity);
+    root.addEventListener('pointerdown', function (e) {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      suppressUntil = 0;
+      if (busy || slides().length < 2) return;
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, t: Date.now(), axis: null };
+      stopAutoplay();
+    });
+
+    root.addEventListener('pointermove', function (e) {
+      if (!drag || e.pointerId !== drag.id) return;
+      var moveX = e.clientX - drag.x;
+      var moveY = e.clientY - drag.y;
+      if (drag.axis === null) {
+        if (Math.abs(moveX) < 6 && Math.abs(moveY) < 6) return; // wait until the direction is clear
+        drag.axis = Math.abs(moveX) > Math.abs(moveY) ? 'x' : 'y';
+        if (drag.axis === 'x' && root.setPointerCapture) {
+          try { root.setPointerCapture(e.pointerId); } catch (err) { /* keep going without capture */ }
+        }
+      }
+      if (drag.axis !== 'x') return; // vertical movement scrolls the page instead
+      dx = moveX;
+      place(false, 0);
+    });
+
+    function endDrag(e) {
+      if (!drag || e.pointerId !== drag.id) return;
+      var finished = drag;
+      drag = null;
+      if (finished.axis !== 'x') {
+        restartAutoplay();
+        return;
+      }
+      suppressUntil = Date.now() + 350; // a drag is not a tap; the click that follows it is ignored
+      var distance = Math.abs(dx);
+      var speed = distance / Math.max(1, Date.now() - finished.t); // px per ms
+      var commit = distance > width() * 0.22 || (distance > 40 && speed > 0.45);
+      if (commit) goTo(index + (dx < 0 ? 1 : -1), !reducedMotion);
+      else snapBack();
+    }
+    root.addEventListener('pointerup', endDrag);
+    root.addEventListener('pointercancel', endDrag);
+
+    // After a drag, swallow the click so the slide does not also open the viewer.
+    root.addEventListener('click', function (e) {
+      if (Date.now() > suppressUntil) return;
+      suppressUntil = 0;
+      e.preventDefault();
+      e.stopPropagation();
+    }, true);
+
+    return {
+      goTo: function (i) { goTo(i, !reducedMotion); },
+      step: step,
+      current: function () { return index; },
+      reset: function (i) {
+        var n = slides().length || 1;
+        cancel();
+        index = ((i % n) + n) % n;
+        place(false, 0);
+        notify();
+      },
+      cancel: cancel,
+      pause: stopAutoplay,
+      resume: restartAutoplay,
+    };
+  }
+
+  // ---- Cover slideshow -----------------------------------------------------
+  var heroSection = document.querySelector('.hero');
+  var heroRoot = heroSection ? heroSection.querySelector('.carousel') : null;
+  var heroDots = heroSection
+    ? Array.prototype.slice.call(heroSection.querySelectorAll('.carousel-dot'))
+    : [];
+  var hero = null;
+
+  if (heroRoot) {
+    hero = createCarousel(heroRoot, {
+      autoplay: Number(heroRoot.getAttribute('data-autoplay')) || 0,
+      onChange: function (i) {
+        heroDots.forEach(function (dot, j) { dot.classList.toggle('is-active', j === i); });
+      },
+    });
+    heroDots.forEach(function (dot) {
+      dot.addEventListener('click', function () {
+        hero.goTo(Number(dot.getAttribute('data-goto')));
+      });
+    });
+    hero.reset(0);
+    hero.resume();
+  }
+
+  // ---- Photo viewer --------------------------------------------------------
+  var dialog = document.getElementById('lightbox');
+  var stage = document.getElementById('lb-stage');
+  if (dialog && stage && typeof dialog.showModal === 'function') {
+    var caption = document.getElementById('lb-caption');
+    var closeBtn = dialog.querySelector('.lb-close');
+    var prevBtn = dialog.querySelector('.lb-prev');
+    var nextBtn = dialog.querySelector('.lb-next');
+    var items = [];
+
+    function readItem(btn) {
+      return {
+        src: btn.getAttribute('data-src'),
+        alt: btn.getAttribute('data-alt') || '',
+        caption: btn.getAttribute('data-caption') || '',
+      };
     }
 
+    // Loads the photo on screen and its two neighbours; the rest load when reached.
+    function loadAround(i) {
+      var els = stage.querySelectorAll('.carousel-slide');
+      var n = items.length;
+      [-1, 0, 1].forEach(function (d) {
+        var j = (i + d + n) % n;
+        var img = els[j] && els[j].querySelector('img');
+        if (img && !img.getAttribute('src')) img.setAttribute('src', items[j].src);
+      });
+    }
+
+    function showCaption(i) {
+      var text = items[i] ? items[i].caption : '';
+      caption.textContent = text;
+      caption.hidden = !text;
+    }
+
+    var viewer = createCarousel(stage, {
+      onChange: function (i) {
+        loadAround(i);
+        showCaption(i);
+      },
+    });
+
+    function open(list, start) {
+      items = list;
+      stage.textContent = '';
+      list.forEach(function (item) {
+        var figure = document.createElement('figure');
+        figure.className = 'carousel-slide';
+        var img = document.createElement('img');
+        img.alt = item.alt;
+        img.decoding = 'async';
+        img.draggable = false;
+        figure.appendChild(img);
+        stage.appendChild(figure);
+      });
+      dialog.classList.toggle('is-single', list.length < 2);
+      if (hero) hero.pause();
+      viewer.reset(start);
+      dialog.showModal();
+      closeBtn.focus({ preventScroll: true });
+    }
+
+    // The gallery photos currently shown (the category filter may hide some).
     function currentButtons() {
       return galleryItems
         .filter(function (item) { return !item.hidden; })
         .map(function (item) { return item.querySelector('.gallery-btn'); });
     }
 
-    function showItem(i) {
-      var btn = list[i];
-      img.src = btn.getAttribute('data-src');
-      img.alt = btn.getAttribute('data-alt') || '';
-      caption.textContent = btn.getAttribute('data-caption') || '';
-      dialog.classList.toggle('is-single', list.length < 2);
-    }
-
-    // Runs cb once the new photo has loaded, so the slide never reveals a blank frame.
-    function whenImageReady(cb) {
-      var finished = false;
-      function finish() {
-        if (finished) return;
-        finished = true;
-        img.removeEventListener('load', finish);
-        img.removeEventListener('error', finish);
-        cb();
-      }
-      if (img.complete && img.naturalWidth > 0) {
-        finish();
-        return;
-      }
-      img.addEventListener('load', finish);
-      img.addEventListener('error', finish);
-      later(1500, finish); // never get stuck if an image is slow
-    }
-
-    // Slide to the next (delta > 0) or previous (delta < 0) photo.
-    function go(delta) {
-      if (busy || list.length < 2) return;
-      var nextIndex = (index + delta + list.length) % list.length;
-
-      if (reducedMotion) {
-        index = nextIndex;
-        showItem(index);
-        return;
-      }
-
-      busy = true;
-      var width = window.innerWidth;
-      var outX = delta > 0 ? -width : width;
-
-      place(outX, 0, true, SLIDE_OUT_MS);
-      later(SLIDE_OUT_MS, function () {
-        index = nextIndex;
-        showItem(index);
-        place(-outX, 0, false, 0); // wait just off-screen on the opposite side
-        whenImageReady(function () {
-          place(0, 1, true, SLIDE_IN_MS);
-          later(SLIDE_IN_MS, function () { busy = false; });
-        });
-      });
-    }
-
-    // Returns the photo to centre when a swipe was too short.
-    function snapBack() {
-      busy = true;
-      place(0, 1, true, SNAP_BACK_MS);
-      later(SNAP_BACK_MS, function () { busy = false; });
-    }
-
-    function open(btn) {
-      clearTimers();
-      busy = false;
-      list = currentButtons();
-      index = Math.max(0, list.indexOf(btn));
-      showItem(index);
-      place(0, 1, false, 0);
-      dialog.showModal();
-      close.focus({ preventScroll: true });
+    function openGallery(btn) {
+      var buttons = currentButtons();
+      open(buttons.map(readItem), Math.max(0, buttons.indexOf(btn)));
     }
 
     galleryItems.forEach(function (item) {
       var btn = item.querySelector('.gallery-btn');
-      if (btn) btn.addEventListener('click', function () { open(btn); });
+      if (btn) btn.addEventListener('click', function () { openGallery(btn); });
     });
 
-    prev.addEventListener('click', function () { go(-1); });
-    next.addEventListener('click', function () { go(1); });
-    close.addEventListener('click', function () { dialog.close(); });
+    if (heroRoot) {
+      heroRoot.addEventListener('click', function (e) {
+        var slide = e.target.closest ? e.target.closest('.carousel-slide') : null;
+        if (!slide) return;
+        var slides = Array.prototype.slice.call(heroRoot.querySelectorAll('.carousel-slide'));
+        open(slides.map(readItem), Math.max(0, slides.indexOf(slide)));
+      });
+    }
 
-    // Click on the dark backdrop (outside the image) closes the viewer.
+    prevBtn.addEventListener('click', function () { viewer.step(-1); });
+    nextBtn.addEventListener('click', function () { viewer.step(1); });
+    closeBtn.addEventListener('click', function () { dialog.close(); });
+
+    dialog.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowLeft') { e.preventDefault(); viewer.step(-1); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); viewer.step(1); }
+    });
+
+    // A click on the dark area around the photo closes the viewer.
+    function outsidePhoto(e) {
+      var slide = e.target.closest ? e.target.closest('.carousel-slide') : null;
+      var img = slide && slide.querySelector('img');
+      if (!img) return false;
+      var r = img.getBoundingClientRect();
+      if (!r.width || !r.height) return false;
+      return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+    }
     dialog.addEventListener('click', function (e) {
-      if (e.target === dialog || e.target.classList.contains('lb-inner') || e.target.classList.contains('lb-figure')) {
+      if (e.target === dialog || e.target === stage || e.target.classList.contains('lb-inner') || outsidePhoto(e)) {
         dialog.close();
       }
     });
 
-    dialog.addEventListener('keydown', function (e) {
-      if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }
-      else if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
-    });
-
-    // ---- Swipe: the photo follows the finger, then glides to the next one.
-    dialog.addEventListener('touchstart', function (e) {
-      if (busy || list.length < 2 || e.touches.length !== 1) {
-        swipe = null;
-        return;
-      }
-      var t = e.touches[0];
-      swipe = { x: t.clientX, y: t.clientY, time: Date.now(), dx: 0, axis: null };
-    }, { passive: true });
-
-    dialog.addEventListener('touchmove', function (e) {
-      if (!swipe || e.touches.length !== 1) return;
-      var t = e.touches[0];
-      var dx = t.clientX - swipe.x;
-      var dy = t.clientY - swipe.y;
-
-      if (swipe.axis === null) {
-        if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return; // wait until the gesture is clear
-        swipe.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
-        if (swipe.axis === 'x') figure.style.transition = 'none';
-      }
-      if (swipe.axis !== 'x') return; // vertical movement is ignored
-
-      e.preventDefault();
-      swipe.dx = dx;
-      figure.style.transform = 'translate3d(' + dx + 'px, 0, 0)';
-      figure.style.opacity = String(1 - 0.5 * Math.min(1, Math.abs(dx) / window.innerWidth));
-    }, { passive: false });
-
-    dialog.addEventListener('touchend', function () {
-      var s = swipe;
-      swipe = null;
-      if (!s || s.axis !== 'x') return;
-
-      var distance = Math.abs(s.dx);
-      var speed = distance / Math.max(1, Date.now() - s.time); // px per ms
-      var commit = distance > window.innerWidth * 0.22 || (distance > 40 && speed > 0.45);
-      if (commit) go(s.dx < 0 ? 1 : -1);
-      else snapBack();
-    });
-
-    dialog.addEventListener('touchcancel', function () {
-      var s = swipe;
-      swipe = null;
-      if (s && s.axis === 'x') snapBack();
-    });
-
     dialog.addEventListener('close', function () {
-      clearTimers();
-      busy = false;
-      swipe = null;
-      img.removeAttribute('src');
-      img.alt = '';
-      figure.style.transition = 'none';
-      figure.style.transform = '';
-      figure.style.opacity = '';
+      viewer.cancel();
+      stage.textContent = '';
+      if (hero) hero.resume();
     });
   }
 

@@ -179,7 +179,7 @@ p {
 /* The model's name in the About section uses the same sans-serif as the hero. */
 .about-text .section-title {
   font-family: var(--font-body);
-  font-weight: 300;
+  font-weight: 700;
   letter-spacing: -0.03em;
   font-size: clamp(2.2rem, 4.6vw, 3.8rem);
   line-height: 1.05;

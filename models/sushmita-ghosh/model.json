@@ -7,10 +7,9 @@
     "Placeholder biography: replace this text with the model's own story, training, and career highlights. Two or three short paragraphs work best."
   ],
   "stats": [
-    { "label": "Height", "value": "5′9″ · 175 cm" },
-    { "label": "Eyes", "value": "Hazel" },
-    { "label": "Hair", "value": "Dark brown" },
-    { "label": "Shoe", "value": "UK 6 · EU 39" },
+    { "label": "Height", "value": "5′4″" },
+    { "label": "Eyes", "value": "Black" },
+    { "label": "Hair", "value": "Black" },
     { "label": "Based in", "value": "Kolkata, India" },
     { "label": "Languages", "value": "English · Bengali · Hindi" }
   ],

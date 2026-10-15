@@ -93,7 +93,7 @@ function renderHeader(model, available) {
 
   return `
   <a class="skip-link" href="#main">Skip to content</a>
-  <header class="site-header" id="top">
+  <header class="site-header">
     <a class="brand" href="#top" aria-label="${esc(model.name)} – back to top">
       <span class="brand-given">${esc(given)}</span>${family ? `
       <span class="brand-family">${esc(family)}</span>` : ''}
@@ -119,13 +119,11 @@ function renderHero(model, ctx, available) {
       <img class="hero-media" src="${esc(ctx.mediaUrl(cover.file))}" alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} fetchpriority="high" decoding="async">
       <div class="hero-shade" aria-hidden="true"></div>
       <div class="hero-content">
-        <p class="eyebrow hero-eyebrow">${esc(model.tagline)}</p>
         <h1 id="hero-title" class="hero-name">${esc(model.name)}</h1>
-        ${heroButtons.trim() ? `<div class="hero-actions">
-          ${heroButtons}
-        </div>` : ''}
       </div>
-      ${available.about ? `<a class="scroll-cue" href="#about" aria-label="Scroll to about"><span></span></a>` : ''}
+      ${heroButtons.trim() ? `<div class="hero-actions">
+        ${heroButtons}
+      </div>` : ''}
     </section>`;
 }
 
@@ -314,7 +312,8 @@ export function renderModelPage(model, ctx) {
   const cover = ctx.mediaUrl(model.cover.file);
 
   const available = sectionsFor(model);
-  const body = `${renderHeader(model, available)}
+  const body = `<div id="top" class="top-anchor" aria-hidden="true"></div>
+  ${renderHeader(model, available)}
   <main id="main">
     ${renderHero(model, ctx, available)}
     ${renderAbout(model)}

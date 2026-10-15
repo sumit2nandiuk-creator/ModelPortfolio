@@ -17,7 +17,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { renderModelPage, renderNotFoundPage } from './lib/render.mjs';
 import { imageSize } from './lib/image-size.mjs';
-import { validateModel, referencedMediaFiles, IMAGE_EXTENSIONS } from './lib/validate.mjs';
+import { validateModel, referencedMediaFiles, mediaEntries, isHttpUrl, IMAGE_EXTENSIONS } from './lib/validate.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..');
@@ -82,6 +82,11 @@ export async function build({
   await fs.rm(outDir, { recursive: true, force: true });
   await fs.mkdir(outDir, { recursive: true });
   await fs.cp(path.join(siteDir, 'assets'), path.join(outDir, 'assets'), { recursive: true });
+  // The admin page (protected by its API token; marked noindex). It is optional.
+  const adminSrc = path.join(siteDir, 'admin');
+  if (await fs.stat(adminSrc).then((s) => s.isDirectory(), () => false)) {
+    await fs.cp(adminSrc, path.join(outDir, 'admin'), { recursive: true });
+  }
 
   const notFound = renderNotFoundPage({ base });
   // No index.html on purpose: "/" is a 404 too, so the root reveals nothing.
@@ -104,11 +109,18 @@ export async function build({
         sizes.set(file, imageSize(await fs.readFile(source)));
       }
     }
+    // Hosted files are not copied; their size comes from the entry's optional width/height.
+    for (const entry of mediaEntries(data)) {
+      if (isHttpUrl(entry.file) && entry.width && entry.height) {
+        sizes.set(entry.file, { width: entry.width, height: entry.height });
+      }
+    }
 
     const html = renderModelPage(data, {
       year,
       base,
-      mediaUrl: (file) => `${base}${slug}/media/${encodeURIComponent(file)}`,
+      // Hosted files (https:// URLs) are used as they are; local files live under this model's media/.
+      mediaUrl: (file) => (isHttpUrl(file) ? file : `${base}${slug}/media/${encodeURIComponent(file)}`),
       sizeOf: (file) => sizes.get(file) ?? null,
     });
     await fs.writeFile(path.join(modelOut, 'index.html'), html);

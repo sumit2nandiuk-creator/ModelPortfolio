@@ -43,7 +43,7 @@ function isSafeFileName(value) {
   );
 }
 
-function isHttpUrl(value) {
+export function isHttpUrl(value) {
   try {
     const url = new URL(value);
     return url.protocol === 'https:' || url.protocol === 'http:';
@@ -103,13 +103,32 @@ export async function validateModel(model, { folder, dir }) {
   // --- Media ---------------------------------------------------------------
   const mediaDir = path.join(dir, 'media');
 
+  // Optional "width" and "height" (whole pixels) let a hosted file reserve its layout space.
+  function checkDimensions(entry, where) {
+    for (const key of ['width', 'height']) {
+      if (entry[key] !== undefined && !(Number.isInteger(entry[key]) && entry[key] > 0)) {
+        fail(`${where}.${key} must be a positive whole number of pixels`);
+      }
+    }
+  }
+
   async function checkMedia(entry, where, allowedExt) {
     if (!entry || typeof entry !== 'object') {
       fail(`${where} must be an object`);
       return;
     }
+    // A full https:// URL points at a file hosted elsewhere (for example Cloudflare R2).
+    // Those files are not on disk, so only the extension and dimensions are checked.
+    if (isHttpUrl(entry.file)) {
+      const ext = path.extname(new URL(entry.file).pathname).toLowerCase();
+      if (!allowedExt.has(ext)) {
+        fail(`${where}.file "${entry.file}" has an unsupported type (allowed: ${[...allowedExt].join(', ')})`);
+      }
+      checkDimensions(entry, where);
+      return;
+    }
     if (!isSafeFileName(entry.file)) {
-      fail(`${where}.file must be a plain file name inside media/ (got ${JSON.stringify(entry.file)})`);
+      fail(`${where}.file must be a plain file name inside media/ or an https:// URL (got ${JSON.stringify(entry.file)})`);
       return;
     }
     const ext = path.extname(entry.file).toLowerCase();
@@ -124,6 +143,7 @@ export async function validateModel(model, { folder, dir }) {
   async function checkPoster(entry, where) {
     if (entry.poster === undefined) return;
     await checkMedia({ file: entry.poster }, `${where}.poster`, IMAGE_EXTENSIONS);
+    checkDimensions({ width: entry.posterWidth, height: entry.posterHeight }, `${where}.poster`);
   }
 
   // "cover" is the hero slideshow: a list of photos (a single {file, alt} object also works).
@@ -198,14 +218,24 @@ export function coverList(model) {
   return model.cover ? [model.cover] : [];
 }
 
-// Every media file a model's page depends on (and therefore must be published).
+// Every media entry a model's page uses: covers, photos, videos and video posters.
+export function mediaEntries(model) {
+  const entries = [];
+  for (const cover of coverList(model)) entries.push(cover);
+  for (const photo of model.photos ?? []) entries.push(photo);
+  for (const video of model.videos ?? []) {
+    entries.push(video);
+    if (video.poster) entries.push({ file: video.poster, width: video.posterWidth, height: video.posterHeight });
+  }
+  return entries.filter((e) => e && typeof e.file === 'string');
+}
+
+// Every media file a model's page depends on that lives in the model's media/ folder
+// (and therefore must be published). Hosted https:// files are not copied.
 export function referencedMediaFiles(model) {
   const files = new Set();
-  for (const cover of coverList(model)) if (cover?.file) files.add(cover.file);
-  for (const photo of model.photos ?? []) files.add(photo.file);
-  for (const video of model.videos ?? []) {
-    files.add(video.file);
-    if (video.poster) files.add(video.poster);
+  for (const entry of mediaEntries(model)) {
+    if (!isHttpUrl(entry.file)) files.add(entry.file);
   }
   return [...files];
 }

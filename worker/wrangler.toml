@@ -1,0 +1,23 @@
+# Cloudflare Worker for the admin page. Deploy from the worker/ folder with:  npx wrangler deploy
+# Secrets are NOT stored in this file. Set them once with:
+#   npx wrangler secret put ADMIN_TOKEN    (the password you type into the admin page)
+#   npx wrangler secret put GITHUB_TOKEN   (a fine-grained GitHub token: Contents read & write, this repo only)
+
+name = "portfolio-admin"
+main = "src/index.mjs"
+compatibility_date = "2026-01-01"
+
+# The R2 bucket that stores photos and videos. Create it in the Cloudflare dashboard (R2 > Create bucket)
+# and turn on public access (R2 > bucket > Settings > Public access) to get the R2_PUBLIC_BASE URL.
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "portfolio-media"
+
+[vars]
+# The GitHub repository the admin edits, and the branch that GitHub Pages deploys from.
+REPO = "sumit2nandiuk-creator/ModelPortfolio"
+BRANCH = "main"
+# Public URL of the R2 bucket, with no trailing slash.
+R2_PUBLIC_BASE = "https://media.example.com"
+# Comma-separated list of websites allowed to call this API (the admin page's origin).
+ADMIN_ORIGIN = "https://sumit2nandiuk-creator.github.io"

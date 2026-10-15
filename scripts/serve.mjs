@@ -92,7 +92,10 @@ const server = http.createServer(async (req, res) => {
 
     if (stat?.isFile()) return await sendFile(req, res, filePath);
 
-    return await sendFile(req, res, path.join(root, '404.html'), 404);
+    const notFoundPage = path.join(root, '404.html');
+    if (await statOrNull(notFoundPage)) return await sendFile(req, res, notFoundPage, 404);
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end('Not found');
   } catch (err) {
     console.error(err);
     if (!res.headersSent) res.writeHead(500);

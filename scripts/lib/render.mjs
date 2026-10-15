@@ -36,7 +36,7 @@ function sectionsFor(model) {
 }
 
 // Shared <head> pieces for every generated page.
-function documentShell({ title, description = '', body, bodyClass = '', extraHead = '', robots = 'index,follow' }) {
+function documentShell({ title, description = '', body, bodyClass = '', extraHead = '', robots = 'index,follow', base = '/' }) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -49,7 +49,7 @@ function documentShell({ title, description = '', body, bodyClass = '', extraHea
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@300;400;500;600&display=swap">
-  <link rel="stylesheet" href="/assets/site.css">
+  <link rel="stylesheet" href="${esc(base)}assets/site.css">
   ${extraHead}
 </head>
 <body class="${esc(bodyClass)}">
@@ -61,10 +61,11 @@ ${body}
 
 // Neutral page used for "/" and for unknown URLs. It deliberately carries no
 // model information and no links to any model.
-export function renderNotFoundPage() {
+export function renderNotFoundPage({ base = '/' } = {}) {
   return documentShell({
     title: 'Page not found',
     robots: 'noindex,nofollow',
+    base,
     bodyClass: 'empty-page',
     body: `<main class="empty"><p class="eyebrow">404</p><h1>Page not found</h1></main>`,
   });
@@ -291,6 +292,7 @@ function renderLightbox() {
 }
 
 // The single model page. `ctx` provides:
+//   base           -> site base path, e.g. "/" or "/ModelPortfolio/"
 //   mediaUrl(file) -> public URL of a media file for THIS model
 //   sizeOf(file)   -> { width, height } or null
 //   year           -> footer year
@@ -310,12 +312,13 @@ export function renderModelPage(model, ctx) {
   </main>
   ${renderFooter(model, ctx.year)}
   ${renderLightbox()}
-  <script src="/assets/site.js" defer></script>`;
+  <script src="${esc(ctx.base)}assets/site.js" defer></script>`;
 
   return documentShell({
     title,
     description,
     robots: model.seo?.noindex === true ? 'noindex,nofollow' : 'index,follow',
+    base: ctx.base,
     bodyClass: 'model-page',
     extraHead: `<meta property="og:title" content="${esc(title)}">
   <meta property="og:description" content="${esc(description)}">

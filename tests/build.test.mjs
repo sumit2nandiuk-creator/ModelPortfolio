@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { build, BuildError } from '../scripts/build.mjs';
+import { build, BuildError, normalizeBasePath } from '../scripts/build.mjs';
 import { imageSize } from '../scripts/lib/image-size.mjs';
 import { esc } from '../scripts/lib/render.mjs';
 
@@ -253,6 +253,43 @@ test('seo.noindex keeps a profile out of search results', async () => {
     const beta = await fs.readFile(path.join(ws.outDir, 'beta-model', 'index.html'), 'utf8');
     assert.match(alpha, /name="robots" content="noindex,nofollow"/);
     assert.match(beta, /name="robots" content="index,follow"/);
+  } finally {
+    await ws.cleanup();
+  }
+});
+
+test('normalizeBasePath produces "/" or "/name/"', () => {
+  assert.equal(normalizeBasePath(undefined), '/');
+  assert.equal(normalizeBasePath(''), '/');
+  assert.equal(normalizeBasePath('/'), '/');
+  assert.equal(normalizeBasePath('ModelPortfolio'), '/ModelPortfolio/');
+  assert.equal(normalizeBasePath('/ModelPortfolio/'), '/ModelPortfolio/');
+});
+
+test('base path prefixes every root-relative URL (GitHub Pages project sites)', async () => {
+  const ws = await tempWorkspace();
+  try {
+    await fs.mkdir(ws.modelsDir, { recursive: true });
+    await writeModel(ws.modelsDir, 'alpha-model', 'Alpha Person');
+    await build({ modelsDir: ws.modelsDir, siteDir, outDir: ws.outDir, basePath: '/ModelPortfolio/' });
+
+    const pages = [
+      path.join(ws.outDir, 'alpha-model', 'index.html'),
+      path.join(ws.outDir, '404.html'),
+    ];
+    for (const file of pages) {
+      const html = await fs.readFile(file, 'utf8');
+      const urls = [...html.matchAll(/(?:href|src|content)="(\/[^"]*)"/g)].map((m) => m[1]);
+      assert.ok(urls.length > 0);
+      for (const url of urls) {
+        assert.ok(url.startsWith('/ModelPortfolio/'), `${path.basename(path.dirname(file))}: ${url} is missing the base path`);
+      }
+    }
+    const html = await fs.readFile(path.join(ws.outDir, 'alpha-model', 'index.html'), 'utf8');
+    assert.match(html, /src="\/ModelPortfolio\/alpha-model\/media\/alpha-model-cover\.png"/);
+    assert.match(html, /href="\/ModelPortfolio\/assets\/site\.css"/);
+    assert.match(html, /src="\/ModelPortfolio\/assets\/site\.js"/);
+    assert.ok(await exists(path.join(ws.outDir, '.nojekyll')));
   } finally {
     await ws.cleanup();
   }

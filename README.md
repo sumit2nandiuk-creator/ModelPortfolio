@@ -45,6 +45,7 @@ site/assets/
   site.css                 ← shared theme (no model-specific content)
   site.js                  ← shared behaviour: menu, filter, lightbox, reveals
 tests/                     ← build and isolation tests
+.github/workflows/         ← GitHub Pages deployment
 dist/                      ← generated output (git-ignored, do not edit)
 ```
 
@@ -123,22 +124,44 @@ The test suite (`npm test`) checks these guarantees on every change.
 
 ---
 
-## Deploying
+## Deploying to GitHub Pages
 
-`dist/` is a plain static folder. Upload it to any static host, for example
-Netlify, Cloudflare Pages, Vercel (static output), GitHub Pages, or an ordinary
-web server. The build does not need to run on the host, so you can run
-`npm run build` locally and upload the output.
+The repository includes a workflow, `.github/workflows/pages.yml`, that tests,
+builds, and publishes the site on every push to `main`. You can also run it by
+hand from the **Actions** tab (**Deploy to GitHub Pages → Run workflow**).
 
-- Serve `dist/` as the site root.
-- Static hosts automatically use `404.html` for unknown URLs, which is the desired behaviour.
-- Pages use relative URLs for shared assets (`/assets/...`) and absolute paths for each model's media (`/<slug>/media/...`), so the site must be served from the domain root.
-- The page loads the Cormorant Garamond and Inter fonts from Google Fonts. Everything else is self-hosted.
+One-time setup:
 
-Use `dist/` as the upload, not the repository. Models' `model.json` and source
-files stay in your repository, and the published folder contains only the generated site.
+1. Go to the repository's **Settings → Pages**.
+2. Under **Build and deployment → Source**, choose **GitHub Actions**.
+3. Merge the branch into `main` (or run the workflow manually from the branch you want to publish).
 
----
+The site is then available at `https://<your-user>.github.io/<repo-name>/`, for
+example `https://sumit2nandiuk-creator.github.io/ModelPortfolio/sushmita-ghosh/`.
+
+How the URLs work on Pages:
+
+- GitHub Pages project sites live under `/<repo-name>/`. The workflow sets
+  `SITE_BASE_PATH=/<repo-name>/` automatically, so every link, stylesheet, script,
+  and image is prefixed correctly.
+- Each model's page is still at its own address (`/<repo-name>/<slug>/`). Unknown
+  addresses get the neutral 404 page.
+
+**Custom domain (optional):** point the domain at Pages, then add a repository
+variable under **Settings → Secrets and variables → Actions → Variables**:
+`SITE_BASE_PATH` = `/`. Redeploy, and the site will work from the domain root.
+
+**Other hosts:** `dist/` is a plain static folder, so it also works on Netlify,
+Cloudflare Pages, or any web server. Build it locally with `npm run build` and
+upload `dist/`. Build it with `SITE_BASE_PATH=/` unless the site is served from a
+subfolder.
+
+**Visibility:** GitHub Pages publishes only the generated `dist/` folder. Source
+files (`models/`, `scripts/`, and the rest of the repository) are **not** part of
+the published site. Anyone who can see the repository can still read them,
+though. A public repository makes every model's `model.json` and media files
+visible on GitHub. Keep the repository private if that is a concern (Pages on a
+private repository needs a GitHub plan that supports it).
 
 ## Privacy notes
 

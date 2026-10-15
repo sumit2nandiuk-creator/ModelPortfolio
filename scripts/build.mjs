@@ -39,12 +39,24 @@ async function listModelFolders(modelsDir) {
     .sort();
 }
 
+// Normalises a base path to the form "/" or "/some/path/".
+export function normalizeBasePath(value) {
+  const trimmed = String(value ?? '').trim();
+  if (!trimmed || trimmed === '/') return '/';
+  return `/${trimmed.replace(/^\/+|\/+$/g, '')}/`;
+}
+
 export async function build({
   modelsDir = path.join(repoRoot, 'models'),
   siteDir = path.join(repoRoot, 'site'),
   outDir = path.join(repoRoot, 'dist'),
   year = new Date().getFullYear(),
+  // Where the site is hosted. "/" for a domain root or custom domain;
+  // "/<repo>/" for a GitHub Pages project site. Defaults to SITE_BASE_PATH.
+  basePath = process.env.SITE_BASE_PATH,
 } = {}) {
+  const base = normalizeBasePath(basePath);
+
   // 1. Read and validate every model before touching the output folder.
   const folders = await listModelFolders(modelsDir);
   const models = [];
@@ -71,9 +83,11 @@ export async function build({
   await fs.mkdir(outDir, { recursive: true });
   await fs.cp(path.join(siteDir, 'assets'), path.join(outDir, 'assets'), { recursive: true });
 
-  const notFound = renderNotFoundPage();
+  const notFound = renderNotFoundPage({ base });
   // No index.html on purpose: "/" is a 404 too, so the root reveals nothing.
   await fs.writeFile(path.join(outDir, '404.html'), notFound);
+  // Tells GitHub Pages not to run Jekyll over the output.
+  await fs.writeFile(path.join(outDir, '.nojekyll'), '');
 
   // 3. Publish each model in its own isolated folder.
   for (const { data, dir } of models) {
@@ -93,7 +107,8 @@ export async function build({
 
     const html = renderModelPage(data, {
       year,
-      mediaUrl: (file) => `/${slug}/media/${encodeURIComponent(file)}`,
+      base,
+      mediaUrl: (file) => `${base}${slug}/media/${encodeURIComponent(file)}`,
       sizeOf: (file) => sizes.get(file) ?? null,
     });
     await fs.writeFile(path.join(modelOut, 'index.html'), html);

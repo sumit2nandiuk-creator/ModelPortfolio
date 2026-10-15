@@ -1,0 +1,62 @@
+# Builds the portfolio sites and deploys dist/ to GitHub Pages.
+#
+# Setup (once): repository Settings → Pages → Build and deployment →
+# Source: "GitHub Actions".
+#
+# Base path: defaults to "/<repository-name>/" (the GitHub Pages project URL,
+# e.g. https://<user>.github.io/<repo>/). If you attach a custom domain, add a
+# repository variable SITE_BASE_PATH with the value "/" so links resolve from
+# the domain root.
+
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run tests
+        run: npm test
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build site
+        env:
+          SITE_BASE_PATH: ${{ vars.SITE_BASE_PATH || format('/{0}/', github.event.repository.name) }}
+        run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

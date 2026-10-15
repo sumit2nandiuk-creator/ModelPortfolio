@@ -1261,8 +1261,8 @@ main section {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  height: 56px;
+  width: 62px;
+  height: 62px;
   background: none;
   color: #25d366;
   transition:
@@ -1274,8 +1274,8 @@ main section {
 /* The WhatsApp logo itself, in its own green, with no circle behind it.
    The soft shadow keeps it readable over light and dark photos. */
 .whatsapp-float svg {
-  width: 52px;
-  height: 52px;
+  width: 58px;
+  height: 58px;
   fill: currentColor;
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.35));
 }

@@ -18,6 +18,16 @@
     if (header) header.classList.toggle('is-scrolled', window.scrollY > 40);
   }
   updateHeader();
+
+  // The WhatsApp button fades in once the visitor has scrolled past the cover.
+  var whatsapp = document.querySelector('.whatsapp-float');
+  function updateWhatsApp() {
+    if (whatsapp) whatsapp.classList.toggle('is-visible', window.scrollY > window.innerHeight * 0.7);
+  }
+  if (whatsapp) {
+    updateWhatsApp();
+    window.addEventListener('scroll', updateWhatsApp, { passive: true });
+  }
   window.addEventListener('scroll', updateHeader, { passive: true });
 
   function setMenu(open) {

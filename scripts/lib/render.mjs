@@ -196,7 +196,7 @@ function renderPortfolio(model, ctx) {
       return `
         <figure class="gallery-item reveal" data-category="${esc(photo.category)}">
           <button class="gallery-btn" type="button" data-index="${i}" data-src="${esc(src)}" data-alt="${esc(alt)}" data-caption="${esc(caption)}" aria-label="Open photo: ${esc(caption)}">
-            <img src="${esc(src)}" alt="${esc(alt)}"${dimensionAttrs(ctx.sizeOf(photo.file))} loading="lazy" decoding="async">
+            <img src="${esc(src)}" alt="${esc(alt)}"${dimensionAttrs(ctx.sizeOf(photo.file))} loading="lazy" decoding="async" draggable="false">
           </button>
           <figcaption class="gallery-caption">
             <span class="tag">${esc(photo.category)}</span>
@@ -231,7 +231,7 @@ function renderVideos(model, ctx) {
       return `
           <figure class="video-card reveal">
             <div class="video-frame">
-              <video controls playsinline preload="metadata"${poster} src="${esc(ctx.mediaUrl(video.file))}" aria-label="${esc(video.title)}"></video>
+              <video controls controlsList="nodownload noremoteplayback" disablePictureInPicture playsinline preload="metadata"${poster} src="${esc(ctx.mediaUrl(video.file))}" aria-label="${esc(video.title)}"></video>
             </div>
             <figcaption>
               ${video.category ? `<span class="tag">${esc(video.category)}</span>` : ''}
@@ -384,7 +384,7 @@ export function renderModelPage(model, ctx) {
   return documentShell({
     title,
     description,
-    robots: model.seo?.noindex === true ? 'noindex,nofollow' : 'index,follow',
+    robots: model.seo?.noindex === true ? 'noindex,nofollow' : 'index,follow,noimageindex',
     base: ctx.base,
     bodyClass: 'model-page',
     extraHead: `<meta property="og:title" content="${esc(title)}">

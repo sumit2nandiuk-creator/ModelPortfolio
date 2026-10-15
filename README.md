@@ -172,3 +172,8 @@ private repository needs a GitHub plan that supports it).
 - Contact details in `model.json` are published on the page. Only add details
   the model wants public.
 - Images and videos should only be used with the model's consent and the rights to publish them.
+- Photos and videos are protected against casual saving only. The site turns off the
+  right-click and long-press menus and the download option on videos, and it keeps
+  photos out of image search (`noimageindex`). The files themselves are still public:
+  anyone can open a photo's address or use developer tools to save it. Only publish
+  images that are fine to be seen by anyone who can open the site.

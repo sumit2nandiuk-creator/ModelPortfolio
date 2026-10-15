@@ -381,6 +381,15 @@ p {
   background: var(--ink);
 }
 
+/* Photos and videos: no long-press menu, no text selection, no native drag. */
+img,
+video {
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 /* Carousel: slides sit side by side; the script moves them with the finger. */
 .carousel {
   position: relative;

@@ -252,7 +252,7 @@ test('seo.noindex keeps a profile out of search results', async () => {
     const alpha = await fs.readFile(path.join(ws.outDir, 'alpha-model', 'index.html'), 'utf8');
     const beta = await fs.readFile(path.join(ws.outDir, 'beta-model', 'index.html'), 'utf8');
     assert.match(alpha, /name="robots" content="noindex,nofollow"/);
-    assert.match(beta, /name="robots" content="index,follow"/);
+    assert.match(beta, /name="robots" content="index,follow,noimageindex"/);
   } finally {
     await ws.cleanup();
   }
@@ -357,6 +357,33 @@ test('hero has no visible name over the cover, a bottom button row, no tagline o
 test('the header brand renders both names in one row', async () => {
   const { splitName } = await import('../scripts/lib/render.mjs');
   assert.deepEqual(splitName('Sushmita Ghosh'), { given: 'Sushmita', family: 'Ghosh' });
+});
+
+test('photos and videos are protected from easy saving', async () => {
+  const ws = await tempWorkspace();
+  try {
+    await build({ siteDir, outDir: ws.outDir });
+    const html = await fs.readFile(path.join(ws.outDir, 'sushmita-ghosh', 'index.html'), 'utf8');
+    // Every <img> is non-draggable.
+    const imgs = html.match(/<img [^>]*>/g) ?? [];
+    assert.ok(imgs.length > 0);
+    for (const img of imgs) assert.match(img, /draggable="false"/, img);
+    // Videos: no download, no remote playback, no picture-in-picture.
+    const videos = html.match(/<video [^>]*>/g) ?? [];
+    assert.ok(videos.length > 0);
+    for (const v of videos) {
+      assert.match(v, /controlsList="nodownload noremoteplayback"/);
+      assert.match(v, /disablePictureInPicture/);
+    }
+    // Model pages keep photos out of image search.
+    assert.match(html, /<meta name="robots" content="index,follow,noimageindex">/);
+    // The script blocks the context menu and native drag on media.
+    const js = await fs.readFile(path.join(siteDir, 'assets', 'site.js'), 'utf8');
+    assert.match(js, /addEventListener\('contextmenu'/);
+    assert.match(js, /addEventListener\('dragstart'/);
+  } finally {
+    await ws.cleanup();
+  }
 });
 
 test('the Sushmita Ghosh profile has the requested stats and no shoe size', async () => {

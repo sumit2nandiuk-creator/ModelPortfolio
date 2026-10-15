@@ -9,6 +9,17 @@
 
   var reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  // ---- Photos and videos: block the easy ways to save them -----------------
+  // No right-click or long-press menu on media, and no native drag. This stops
+  // casual saving. It is not real protection: the browser can still load the files.
+  var MEDIA_SELECTOR = 'img, video, .carousel, .lightbox';
+  document.addEventListener('contextmenu', function (e) {
+    if (e.target.closest && e.target.closest(MEDIA_SELECTOR)) e.preventDefault();
+  });
+  document.addEventListener('dragstart', function (e) {
+    if (e.target.tagName === 'IMG' || e.target.tagName === 'VIDEO') e.preventDefault();
+  });
+
   // ---- Header: solid background after scrolling, mobile menu ------------
   var header = document.querySelector('.site-header');
   var toggle = document.querySelector('.nav-toggle');

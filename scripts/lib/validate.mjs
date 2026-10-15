@@ -169,6 +169,14 @@ export async function validateModel(model, { folder, dir }) {
       if (c.email !== undefined && !EMAIL_PATTERN.test(c.email)) {
         fail(`"contact.email" is not a valid email address (got "${c.email}")`);
       }
+      for (const key of ['phone', 'whatsapp']) {
+        if (c[key] === undefined || c[key] === '') continue;
+        const value = String(c[key]);
+        const digits = value.replace(/\D/g, '');
+        if (!/^\+?[0-9 ()-]+$/.test(value) || digits.length < 8) {
+          fail(`"contact.${key}" must be a phone number with at least 8 digits (got "${value}")`);
+        }
+      }
       for (const key of ['instagram', 'linkedin', 'website', 'tiktok', 'imdb']) {
         if (c[key] !== undefined && c[key] !== '' && !isHttpUrl(c[key])) {
           fail(`"contact.${key}" must be a full http(s) URL`);

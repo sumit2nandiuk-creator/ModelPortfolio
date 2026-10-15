@@ -66,7 +66,7 @@ heavily commented by example in `models/_template/model.json`.
 | `cover` | Hero image: `{ "file", "alt" }`. |
 | `photos` | Gallery entries: `{ "file", "title", "category", "year", "alt" }`. Each distinct `category` gets a filter button automatically. |
 | `videos` | Video entries: `{ "file", "poster", "title", "category", "description" }`. |
-| `contact` | `email`, `phone`, `location`, `representation`, and optional `instagram`, `linkedin`, `tiktok`, `imdb`, `website` (full `https://` URLs). Empty values are hidden. |
+| `contact` | `email`, `phone`, `whatsapp` (phone numbers with at least 8 digits; the WhatsApp card links to `wa.me`), and optional `instagram`, `linkedin`, `tiktok`, `imdb`, `website` (full `https://` URLs). Empty values are hidden. Unused fields such as the old `location` and `representation` are ignored. |
 
 Notes:
 

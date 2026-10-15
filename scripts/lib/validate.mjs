@@ -85,7 +85,6 @@ export async function validateModel(model, { folder, dir }) {
   }
 
   if (!isNonEmptyString(model.name)) fail('"name" is required');
-  if (!isNonEmptyString(model.tagline)) fail('"tagline" is required');
 
   // --- Text content -------------------------------------------------------
   if (model.bio !== undefined) {

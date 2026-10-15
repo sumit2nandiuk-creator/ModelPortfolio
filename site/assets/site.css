@@ -908,10 +908,31 @@ main section {
   color: rgba(247, 244, 239, 0.55);
 }
 
+/* Keep each contact value on one line. Long addresses such as email are scaled
+   down a little on small screens instead of breaking mid-word. */
 .contact-value {
   font-family: var(--font-body);
   font-size: 1.02rem;
-  word-break: break-word;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+@media (max-width: 560px) {
+  .contact-item {
+    gap: 14px;
+    padding: 20px 18px;
+  }
+
+  .contact-icon {
+    flex-basis: 44px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .contact-value {
+    font-size: clamp(0.78rem, 3.7vw, 1.02rem);
+  }
 }
 
 .contact-socials {

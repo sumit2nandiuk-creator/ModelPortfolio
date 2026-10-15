@@ -509,7 +509,35 @@ video {
   height: 100%;
   object-fit: cover;
   object-position: center 40%;
-  /* No intro zoom: a scaled photo is drawn soft at the edges while it moves. */
+}
+
+/* Ken Burns: the photo on screen drifts slowly. Each time a slide becomes current,
+   its animation starts again from the beginning. Alternate slides drift in opposite directions. */
+.carousel-slide.is-current .hero-media {
+  animation: ken-burns-in 7s ease-in-out both;
+  will-change: transform;
+}
+
+.carousel-slide.is-current:nth-child(even) .hero-media {
+  animation-name: ken-burns-out;
+}
+
+@keyframes ken-burns-in {
+  from {
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+  to {
+    transform: scale(1.06) translate3d(-1%, -0.5%, 0);
+  }
+}
+
+@keyframes ken-burns-out {
+  from {
+    transform: scale(1.06) translate3d(-1%, 0, 0);
+  }
+  to {
+    transform: scale(1) translate3d(0, 0, 0);
+  }
 }
 
 .hero-shade {
@@ -1170,6 +1198,10 @@ main section {
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
+  }
+
+  .carousel-slide.is-current .hero-media {
+    animation: none;
   }
 
   *,

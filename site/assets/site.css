@@ -429,6 +429,8 @@ video {
 .carousel {
   position: relative;
   overflow: hidden;
+  /* Hard clip: nothing from a neighbouring slide can show past the carousel's edges. */
+  contain: paint;
   overscroll-behavior-x: contain;
   touch-action: pan-y;
   -webkit-user-select: none;
@@ -436,8 +438,12 @@ video {
 }
 
 .carousel-slide {
+  /* Explicit edges and size, so the slide always covers the full width of the carousel. */
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   margin: 0;
   padding: 0;
   border: 0;
@@ -456,7 +462,10 @@ video {
 
 .hero-carousel {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   z-index: 0;
 }
 
@@ -504,7 +513,8 @@ video {
 
 .hero-media {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;

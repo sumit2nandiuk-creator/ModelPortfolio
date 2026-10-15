@@ -8,7 +8,7 @@ The site is **static** (plain HTML, CSS and JavaScript). It has **no runtime
 dependencies**, so there is nothing to install. You only need Node.js 18.17+
 (`node -v`) to build and preview it.
 
-Each model has its own URL, for example `/ava-sterling/`. Models are fully
+Each model has its own URL, for example `/sushmita-ghosh/`. Models are fully
 isolated from one another: a model's page only contains that model's text,
 photos, and videos, and only that model's files are published.
 
@@ -25,7 +25,7 @@ npm test          # runs the test suite
 The preview server binds to `0.0.0.0`, so it can also be reached from other
 devices on the same network. Set `PORT=8080` to use a different port.
 
-Open the placeholder model at **http://localhost:3000/ava-sterling/**.
+Open the placeholder model at **http://localhost:3000/sushmita-ghosh/**.
 
 ---
 
@@ -33,7 +33,7 @@ Open the placeholder model at **http://localhost:3000/ava-sterling/**.
 
 ```
 models/
-  ava-sterling/            ← one folder per model; the folder name IS the URL slug
+  sushmita-ghosh/            ← one folder per model; the folder name IS the URL slug
     model.json             ← all text, stats, photo/video list and contact details
     media/                 ← every photo, video and poster used by this model
   _template/               ← starter for a new model (ignored by the build)
@@ -76,7 +76,7 @@ Notes:
 
 ### Replacing the placeholder content
 
-The current content is placeholder: the name **Ava Sterling**, the bio, the
+The current content is placeholder: the name **Sushmita Ghosh**, the bio, the
 measurements, the contact details (`booking@example.com`), the agency, the
 images (abstract studio scenes with no people), and the video (a generated
 animation). Replace the images and video in `media/` and update `model.json`
@@ -145,7 +145,7 @@ files stay in your repository, and the published folder contains only the genera
 - Slugs appear in the URL, so anyone who knows a slug can visit that page. The
   pages are indexable by default. To keep a profile out of search engines, set
   `"seo": { "noindex": true }` in its `model.json`. For a harder-to-find profile,
-  use an unguessable slug (for example `ava-sterling-x7k2qp`).
+  use an unguessable slug (for example `sushmita-ghosh-x7k2qp`).
 - Contact details in `model.json` are published on the page. Only add details
   the model wants public.
 - Images and videos should only be used with the model's consent and the rights to publish them.

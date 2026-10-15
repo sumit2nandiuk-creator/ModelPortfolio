@@ -147,10 +147,10 @@ test('the real models/ folder builds and the template is skipped', async () => {
   const ws = await tempWorkspace();
   try {
     const built = await build({ siteDir, outDir: ws.outDir });
-    assert.deepEqual(built, ['ava-sterling']);
-    const html = await fs.readFile(path.join(ws.outDir, 'ava-sterling', 'index.html'), 'utf8');
-    assert.match(html, /<h1[^>]*>Ava Sterling<\/h1>/);
-    assert.match(html, /src="\/ava-sterling\/media\/cover\.jpg"/);
+    assert.deepEqual(built, ['sushmita-ghosh']);
+    const html = await fs.readFile(path.join(ws.outDir, 'sushmita-ghosh', 'index.html'), 'utf8');
+    assert.match(html, /<h1[^>]*>Sushmita Ghosh<\/h1>/);
+    assert.match(html, /src="\/sushmita-ghosh\/media\/cover\.jpg"/);
     assert.equal(await exists(path.join(ws.outDir, '_template')), false);
   } finally {
     await ws.cleanup();

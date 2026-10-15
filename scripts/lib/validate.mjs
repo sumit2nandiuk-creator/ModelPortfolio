@@ -4,7 +4,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
-// URL slug = first path segment of the model's page, e.g. /ava-sterling/
+// URL slug = first path segment of the model's page, e.g. /sushmita-ghosh/
 export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 // Paths the site itself uses. A model can never take one of these.
@@ -71,7 +71,7 @@ export async function validateModel(model, { folder, dir }) {
 
   // --- Identity & URL ---------------------------------------------------
   if (!isNonEmptyString(model.slug)) {
-    fail('"slug" is required (it becomes the page URL, e.g. "ava-sterling")');
+    fail('"slug" is required (it becomes the page URL, e.g. "sushmita-ghosh")');
   } else {
     if (!SLUG_PATTERN.test(model.slug)) {
       fail(`"slug" must use lowercase letters, numbers and single hyphens only (got "${model.slug}")`);

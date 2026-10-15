@@ -3,6 +3,41 @@
    No model-specific content lives here; every profile uses the same theme.
    ========================================================================== */
 
+/* Cormorant Garamond is served from this site (not Google Fonts), so it is
+   ready on the first paint. "block" hides the text for a moment instead of
+   showing a fallback font and then swapping it, which made the name jump in size. */
+@font-face {
+  font-family: 'Cormorant Garamond';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('fonts/cormorant-garamond-latin-400-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Cormorant Garamond';
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url('fonts/cormorant-garamond-latin-500-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Cormorant Garamond';
+  font-style: normal;
+  font-weight: 600;
+  font-display: block;
+  src: url('fonts/cormorant-garamond-latin-600-normal.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Cormorant Garamond';
+  font-style: italic;
+  font-weight: 400;
+  font-display: block;
+  src: url('fonts/cormorant-garamond-latin-400-italic.woff2') format('woff2');
+}
+
 :root {
   --ink: #15130f;
   --ink-soft: #2a2620;
@@ -474,14 +509,7 @@ video {
   height: 100%;
   object-fit: cover;
   object-position: center 40%;
-  transform: scale(1.06);
-  animation: hero-settle 2.2s var(--ease) forwards;
-}
-
-@keyframes hero-settle {
-  to {
-    transform: scale(1);
-  }
+  /* No intro zoom: a scaled photo is drawn soft at the edges while it moves. */
 }
 
 .hero-shade {

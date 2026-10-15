@@ -1078,6 +1078,11 @@ main section {
     font-size: 0.82rem;
   }
 
+  /* The last menu item has no divider below it. */
+  .site-nav a:last-child {
+    border-bottom: 0;
+  }
+
   .site-nav a::after {
     display: none;
   }

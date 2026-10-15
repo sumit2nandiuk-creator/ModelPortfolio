@@ -348,7 +348,7 @@ test('hero has no visible name over the cover, a bottom button row, no tagline o
     // The name is kept for screen readers and search, but not drawn over the cover photo.
     assert.match(hero, /<h1 id="hero-title" class="sr-only">Alpha Person<\/h1>/);
     assert.doesNotMatch(hero, /hero-name|hero-content/);
-    assert.match(hero, /<div class="hero-actions">[\s\S]*View portfolio[\s\S]*Get in touch/);
+    assert.doesNotMatch(hero, /hero-actions|View portfolio|Get in touch/);
   } finally {
     await ws.cleanup();
   }
@@ -391,8 +391,10 @@ test('contact shows email, phone and WhatsApp as icon cards, with no "Based in" 
     assert.match(html, /Bookings &amp; enquiries/);
     assert.match(html, /href="mailto:sushmitaghosh0099@gmail\.com"/);
     assert.match(html, /href="tel:\+918697771768"/);
-    assert.match(html, /href="https:\/\/wa\.me\/918697771768" target="_blank" rel="noopener noreferrer"/);
-    assert.match(html, /contact-item--whatsapp/);
+    // WhatsApp is no longer a contact card; it is a floating button instead.
+    const section = html.slice(html.indexOf('<section id="contact"'), html.indexOf('</section>', html.indexOf('<section id="contact"')));
+    assert.doesNotMatch(section, /wa\.me|contact-item--whatsapp/);
+    assert.match(html, /<a class="whatsapp-float" href="https:\/\/wa\.me\/918697771768" target="_blank" rel="noopener noreferrer" aria-label="Chat on WhatsApp">/);
     assert.match(html, /<svg[^>]*>/);
     assert.doesNotMatch(html, /Based in/);
     assert.doesNotMatch(html, /Representation/);
@@ -511,6 +513,24 @@ test('every cover photo in a list needs an alt text', async () => {
         return true;
       },
     );
+  } finally {
+    await ws.cleanup();
+  }
+});
+
+test('WhatsApp is a floating button in the bottom-right corner, and only when a number is set', async () => {
+  const ws = await tempWorkspace();
+  try {
+    await fs.mkdir(ws.modelsDir, { recursive: true });
+    await writeModel(ws.modelsDir, 'wa-yes', 'Wa Yes', { contact: { email: 'a@example.com', phone: '+91 86977 71768', whatsapp: '+91 86977 71768' } });
+    await writeModel(ws.modelsDir, 'wa-no', 'Wa No', { contact: { email: 'b@example.com' } });
+    await build({ modelsDir: ws.modelsDir, siteDir, outDir: ws.outDir });
+    const yes = await fs.readFile(path.join(ws.outDir, 'wa-yes', 'index.html'), 'utf8');
+    const no = await fs.readFile(path.join(ws.outDir, 'wa-no', 'index.html'), 'utf8');
+    assert.equal((yes.match(/class="whatsapp-float"/g) ?? []).length, 1);
+    assert.doesNotMatch(no, /whatsapp-float|wa\.me/);
+    const css = await fs.readFile(path.join(siteDir, 'assets', 'site.css'), 'utf8');
+    assert.match(css, /\.whatsapp-float \{[\s\S]*?bottom: max\(20px/);
   } finally {
     await ws.cleanup();
   }

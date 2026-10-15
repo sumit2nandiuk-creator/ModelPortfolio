@@ -366,6 +366,25 @@ p {
   background: var(--ink);
 }
 
+/* The whole cover is a button that opens the photo viewer. */
+.hero-open {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  background: var(--ink);
+  cursor: zoom-in;
+}
+
+.hero-open:focus-visible {
+  outline: 2px solid var(--white);
+  outline-offset: -10px;
+}
+
 .hero-media {
   position: absolute;
   inset: 0;
@@ -433,7 +452,7 @@ main section {
 }
 
 .section {
-  padding: clamp(88px, 12vw, 160px) 0;
+  padding: clamp(48px, 6vw, 84px) 0 clamp(88px, 12vw, 160px);
 }
 
 .section-alt {

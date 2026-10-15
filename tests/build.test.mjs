@@ -439,3 +439,25 @@ test('phone and WhatsApp numbers must have at least 8 digits', async () => {
     await ws.cleanup();
   }
 });
+
+test('the cover photo is a button that opens the viewer, and every gallery photo has one too', async () => {
+  const ws = await tempWorkspace();
+  try {
+    await fs.mkdir(ws.modelsDir, { recursive: true });
+    await writeModel(ws.modelsDir, 'click-check', 'Click Check');
+    await build({ modelsDir: ws.modelsDir, siteDir, outDir: ws.outDir });
+    const html = await fs.readFile(path.join(ws.outDir, 'click-check', 'index.html'), 'utf8');
+    const hero = html.slice(html.indexOf('<section class="hero"'), html.indexOf('</section>', html.indexOf('<section class="hero"')));
+    assert.match(hero, /<button class="hero-open" type="button" data-src="\/click-check\/media\/click-check-cover\.png"[^>]*aria-label="Open cover photo"/);
+    assert.match(hero, /<img class="hero-media"/);
+    // Every gallery photo has a viewer trigger that points at the full image.
+    const triggers = html.match(/<button class="gallery-btn"[^>]*data-src="[^"]+"/g) ?? [];
+    assert.equal(triggers.length, 1);
+    assert.match(triggers[0], /data-src="\/click-check\/media\/click-check-photo\.png"/);
+    // The viewer script wires up the cover trigger.
+    const js = await fs.readFile(path.join(siteDir, 'assets', 'site.js'), 'utf8');
+    assert.match(js, /querySelector\('\.hero-open'\)/);
+  } finally {
+    await ws.cleanup();
+  }
+});

@@ -169,7 +169,8 @@
     function open(btn) {
       clearTimers();
       busy = false;
-      list = currentButtons();
+      // Gallery photos swipe through the visible set; the cover opens on its own.
+      list = btn.classList.contains('gallery-btn') ? currentButtons() : [btn];
       index = Math.max(0, list.indexOf(btn));
       showItem(index);
       place(0, 1, false, 0);
@@ -181,6 +182,9 @@
       var btn = item.querySelector('.gallery-btn');
       if (btn) btn.addEventListener('click', function () { open(btn); });
     });
+
+    var heroOpen = document.querySelector('.hero-open');
+    if (heroOpen) heroOpen.addEventListener('click', function () { open(heroOpen); });
 
     prev.addEventListener('click', function () { go(-1); });
     next.addEventListener('click', function () { go(1); });

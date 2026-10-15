@@ -116,8 +116,10 @@ function renderHero(model, ctx, available) {
   ].join('\n          ');
   return `
     <section class="hero" aria-labelledby="hero-title">
-      <img class="hero-media" src="${esc(ctx.mediaUrl(cover.file))}" alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} fetchpriority="high" decoding="async">
-      <div class="hero-shade" aria-hidden="true"></div>
+      <button class="hero-open" type="button" data-src="${esc(ctx.mediaUrl(cover.file))}" data-alt="${esc(cover.alt)}" data-caption="" aria-label="Open cover photo">
+        <img class="hero-media" src="${esc(ctx.mediaUrl(cover.file))}" alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} fetchpriority="high" decoding="async">
+        <span class="hero-shade" aria-hidden="true"></span>
+      </button>
       <h1 id="hero-title" class="sr-only">${esc(model.name)}</h1>
       ${heroButtons.trim() ? `<div class="hero-actions">
         ${heroButtons}

@@ -1,0 +1,38 @@
+{
+  "slug": "your-model-slug",
+  "name": "Full Name",
+  "tagline": "Editorial · Runway · Commercial",
+  "bio": ["First paragraph about the model.", "Second paragraph."],
+  "stats": [
+    { "label": "Height", "value": "5′8″ · 173 cm" },
+    { "label": "Eyes", "value": "Brown" },
+    { "label": "Hair", "value": "Black" }
+  ],
+  "seo": { "description": "Short description for search engines." },
+  "cover": { "file": "cover.jpg", "alt": "Describe the hero image" },
+  "photos": [
+    {
+      "file": "photo-01.jpg",
+      "title": "Project title",
+      "category": "Editorial",
+      "year": "2026",
+      "alt": "Describe the photo"
+    }
+  ],
+  "videos": [
+    {
+      "file": "showreel.mp4",
+      "poster": "showreel-poster.jpg",
+      "title": "Showreel",
+      "category": "Showreel"
+    }
+  ],
+  "contact": {
+    "email": "bookings@example.com",
+    "location": "City, Country",
+    "representation": "Agency name",
+    "instagram": "https://instagram.com/handle",
+    "linkedin": "",
+    "website": ""
+  }
+}

@@ -1,0 +1,85 @@
+{
+  "slug": "ava-sterling",
+  "name": "Ava Sterling",
+  "tagline": "Editorial · Runway · Commercial",
+  "bio": [
+    "Ava is a photogenic and versatile model with a calm, expressive presence in front of the camera. She works across editorial, runway, beauty and commercial campaigns, bringing a natural ease to every set.",
+    "Placeholder biography: replace this text with the model's own story, training, and career highlights. Two or three short paragraphs work best."
+  ],
+  "stats": [
+    { "label": "Height", "value": "5′9″ · 175 cm" },
+    { "label": "Eyes", "value": "Hazel" },
+    { "label": "Hair", "value": "Dark brown" },
+    { "label": "Shoe", "value": "UK 6 · EU 39" },
+    { "label": "Based in", "value": "Kolkata, India" },
+    { "label": "Languages", "value": "English · Bengali · Hindi" }
+  ],
+  "seo": {
+    "description": "Ava Sterling – editorial, runway and commercial model. Portfolio, videos and bookings."
+  },
+  "cover": {
+    "file": "cover.jpg",
+    "alt": "Ivory silk draped over a grey stone plinth in a light-filled studio"
+  },
+  "photos": [
+    {
+      "file": "editorial-heels.jpg",
+      "title": "Stiletto study",
+      "category": "Editorial",
+      "year": "2025",
+      "alt": "Designer stiletto heels on a cream paper backdrop"
+    },
+    {
+      "file": "beauty-perfume.jpg",
+      "title": "Rose & gold",
+      "category": "Beauty",
+      "year": "2025",
+      "alt": "Glass perfume bottle with rose petals on black marble"
+    },
+    {
+      "file": "lookbook-coat.jpg",
+      "title": "Camel wool",
+      "category": "Lookbook",
+      "year": "2024",
+      "alt": "Folded camel wool coat and leather handbag on sand-coloured backdrop"
+    },
+    {
+      "file": "editorial-velvet.jpg",
+      "title": "Emerald folds",
+      "category": "Editorial",
+      "year": "2024",
+      "alt": "Sculptural emerald velvet fabric lit with dramatic shadows"
+    },
+    {
+      "file": "campaign-summer.jpg",
+      "title": "Summer edit",
+      "category": "Campaign",
+      "year": "2024",
+      "alt": "Tortoiseshell sunglasses and silk scarf on a terracotta backdrop"
+    },
+    {
+      "file": "runway-arch.jpg",
+      "title": "Marble arch",
+      "category": "Runway",
+      "year": "2023",
+      "alt": "White sculptural marble arch casting a long shadow in an empty hall"
+    }
+  ],
+  "videos": [
+    {
+      "file": "reel-placeholder.mp4",
+      "poster": "video-poster.jpg",
+      "title": "Showreel 2026",
+      "category": "Showreel",
+      "description": "Placeholder reel. Replace with a real showreel exported as MP4 (H.264)."
+    }
+  ],
+  "contact": {
+    "email": "booking@example.com",
+    "location": "Kolkata, India",
+    "representation": "Placeholder agency name",
+    "instagram": "",
+    "linkedin": "",
+    "website": ""
+  }
+}

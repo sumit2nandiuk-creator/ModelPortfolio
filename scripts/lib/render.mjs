@@ -156,8 +156,7 @@ function renderAbout(model) {
     <section id="about" class="section about" aria-labelledby="about-title">
       <div class="container about-grid">
         <div class="about-text reveal">
-          <p class="eyebrow">About</p>
-          <h2 id="about-title" class="section-title">${esc(model.name)}</h2>
+          <p id="about-title" class="eyebrow">About</p>
           ${bio.map((p) => `<p class="lead">${esc(p)}</p>`).join('\n          ')}
         </div>
         ${

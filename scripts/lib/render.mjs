@@ -71,7 +71,16 @@ export function renderNotFoundPage({ base = '/' } = {}) {
   });
 }
 
+// Splits "Sushmita Ghosh" into a given name and a family name so the header
+// can show them as a two-line lockup. A single word becomes only a given name.
+export function splitName(name) {
+  const parts = String(name ?? '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return { given: parts[0] ?? '', family: '' };
+  return { given: parts.slice(0, -1).join(' '), family: parts[parts.length - 1] };
+}
+
 function renderHeader(model, available) {
+  const { given, family } = splitName(model.name);
   const links = [
     ['about', 'About'],
     ['portfolio', 'Portfolio'],
@@ -85,7 +94,10 @@ function renderHeader(model, available) {
   return `
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header" id="top">
-    <a class="brand" href="#top" aria-label="${esc(model.name)} – back to top">${esc(model.name)}</a>
+    <a class="brand" href="#top" aria-label="${esc(model.name)} – back to top">
+      <span class="brand-given">${esc(given)}</span>${family ? `
+      <span class="brand-family">${esc(family)}</span>` : ''}
+    </a>
     <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">
       <span class="nav-toggle-bars" aria-hidden="true"></span>
       <span class="sr-only">Menu</span>

@@ -294,3 +294,26 @@ test('base path prefixes every root-relative URL (GitHub Pages project sites)', 
     await ws.cleanup();
   }
 });
+
+test('splitName builds the two-line header lockup', async () => {
+  const { splitName } = await import('../scripts/lib/render.mjs');
+  assert.deepEqual(splitName('Sushmita Ghosh'), { given: 'Sushmita', family: 'Ghosh' });
+  assert.deepEqual(splitName('Maria de la Cruz'), { given: 'Maria de la', family: 'Cruz' });
+  assert.deepEqual(splitName('  Cher  '), { given: 'Cher', family: '' });
+  assert.deepEqual(splitName(''), { given: '', family: '' });
+});
+
+test('header shows the given and family name, with the full name for screen readers', async () => {
+  const ws = await tempWorkspace();
+  try {
+    await fs.mkdir(ws.modelsDir, { recursive: true });
+    await writeModel(ws.modelsDir, 'alpha-model', 'Alpha Person');
+    await build({ modelsDir: ws.modelsDir, siteDir, outDir: ws.outDir });
+    const html = await fs.readFile(path.join(ws.outDir, 'alpha-model', 'index.html'), 'utf8');
+    assert.match(html, /<span class="brand-given">Alpha<\/span>/);
+    assert.match(html, /<span class="brand-family">Person<\/span>/);
+    assert.match(html, /<a class="brand" href="#top" aria-label="Alpha Person – back to top">/);
+  } finally {
+    await ws.cleanup();
+  }
+});

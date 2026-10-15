@@ -474,7 +474,7 @@ video {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: clamp(36px, 7vh, 72px);
+  bottom: clamp(12px, 2.4vh, 24px);
   z-index: 2;
   display: flex;
   justify-content: center;
@@ -497,17 +497,17 @@ video {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 8px;
-  height: 8px;
-  margin: -4px 0 0 -4px;
-  border-radius: 4px;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 2.5px;
   background: rgba(255, 253, 249, 0.5);
   transition: width 0.35s var(--ease), background-color 0.35s var(--ease);
 }
 
 .carousel-dot.is-active::before {
-  width: 22px;
-  margin-left: -11px;
+  width: 14px;
+  margin-left: -7px;
   background: var(--white);
 }
 

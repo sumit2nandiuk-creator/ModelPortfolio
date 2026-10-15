@@ -118,9 +118,7 @@ function renderHero(model, ctx, available) {
     <section class="hero" aria-labelledby="hero-title">
       <img class="hero-media" src="${esc(ctx.mediaUrl(cover.file))}" alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} fetchpriority="high" decoding="async">
       <div class="hero-shade" aria-hidden="true"></div>
-      <div class="hero-content">
-        <h1 id="hero-title" class="hero-name">${esc(model.name)}</h1>
-      </div>
+      <h1 id="hero-title" class="sr-only">${esc(model.name)}</h1>
       ${heroButtons.trim() ? `<div class="hero-actions">
         ${heroButtons}
       </div>` : ''}

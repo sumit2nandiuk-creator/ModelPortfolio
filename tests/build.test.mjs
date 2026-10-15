@@ -335,7 +335,7 @@ test('every "#top" link has a real target, and the header is not the target', as
   }
 });
 
-test('hero shows the name and a bottom button row, with no tagline or scroll cue', async () => {
+test('hero has no visible name over the cover, a bottom button row, no tagline or scroll cue', async () => {
   const ws = await tempWorkspace();
   try {
     await fs.mkdir(ws.modelsDir, { recursive: true });
@@ -345,7 +345,9 @@ test('hero shows the name and a bottom button row, with no tagline or scroll cue
     const hero = html.slice(html.indexOf('<section class="hero"'), html.indexOf('</section>', html.indexOf('<section class="hero"')));
     assert.doesNotMatch(hero, /Tagline Words/);
     assert.doesNotMatch(hero, /scroll-cue/);
-    assert.match(hero, /<h1 id="hero-title" class="hero-name">Alpha Person<\/h1>/);
+    // The name is kept for screen readers and search, but not drawn over the cover photo.
+    assert.match(hero, /<h1 id="hero-title" class="sr-only">Alpha Person<\/h1>/);
+    assert.doesNotMatch(hero, /hero-name|hero-content/);
     assert.match(hero, /<div class="hero-actions">[\s\S]*View portfolio[\s\S]*Get in touch/);
   } finally {
     await ws.cleanup();

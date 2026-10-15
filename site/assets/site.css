@@ -94,6 +94,15 @@ p {
   border: 0;
 }
 
+/* Zero-size target at the very top of the page for "back to top" links. */
+.top-anchor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+}
+
 .skip-link {
   position: fixed;
   top: 12px;
@@ -130,6 +139,15 @@ p {
   text-transform: uppercase;
   color: var(--accent);
   margin-bottom: 18px;
+}
+
+/* The model's name in the About section uses the same sans-serif as the hero. */
+.about-text .section-title {
+  font-family: var(--font-body);
+  font-weight: 300;
+  letter-spacing: -0.03em;
+  font-size: clamp(2.2rem, 4.6vw, 3.8rem);
+  line-height: 1.05;
 }
 
 .section-title {
@@ -220,50 +238,29 @@ p {
   box-shadow: 0 1px 0 var(--line);
 }
 
-/* Brand lockup: given name in the serif italic, family name in spaced capitals
-   with a short rule, stacked tightly. Reads as an editorial masthead. */
+/* Brand: both names on one row in the same serif italic. */
 .brand {
   display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 7px;
+  align-items: baseline;
+  gap: 0.32em;
   text-decoration: none;
   white-space: nowrap;
   line-height: 1;
   transition: opacity 0.3s var(--ease);
 }
 
-.brand-given {
+.brand-given,
+.brand-family {
   font-family: var(--font-display);
   font-style: italic;
   font-weight: 500;
-  font-size: 1.9rem;
+  font-size: 1.7rem;
   letter-spacing: 0.005em;
-  line-height: 0.95;
-  transition: letter-spacing 0.5s var(--ease);
+  line-height: 1;
 }
 
-.brand-family {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  font-family: var(--font-body);
-  font-size: 0.58rem;
-  font-weight: 600;
-  letter-spacing: 0.42em;
-  text-transform: uppercase;
-  opacity: 0.9;
-}
-
-.brand-family::before {
-  content: '';
-  width: 26px;
-  height: 1px;
-  background: currentColor;
-  opacity: 0.6;
-}
-
-.brand:hover .brand-given {
+.brand:hover .brand-given,
+.brand:hover .brand-family {
   letter-spacing: 0.03em;
 }
 
@@ -404,12 +401,8 @@ p {
   width: 100%;
   max-width: 1240px;
   margin: 0 auto;
-  padding: calc(var(--header-h) + 40px) clamp(20px, 4vw, 48px) clamp(72px, 12vh, 130px);
+  padding: calc(var(--header-h) + 40px) clamp(20px, 4vw, 48px) clamp(150px, 24vh, 230px);
   animation: rise 1.2s var(--ease) both;
-}
-
-.hero-eyebrow {
-  color: var(--accent-soft);
 }
 
 .hero-name {
@@ -422,46 +415,32 @@ p {
   text-shadow: 0 2px 40px rgba(0, 0, 0, 0.25);
 }
 
+/* Buttons sit in a bottom row: "View portfolio" on the left, "Get in touch" on the right. */
 .hero-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-}
-
-.scroll-cue {
   position: absolute;
+  left: clamp(20px, 4vw, 48px);
   right: clamp(20px, 4vw, 48px);
-  bottom: 40px;
-  width: 26px;
-  height: 46px;
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  border-radius: 999px;
-  display: none;
+  bottom: clamp(28px, 5vh, 52px);
+  z-index: 2;
+  display: flex;
+  gap: 12px;
 }
 
-.scroll-cue span {
-  position: absolute;
-  left: 50%;
-  top: 9px;
-  width: 4px;
-  height: 8px;
-  margin-left: -2px;
-  border-radius: 2px;
-  background: var(--white);
-  animation: cue 2s var(--ease) infinite;
+.hero-actions .btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 18px;
+  white-space: nowrap;
 }
 
-@keyframes cue {
-  0% {
-    opacity: 0;
-    transform: translateY(0);
+@media (min-width: 720px) {
+  .hero-actions {
+    justify-content: space-between;
   }
-  30% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-    transform: translateY(14px);
+
+  .hero-actions .btn {
+    flex: 0 0 auto;
+    padding: 0 34px;
   }
 }
 
@@ -962,12 +941,6 @@ main section {
 
 /* Responsive --------------------------------------------------------------- */
 
-@media (min-width: 900px) {
-  .scroll-cue {
-    display: block;
-  }
-}
-
 @media (max-width: 860px) {
   .nav-toggle {
     display: block;
@@ -1022,21 +995,9 @@ main section {
     --header-h: 64px;
   }
 
-  .brand {
-    gap: 6px;
-  }
-
-  .brand-given {
-    font-size: 1.5rem;
-  }
-
+  .brand-given,
   .brand-family {
-    font-size: 0.5rem;
-    gap: 9px;
-  }
-
-  .brand-family::before {
-    width: 18px;
+    font-size: 1.45rem;
   }
 
   .stat {

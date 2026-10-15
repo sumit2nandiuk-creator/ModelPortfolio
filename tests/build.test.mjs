@@ -317,3 +317,56 @@ test('header shows the given and family name, with the full name for screen read
     await ws.cleanup();
   }
 });
+
+test('every "#top" link has a real target, and the header is not the target', async () => {
+  const ws = await tempWorkspace();
+  try {
+    await fs.mkdir(ws.modelsDir, { recursive: true });
+    await writeModel(ws.modelsDir, 'alpha-model', 'Alpha Person');
+    await build({ modelsDir: ws.modelsDir, siteDir, outDir: ws.outDir });
+    const html = await fs.readFile(path.join(ws.outDir, 'alpha-model', 'index.html'), 'utf8');
+    const targets = html.match(/id="top"/g) ?? [];
+    assert.equal(targets.length, 1, 'exactly one element has id="top"');
+    assert.doesNotMatch(html, /<header[^>]*id="top"/, 'the fixed header is not the target');
+    assert.match(html, /<div id="top" class="top-anchor"/);
+    assert.match(html, /href="#top"/);
+  } finally {
+    await ws.cleanup();
+  }
+});
+
+test('hero shows the name and a bottom button row, with no tagline or scroll cue', async () => {
+  const ws = await tempWorkspace();
+  try {
+    await fs.mkdir(ws.modelsDir, { recursive: true });
+    await writeModel(ws.modelsDir, 'alpha-model', 'Alpha Person', { tagline: 'Tagline Words' });
+    await build({ modelsDir: ws.modelsDir, siteDir, outDir: ws.outDir });
+    const html = await fs.readFile(path.join(ws.outDir, 'alpha-model', 'index.html'), 'utf8');
+    const hero = html.slice(html.indexOf('<section class="hero"'), html.indexOf('</section>', html.indexOf('<section class="hero"')));
+    assert.doesNotMatch(hero, /Tagline Words/);
+    assert.doesNotMatch(hero, /scroll-cue/);
+    assert.match(hero, /<h1 id="hero-title" class="hero-name">Alpha Person<\/h1>/);
+    assert.match(hero, /<div class="hero-actions">[\s\S]*View portfolio[\s\S]*Get in touch/);
+  } finally {
+    await ws.cleanup();
+  }
+});
+
+test('the header brand renders both names in one row', async () => {
+  const { splitName } = await import('../scripts/lib/render.mjs');
+  assert.deepEqual(splitName('Sushmita Ghosh'), { given: 'Sushmita', family: 'Ghosh' });
+});
+
+test('the Sushmita Ghosh profile has the requested stats and no shoe size', async () => {
+  const ws = await tempWorkspace();
+  try {
+    await build({ siteDir, outDir: ws.outDir });
+    const html = await fs.readFile(path.join(ws.outDir, 'sushmita-ghosh', 'index.html'), 'utf8');
+    assert.match(html, /<dt>Height<\/dt><dd>5′4″<\/dd>/);
+    assert.match(html, /<dt>Eyes<\/dt><dd>Black<\/dd>/);
+    assert.match(html, /<dt>Hair<\/dt><dd>Black<\/dd>/);
+    assert.doesNotMatch(html, /Shoe/);
+  } finally {
+    await ws.cleanup();
+  }
+});

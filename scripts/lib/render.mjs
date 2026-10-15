@@ -192,15 +192,16 @@ function renderPortfolio(model, ctx) {
     .map((photo, i) => {
       const src = ctx.mediaUrl(photo.file);
       const alt = photo.alt || photo.title;
-      const caption = [photo.category, photo.title].filter(Boolean).join(' · ');
+      // Visible caption and viewer caption show only the category; the title stays in the accessible label.
+      const caption = photo.category ?? '';
+      const label = [photo.category, photo.title].filter(Boolean).join(' · ');
       return `
         <figure class="gallery-item reveal" data-category="${esc(photo.category)}">
-          <button class="gallery-btn" type="button" data-index="${i}" data-src="${esc(src)}" data-alt="${esc(alt)}" data-caption="${esc(caption)}" aria-label="Open photo: ${esc(caption)}">
+          <button class="gallery-btn" type="button" data-index="${i}" data-src="${esc(src)}" data-alt="${esc(alt)}" data-caption="${esc(caption)}" aria-label="Open photo: ${esc(label)}">
             <img src="${esc(src)}" alt="${esc(alt)}"${dimensionAttrs(ctx.sizeOf(photo.file))} loading="lazy" decoding="async" draggable="false">
           </button>
           <figcaption class="gallery-caption">
             <span class="tag">${esc(photo.category)}</span>
-            <span class="gallery-title">${esc(photo.title)}</span>
             ${photo.year ? `<span class="gallery-year">${esc(photo.year)}</span>` : ''}
           </figcaption>
         </figure>`;

@@ -21,7 +21,7 @@ function uniqueInOrder(values) {
 function hasContact(model) {
   const c = model.contact ?? {};
   return Boolean(
-    c.email || c.phone || c.location || c.representation ||
+    c.email || c.phone || c.whatsapp ||
       c.instagram || c.linkedin || c.tiktok || c.imdb || c.website,
   );
 }
@@ -118,9 +118,7 @@ function renderHero(model, ctx, available) {
     <section class="hero" aria-labelledby="hero-title">
       <img class="hero-media" src="${esc(ctx.mediaUrl(cover.file))}" alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} fetchpriority="high" decoding="async">
       <div class="hero-shade" aria-hidden="true"></div>
-      <div class="hero-content">
-        <h1 id="hero-title" class="hero-name">${esc(model.name)}</h1>
-      </div>
+      <h1 id="hero-title" class="sr-only">${esc(model.name)}</h1>
       ${heroButtons.trim() ? `<div class="hero-actions">
         ${heroButtons}
       </div>` : ''}
@@ -235,8 +233,33 @@ function renderVideos(model, ctx) {
     </section>`;
 }
 
+// Line icons for the contact cards. Stroke-based so they inherit colour from CSS.
+const CONTACT_ICONS = {
+  mail: `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M4 7.5l8 5.5 8-5.5"/></svg>`,
+  phone: `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`,
+  whatsapp: `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 20.5l1.2-4.1A8.5 8.5 0 1 1 8 19.3z"/><path fill="currentColor" stroke="none" d="M9.1 8.4c.2-.4.4-.4.7-.4h.5c.2 0 .4.1.5.4l.7 1.6c.1.2.1.4 0 .6l-.5.7c-.1.1-.1.3 0 .4.5.9 1.3 1.7 2.3 2.2.1.1.3.1.4 0l.7-.6c.2-.1.4-.2.6 0l1.5.8c.2.1.3.3.3.5v.5c0 .3-.1.6-.4.8-.6.5-1.4.6-2.2.3-2-.7-3.6-2-4.7-3.8-.4-.7-.6-1.4-.6-2.1 0-.5.1-1 .2-1.5z"/></svg>`,
+};
+
+function digitsOnly(value) {
+  return String(value ?? '').replace(/\D/g, '');
+}
+
+function contactCard({ href, icon, label, value, variant = '', external = false }) {
+  const extra = external ? ' target="_blank" rel="noopener noreferrer"' : '';
+  return `
+          <a class="contact-item${variant ? ` contact-item--${variant}` : ''}" href="${esc(href)}"${extra}>
+            <span class="contact-icon">${icon}</span>
+            <span class="contact-text">
+              <span class="contact-label">${esc(label)}</span>
+              <span class="contact-value">${esc(value)}</span>
+            </span>
+          </a>`;
+}
+
 function renderContact(model) {
   const c = model.contact ?? {};
+  if (!hasContact(model)) return '';
+
   const socials = [
     ['Instagram', c.instagram],
     ['LinkedIn', c.linkedin],
@@ -245,33 +268,47 @@ function renderContact(model) {
     ['Website', c.website],
   ].filter(([, url]) => url);
 
-  if (!hasContact(model)) return '';
-
-  const phoneDigits = c.phone ? c.phone.replace(/[^+\d]/g, '') : '';
+  const cards = [];
+  if (c.email) {
+    cards.push(contactCard({ href: `mailto:${c.email}`, icon: CONTACT_ICONS.mail, label: 'Email', value: c.email }));
+  }
+  if (c.phone) {
+    cards.push(contactCard({ href: `tel:+${digitsOnly(c.phone)}`, icon: CONTACT_ICONS.phone, label: 'Phone', value: c.phone }));
+  }
+  if (c.whatsapp) {
+    cards.push(
+      contactCard({
+        href: `https://wa.me/${digitsOnly(c.whatsapp)}`,
+        icon: CONTACT_ICONS.whatsapp,
+        label: 'WhatsApp',
+        value: c.whatsapp,
+        variant: 'whatsapp',
+        external: true,
+      }),
+    );
+  }
 
   return `
     <section id="contact" class="section contact" aria-labelledby="contact-title">
-      <div class="container contact-grid">
-        <div class="reveal">
+      <div class="container">
+        <div class="contact-head reveal">
           <p class="eyebrow">Bookings &amp; enquiries</p>
           <h2 id="contact-title" class="contact-heading">Let’s create something <em>beautiful</em> together.</h2>
-          ${
-            c.email
-              ? `<a class="contact-email" href="mailto:${esc(c.email)}">${esc(c.email)}</a>`
-              : ''
-          }
         </div>
-        <ul class="contact-list reveal">
-          ${c.location ? `<li><span class="label">Based in</span><span>${esc(c.location)}</span></li>` : ''}
-          ${c.representation ? `<li><span class="label">Representation</span><span>${esc(c.representation)}</span></li>` : ''}
-          ${c.phone ? `<li><span class="label">Phone</span><a href="tel:${esc(phoneDigits)}">${esc(c.phone)}</a></li>` : ''}
+        ${cards.length ? `<div class="contact-items reveal">${cards.join('')}
+        </div>` : ''}
+        ${
+          socials.length
+            ? `<ul class="contact-socials reveal">
           ${socials
             .map(
               ([label, url]) =>
-                `<li><span class="label">${esc(label)}</span><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''))}</a></li>`,
+                `<li><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a></li>`,
             )
             .join('\n          ')}
-        </ul>
+        </ul>`
+            : ''
+        }
       </div>
     </section>`;
 }

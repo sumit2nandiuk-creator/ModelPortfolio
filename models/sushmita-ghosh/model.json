@@ -10,7 +10,6 @@
     { "label": "Height", "value": "5′4″" },
     { "label": "Eyes", "value": "Black" },
     { "label": "Hair", "value": "Black" },
-    { "label": "Based in", "value": "Kolkata, India" },
     { "label": "Languages", "value": "English · Bengali · Hindi" }
   ],
   "seo": {
@@ -74,9 +73,9 @@
     }
   ],
   "contact": {
-    "email": "booking@example.com",
-    "location": "Kolkata, India",
-    "representation": "Placeholder agency name",
+    "email": "sushmitaghosh0099@gmail.com",
+    "phone": "+91 86977 71768",
+    "whatsapp": "+91 86977 71768",
     "instagram": "",
     "linkedin": "",
     "website": ""

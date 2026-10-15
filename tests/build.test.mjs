@@ -335,7 +335,7 @@ test('every "#top" link has a real target, and the header is not the target', as
   }
 });
 
-test('hero shows the name and a bottom button row, with no tagline or scroll cue', async () => {
+test('hero has no visible name over the cover, a bottom button row, no tagline or scroll cue', async () => {
   const ws = await tempWorkspace();
   try {
     await fs.mkdir(ws.modelsDir, { recursive: true });
@@ -345,7 +345,9 @@ test('hero shows the name and a bottom button row, with no tagline or scroll cue
     const hero = html.slice(html.indexOf('<section class="hero"'), html.indexOf('</section>', html.indexOf('<section class="hero"')));
     assert.doesNotMatch(hero, /Tagline Words/);
     assert.doesNotMatch(hero, /scroll-cue/);
-    assert.match(hero, /<h1 id="hero-title" class="hero-name">Alpha Person<\/h1>/);
+    // The name is kept for screen readers and search, but not drawn over the cover photo.
+    assert.match(hero, /<h1 id="hero-title" class="sr-only">Alpha Person<\/h1>/);
+    assert.doesNotMatch(hero, /hero-name|hero-content/);
     assert.match(hero, /<div class="hero-actions">[\s\S]*View portfolio[\s\S]*Get in touch/);
   } finally {
     await ws.cleanup();
@@ -366,6 +368,73 @@ test('the Sushmita Ghosh profile has the requested stats and no shoe size', asyn
     assert.match(html, /<dt>Eyes<\/dt><dd>Black<\/dd>/);
     assert.match(html, /<dt>Hair<\/dt><dd>Black<\/dd>/);
     assert.doesNotMatch(html, /Shoe/);
+  } finally {
+    await ws.cleanup();
+  }
+});
+
+test('contact shows email, phone and WhatsApp as icon cards, with no "Based in" or "Representation"', async () => {
+  const ws = await tempWorkspace();
+  try {
+    await fs.mkdir(ws.modelsDir, { recursive: true });
+    await writeModel(ws.modelsDir, 'contact-check', 'Contact Check', {
+      contact: {
+        email: 'sushmitaghosh0099@gmail.com',
+        phone: '+91 86977 71768',
+        whatsapp: '+91 86977 71768',
+        location: 'Somewhere',
+        representation: 'Some agency',
+      },
+    });
+    await build({ modelsDir: ws.modelsDir, siteDir, outDir: ws.outDir });
+    const html = await fs.readFile(path.join(ws.outDir, 'contact-check', 'index.html'), 'utf8');
+    assert.match(html, /Bookings &amp; enquiries/);
+    assert.match(html, /href="mailto:sushmitaghosh0099@gmail\.com"/);
+    assert.match(html, /href="tel:\+918697771768"/);
+    assert.match(html, /href="https:\/\/wa\.me\/918697771768" target="_blank" rel="noopener noreferrer"/);
+    assert.match(html, /contact-item--whatsapp/);
+    assert.match(html, /<svg[^>]*>/);
+    assert.doesNotMatch(html, /Based in/);
+    assert.doesNotMatch(html, /Representation/);
+    assert.doesNotMatch(html, /Somewhere|Some agency/);
+    assert.doesNotMatch(html, /contact-email|contact-list/);
+  } finally {
+    await ws.cleanup();
+  }
+});
+
+test('the Sushmita Ghosh page has the real contact details and no removed sections', async () => {
+  const ws = await tempWorkspace();
+  try {
+    await build({ siteDir, outDir: ws.outDir });
+    const html = await fs.readFile(path.join(ws.outDir, 'sushmita-ghosh', 'index.html'), 'utf8');
+    assert.match(html, /href="mailto:sushmitaghosh0099@gmail\.com"/);
+    assert.match(html, /href="tel:\+918697771768"/);
+    assert.match(html, /wa\.me\/918697771768/);
+    assert.doesNotMatch(html, /Based in/);
+    assert.doesNotMatch(html, /Representation/);
+  } finally {
+    await ws.cleanup();
+  }
+});
+
+test('phone and WhatsApp numbers must have at least 8 digits', async () => {
+  const ws = await tempWorkspace();
+  try {
+    await fs.mkdir(ws.modelsDir, { recursive: true });
+    await writeModel(ws.modelsDir, 'short-phone', 'Short Phone', {
+      contact: { phone: '12-34', whatsapp: 'call me' },
+    });
+    await assert.rejects(
+      () => build({ modelsDir: ws.modelsDir, siteDir, outDir: ws.outDir }),
+      (err) => {
+        assert.ok(err instanceof BuildError);
+        const text = err.errors.join('\n');
+        assert.match(text, /\[short-phone\].*"contact\.phone" must be a phone number/);
+        assert.match(text, /\[short-phone\].*"contact\.whatsapp" must be a phone number/);
+        return true;
+      },
+    );
   } finally {
     await ws.cleanup();
   }

@@ -406,7 +406,7 @@ p {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(clamp(28px, 5vh, 52px) + 66px);
+  bottom: clamp(36px, 7vh, 72px);
   z-index: 2;
   display: flex;
   justify-content: center;
@@ -472,35 +472,6 @@ p {
       rgba(12, 10, 8, 0.1) 45%,
       rgba(12, 10, 8, 0.78) 100%
     );
-}
-
-/* Buttons sit in a bottom row: "View portfolio" on the left, "Get in touch" on the right. */
-.hero-actions {
-  position: absolute;
-  left: clamp(20px, 4vw, 48px);
-  right: clamp(20px, 4vw, 48px);
-  bottom: clamp(28px, 5vh, 52px);
-  z-index: 2;
-  display: flex;
-  gap: 12px;
-}
-
-.hero-actions .btn {
-  flex: 1 1 0;
-  min-width: 0;
-  padding: 0 18px;
-  white-space: nowrap;
-}
-
-@media (min-width: 720px) {
-  .hero-actions {
-    justify-content: space-between;
-  }
-
-  .hero-actions .btn {
-    flex: 0 0 auto;
-    padding: 0 34px;
-  }
 }
 
 /* Sections ----------------------------------------------------------------- */

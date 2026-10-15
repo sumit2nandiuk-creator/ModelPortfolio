@@ -110,13 +110,9 @@ function renderHeader(model, available) {
   </header>`;
 }
 
-function renderHero(model, ctx, available) {
+function renderHero(model, ctx) {
   const covers = coverList(model);
   const many = covers.length > 1;
-  const heroButtons = [
-    available.portfolio ? `<a class="btn btn-light" href="#portfolio">View portfolio</a>` : '',
-    available.contact ? `<a class="btn btn-outline" href="#contact">Get in touch</a>` : '',
-  ].join('\n          ');
 
   // One slide per cover photo. A tap opens the viewer; a drag moves the slides instead.
   const slides = covers
@@ -148,9 +144,6 @@ function renderHero(model, ctx, available) {
       </div>
       <span class="hero-shade" aria-hidden="true"></span>
       <h1 id="hero-title" class="sr-only">${esc(model.name)}</h1>${dots}
-      ${heroButtons.trim() ? `<div class="hero-actions">
-        ${heroButtons}
-      </div>` : ''}
     </section>`;
 }
 
@@ -377,7 +370,7 @@ export function renderModelPage(model, ctx) {
   const body = `<div id="top" class="top-anchor" aria-hidden="true"></div>
   ${renderHeader(model, available)}
   <main id="main">
-    ${renderHero(model, ctx, available)}
+    ${renderHero(model, ctx)}
     ${renderAbout(model)}
     ${renderPortfolio(model, ctx)}
     ${renderVideos(model, ctx)}

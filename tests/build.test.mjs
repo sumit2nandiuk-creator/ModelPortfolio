@@ -348,7 +348,7 @@ test('hero has no visible name over the cover, a bottom button row, no tagline o
     // The name is kept for screen readers and search, but not drawn over the cover photo.
     assert.match(hero, /<h1 id="hero-title" class="sr-only">Alpha Person<\/h1>/);
     assert.doesNotMatch(hero, /hero-name|hero-content/);
-    assert.match(hero, /<div class="hero-actions">[\s\S]*View portfolio[\s\S]*Get in touch/);
+    assert.doesNotMatch(hero, /hero-actions|View portfolio|Get in touch/);
   } finally {
     await ws.cleanup();
   }

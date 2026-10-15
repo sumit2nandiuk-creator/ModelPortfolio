@@ -221,10 +221,10 @@ p {
 }
 
 .brand {
-  font-family: var(--font-display);
-  font-size: 1.55rem;
-  font-weight: 500;
-  letter-spacing: 0.01em;
+  font-family: var(--font-body);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   text-decoration: none;
   white-space: nowrap;
 }
@@ -371,10 +371,11 @@ p {
 }
 
 .hero-name {
-  font-size: clamp(3.8rem, 13vw, 11rem);
-  font-weight: 400;
-  line-height: 0.92;
-  letter-spacing: -0.02em;
+  font-family: var(--font-body);
+  font-size: clamp(2.8rem, 10vw, 8.5rem);
+  font-weight: 300;
+  line-height: 1.02;
+  letter-spacing: -0.035em;
   margin-bottom: 36px;
   text-shadow: 0 2px 40px rgba(0, 0, 0, 0.25);
 }
@@ -774,6 +775,7 @@ main section {
 /* Lightbox ----------------------------------------------------------------- */
 
 .lightbox {
+  touch-action: pan-y;
   width: 100vw;
   height: 100vh;
   height: 100dvh;
@@ -812,6 +814,8 @@ main section {
 
 .lb-figure {
   margin: 0;
+  will-change: transform, opacity;
+  touch-action: pan-y;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -977,7 +981,7 @@ main section {
   }
 
   .brand {
-    font-size: 1.3rem;
+    font-size: 0.95rem;
   }
 
   .stat {

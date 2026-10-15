@@ -164,6 +164,47 @@ though. A public repository makes every model's `model.json` and media files
 visible on GitHub. Keep the repository private if that is a concern (Pages on a
 private repository needs a GitHub plan that supports it).
 
+## Admin page and R2 media
+
+The admin page at `/admin/` lets you edit a model's details and add or remove cover photos, portfolio photos and videos without touching the code. It is served with `noindex`, and every request needs the admin token. The site itself stays static on GitHub Pages. A small Cloudflare Worker (in `worker/`) does the privileged work: it holds the token and a GitHub token, saves `models/<slug>/model.json` through the GitHub API (which triggers a Pages deploy), and uploads files to an R2 bucket.
+
+Photos and videos can live in either place:
+
+- **In the repo** (`models/<slug>/media/`): the file is published with the site. Removing it from the profile removes it from the site on the next save.
+- **In R2** (uploaded through the admin page): the file is served from the R2 public URL, so it does not count against the repo size. Removing it from the profile deletes the object from R2 after the save succeeds.
+
+Hosted files are referenced in `model.json` by their full `https://` URL. Optional `width`/`height` on photos and covers, and `posterWidth`/`posterHeight` on videos, reserve layout space before the file loads.
+
+### One-time setup
+
+1. **Create the R2 bucket.** In the Cloudflare dashboard go to R2, create a bucket named `portfolio-media` (or change `bucket_name` in `worker/wrangler.toml`).
+2. **Make it public.** Open the bucket's Settings, then Public access, and enable the `r2.dev` subdomain or attach a custom domain. Copy the public URL, for example `https://media.example.com`, into `R2_PUBLIC_BASE` in `worker/wrangler.toml` (no trailing slash).
+3. **Create the GitHub token.** In GitHub, create a fine-grained personal access token that can read and write **Contents** on this repository only. Keep it private.
+4. **Choose an admin token.** Any long random string. It is the password you type into the admin page.
+5. **Deploy the Worker.** From the `worker/` folder:
+
+   ```sh
+   cd worker
+   npx wrangler login
+   npx wrangler secret put ADMIN_TOKEN    # the admin password
+   npx wrangler secret put GITHUB_TOKEN   # the GitHub token from step 3
+   npx wrangler deploy
+   ```
+
+   Secrets are stored by Cloudflare and are never written to the repo. Wrangler prints the Worker's address, for example `https://portfolio-admin.<your-subdomain>.workers.dev`.
+6. **Point the admin page at the Worker.** Set `apiBase` in `site/admin/config.js` to that address (no trailing slash), commit, and wait for the Pages deploy.
+7. **Open the admin.** Go to `https://sumit2nandiuk-creator.github.io/ModelPortfolio/admin/`, enter the admin token, and pick a profile.
+
+`ADMIN_ORIGIN` in `worker/wrangler.toml` must match the origin the admin page is served from (`https://<user>.github.io`). Change it if you fork the repo.
+
+### Notes
+
+- A new profile needs at least one cover photo before its first save. Deleting a whole model is not supported in the admin; remove its folder by hand.
+- Uploads are checked for size (25 MB for photos, 95 MB for videos) and file type. The build still checks that repo files exist.
+- If two people edit the same profile, the second save is refused with a conflict message. Reload the profile and make the change again.
+- Files uploaded but never saved stay in R2. Delete them in the R2 dashboard if you abandon an edit.
+- Run `npm test` after changing the Worker or the build. The Worker tests use a fake GitHub and a fake R2 bucket, so they do not contact Cloudflare.
+
 ## Privacy notes
 
 - Slugs appear in the URL, so anyone who knows a slug can visit that page. The

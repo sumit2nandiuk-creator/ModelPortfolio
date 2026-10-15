@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Portfolio admin</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="admin.css">
+  <script src="config.js"></script>
+  <script src="admin.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <strong class="brand">Portfolio admin</strong>
+    <div class="top-actions" id="top-actions" hidden>
+      <select id="model-picker" aria-label="Choose a profile"></select>
+      <button type="button" class="btn ghost" id="new-model">New profile</button>
+      <a class="btn ghost" id="view-site" target="_blank" rel="noopener">View site</a>
+      <button type="button" class="btn ghost" id="sign-out">Sign out</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section id="login" class="card login" hidden>
+      <h1>Sign in</h1>
+      <p class="muted">Enter the admin token to manage the profiles. It is kept only for this browser session.</p>
+      <form id="login-form">
+        <label>Admin token
+          <input id="token" type="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="btn primary">Sign in</button>
+        <p id="login-error" class="error" role="alert"></p>
+      </form>
+    </section>
+
+    <section id="setup" class="card" hidden>
+      <h1>Setup needed</h1>
+      <p>Set <code>apiBase</code> in <code>admin/config.js</code> to the address of the admin Worker. The README explains how to deploy it.</p>
+    </section>
+
+    <section id="editor" hidden>
+      <div id="status" class="status" role="status" aria-live="polite"></div>
+      <div id="editor-body"></div>
+      <div class="savebar">
+        <span id="dirty-note" class="muted"></span>
+        <button type="button" class="btn primary" id="save">Save changes</button>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

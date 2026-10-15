@@ -59,7 +59,8 @@ heavily commented by example in `models/_template/model.json`.
 | Field | Purpose |
 | --- | --- |
 | `slug` | URL segment. Must equal the folder name. Lowercase letters, numbers, and hyphens only. |
-| `name`, `tagline` | Shown in the hero, header, and page title. |
+| `name` | Shown in the hero, header, and page title. |
+| `tagline` | Optional. Added after the name in the page title, for example "Name · Tagline". |
 | `bio` | Array of paragraphs for the About section. |
 | `stats` | Array of `{ "label", "value" }` shown as the measurements list. |
 | `seo.description`, `seo.noindex` | Search-engine description, and `true` to keep the page out of search results (both optional). |

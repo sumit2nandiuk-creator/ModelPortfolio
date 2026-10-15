@@ -1,7 +1,6 @@
 {
   "slug": "your-model-slug",
   "name": "Full Name",
-  "tagline": "Editorial · Runway · Commercial",
   "bio": ["First paragraph about the model.", "Second paragraph."],
   "stats": [
     { "label": "Height", "value": "5′8″ · 173 cm" },

@@ -364,8 +364,9 @@ function renderLightbox() {
 //   sizeOf(file)   -> { width, height } or null
 //   year           -> footer year
 export function renderModelPage(model, ctx) {
-  const title = `${model.name} · ${model.tagline}`;
-  const description = model.seo?.description || model.tagline;
+  // The tagline is optional. When it is set, it follows the name in the page title.
+  const title = model.tagline ? `${model.name} · ${model.tagline}` : model.name;
+  const description = model.seo?.description || model.tagline || '';
   const cover = ctx.mediaUrl(coverList(model)[0].file);
 
   const available = sectionsFor(model);

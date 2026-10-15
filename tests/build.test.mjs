@@ -440,7 +440,7 @@ test('phone and WhatsApp numbers must have at least 8 digits', async () => {
   }
 });
 
-test('the cover photo is a button that opens the viewer, and every gallery photo has one too', async () => {
+test('the cover photo is a tappable slide that opens the viewer, and every gallery photo has one too', async () => {
   const ws = await tempWorkspace();
   try {
     await fs.mkdir(ws.modelsDir, { recursive: true });
@@ -448,7 +448,7 @@ test('the cover photo is a button that opens the viewer, and every gallery photo
     await build({ modelsDir: ws.modelsDir, siteDir, outDir: ws.outDir });
     const html = await fs.readFile(path.join(ws.outDir, 'click-check', 'index.html'), 'utf8');
     const hero = html.slice(html.indexOf('<section class="hero"'), html.indexOf('</section>', html.indexOf('<section class="hero"')));
-    assert.match(hero, /<button class="hero-open" type="button" data-src="\/click-check\/media\/click-check-cover\.png"[^>]*aria-label="Open cover photo"/);
+    assert.match(hero, /<button class="carousel-slide" type="button" data-src="\/click-check\/media\/click-check-cover\.png"[^>]*aria-label="Open cover photo"/);
     assert.match(hero, /<img class="hero-media"/);
     // Every gallery photo has a viewer trigger that points at the full image.
     const triggers = html.match(/<button class="gallery-btn"[^>]*data-src="[^"]+"/g) ?? [];
@@ -456,7 +456,61 @@ test('the cover photo is a button that opens the viewer, and every gallery photo
     assert.match(triggers[0], /data-src="\/click-check\/media\/click-check-photo\.png"/);
     // The viewer script wires up the cover trigger.
     const js = await fs.readFile(path.join(siteDir, 'assets', 'site.js'), 'utf8');
-    assert.match(js, /querySelector\('\.hero-open'\)/);
+    assert.match(js, /function createCarousel\(/);
+    assert.match(js, /data-goto/);
+  } finally {
+    await ws.cleanup();
+  }
+});
+
+test('a cover list builds a slideshow with dots and autoplay; a single cover has neither', async () => {
+  const ws = await tempWorkspace();
+  try {
+    await fs.mkdir(ws.modelsDir, { recursive: true });
+    await writeModel(ws.modelsDir, 'slides-check', 'Slides Check', {
+      cover: [
+        { file: 'slides-check-cover.png', alt: 'First cover' },
+        { file: 'slides-check-photo.png', alt: 'Second cover' },
+        { file: 'slides-check-cover.png', alt: 'Third cover' },
+      ],
+    });
+    await writeModel(ws.modelsDir, 'single-check', 'Single Check');
+    await build({ modelsDir: ws.modelsDir, siteDir, outDir: ws.outDir });
+
+    const many = await fs.readFile(path.join(ws.outDir, 'slides-check', 'index.html'), 'utf8');
+    const manyHero = many.slice(many.indexOf('<section class="hero"'), many.indexOf('</section>', many.indexOf('<section class="hero"')));
+    assert.equal((manyHero.match(/class="carousel-slide"/g) ?? []).length, 3);
+    assert.equal((manyHero.match(/class="carousel-dot(?: is-active)?"/g) ?? []).length, 3);
+    assert.match(manyHero, /data-autoplay="6000"/);
+    assert.match(manyHero, /aria-label="Open cover photo 2 of 3"/);
+    // Only the first cover is eager; the rest load lazily.
+    assert.match(manyHero, /fetchpriority="high"/);
+
+    const single = await fs.readFile(path.join(ws.outDir, 'single-check', 'index.html'), 'utf8');
+    const singleHero = single.slice(single.indexOf('<section class="hero"'), single.indexOf('</section>', single.indexOf('<section class="hero"')));
+    assert.equal((singleHero.match(/class="carousel-slide"/g) ?? []).length, 1);
+    assert.doesNotMatch(singleHero, /carousel-dot/);
+    assert.match(singleHero, /data-autoplay="0"/);
+  } finally {
+    await ws.cleanup();
+  }
+});
+
+test('every cover photo in a list needs an alt text', async () => {
+  const ws = await tempWorkspace();
+  try {
+    await fs.mkdir(ws.modelsDir, { recursive: true });
+    await writeModel(ws.modelsDir, 'no-alt', 'No Alt', {
+      cover: [{ file: 'no-alt-cover.png', alt: 'Fine' }, { file: 'no-alt-photo.png' }],
+    });
+    await assert.rejects(
+      () => build({ modelsDir: ws.modelsDir, siteDir, outDir: ws.outDir }),
+      (err) => {
+        assert.ok(err instanceof BuildError);
+        assert.match(err.errors.join('\n'), /\[no-alt\].*"cover\[1\]\.alt" is required/);
+        return true;
+      },
+    );
   } finally {
     await ws.cleanup();
   }

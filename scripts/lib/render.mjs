@@ -2,6 +2,8 @@
 // Each call only ever receives ONE model's data, so a page can never contain
 // another model's name, photos or links.
 
+import { coverList } from './validate.mjs';
+
 const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
 export function esc(value) {
@@ -109,18 +111,43 @@ function renderHeader(model, available) {
 }
 
 function renderHero(model, ctx, available) {
-  const cover = model.cover;
+  const covers = coverList(model);
+  const many = covers.length > 1;
   const heroButtons = [
     available.portfolio ? `<a class="btn btn-light" href="#portfolio">View portfolio</a>` : '',
     available.contact ? `<a class="btn btn-outline" href="#contact">Get in touch</a>` : '',
   ].join('\n          ');
+
+  // One slide per cover photo. A tap opens the viewer; a drag moves the slides instead.
+  const slides = covers
+    .map((cover, i) => {
+      const src = ctx.mediaUrl(cover.file);
+      const label = many ? `Open cover photo ${i + 1} of ${covers.length}` : 'Open cover photo';
+      return `
+        <button class="carousel-slide" type="button" data-src="${esc(src)}" data-alt="${esc(cover.alt)}" data-caption="" aria-label="${esc(label)}">
+          <img class="hero-media" src="${esc(src)}" alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} ${i === 0 ? 'fetchpriority="high"' : 'loading="lazy"'} decoding="async">
+        </button>`;
+    })
+    .join('');
+
+  const dots = many
+    ? `
+      <div class="carousel-dots">
+        ${covers
+          .map(
+            (_, i) =>
+              `<button class="carousel-dot${i === 0 ? ' is-active' : ''}" type="button" data-goto="${i}" aria-label="Show cover photo ${i + 1}"></button>`,
+          )
+          .join('\n        ')}
+      </div>`
+    : '';
+
   return `
     <section class="hero" aria-labelledby="hero-title">
-      <button class="hero-open" type="button" data-src="${esc(ctx.mediaUrl(cover.file))}" data-alt="${esc(cover.alt)}" data-caption="" aria-label="Open cover photo">
-        <img class="hero-media" src="${esc(ctx.mediaUrl(cover.file))}" alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} fetchpriority="high" decoding="async">
-        <span class="hero-shade" aria-hidden="true"></span>
-      </button>
-      <h1 id="hero-title" class="sr-only">${esc(model.name)}</h1>
+      <div class="carousel hero-carousel" role="region" aria-roledescription="carousel" aria-label="Cover photos" data-autoplay="${many ? 6000 : 0}">${slides}
+      </div>
+      <span class="hero-shade" aria-hidden="true"></span>
+      <h1 id="hero-title" class="sr-only">${esc(model.name)}</h1>${dots}
       ${heroButtons.trim() ? `<div class="hero-actions">
         ${heroButtons}
       </div>` : ''}
@@ -331,11 +358,9 @@ function renderLightbox() {
     <div class="lb-inner">
       <button class="lb-btn lb-close" type="button" aria-label="Close photo viewer">✕</button>
       <button class="lb-btn lb-prev" type="button" aria-label="Previous photo">‹</button>
-      <figure class="lb-figure">
-        <img id="lb-img" alt="">
-        <figcaption id="lb-caption"></figcaption>
-      </figure>
+      <div id="lb-stage" class="carousel lb-stage" role="region" aria-roledescription="carousel" aria-label="Photos"></div>
       <button class="lb-btn lb-next" type="button" aria-label="Next photo">›</button>
+      <p id="lb-caption" class="lb-caption" hidden></p>
     </div>
   </dialog>`;
 }
@@ -348,7 +373,7 @@ function renderLightbox() {
 export function renderModelPage(model, ctx) {
   const title = `${model.name} · ${model.tagline}`;
   const description = model.seo?.description || model.tagline;
-  const cover = ctx.mediaUrl(model.cover.file);
+  const cover = ctx.mediaUrl(coverList(model)[0].file);
 
   const available = sectionsFor(model);
   const body = `<div id="top" class="top-anchor" aria-hidden="true"></div>

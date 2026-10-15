@@ -366,23 +366,79 @@ p {
   background: var(--ink);
 }
 
-/* The whole cover is a button that opens the photo viewer. */
-.hero-open {
+/* Carousel: slides sit side by side; the script moves them with the finger. */
+.carousel {
+  position: relative;
+  overflow: hidden;
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.carousel-slide {
   position: absolute;
   inset: 0;
-  z-index: 0;
-  display: block;
   margin: 0;
   padding: 0;
   border: 0;
   overflow: hidden;
+  display: block;
   background: var(--ink);
   cursor: zoom-in;
+  will-change: transform;
 }
 
-.hero-open:focus-visible {
+.carousel-slide:focus-visible {
   outline: 2px solid var(--white);
   outline-offset: -10px;
+}
+
+.hero-carousel {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+/* Dots show which cover photo is on screen. They sit just above the button row. */
+.carousel-dots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(clamp(28px, 5vh, 52px) + 66px);
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+}
+
+.carousel-dot {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.carousel-dot::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 4px;
+  background: rgba(255, 253, 249, 0.5);
+  transition: width 0.35s var(--ease), background-color 0.35s var(--ease);
+}
+
+.carousel-dot.is-active::before {
+  width: 22px;
+  margin-left: -11px;
+  background: var(--white);
 }
 
 .hero-media {
@@ -392,7 +448,6 @@ p {
   height: 100%;
   object-fit: cover;
   object-position: center 40%;
-  z-index: -2;
   transform: scale(1.06);
   animation: hero-settle 2.2s var(--ease) forwards;
 }
@@ -406,7 +461,8 @@ p {
 .hero-shade {
   position: absolute;
   inset: 0;
-  z-index: -1;
+  z-index: 1;
+  pointer-events: none;
   background: linear-gradient(
       180deg,
       rgba(12, 10, 8, 0.45) 0%,
@@ -859,35 +915,43 @@ main section {
   height: 100%;
   display: grid;
   grid-template-columns: 64px 1fr 64px;
+  grid-template-rows: 1fr auto;
   align-items: center;
   padding: 56px 12px 40px;
 }
 
-.lb-figure {
-  margin: 0;
-  will-change: transform, opacity;
-  touch-action: pan-y;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
+/* The viewer stage holds the photos; each photo is centred in its slide. */
+.lb-stage {
+  height: 100%;
   min-width: 0;
   min-height: 0;
-  height: 100%;
+  touch-action: pan-y;
 }
 
-#lb-img {
-  max-width: 100%;
-  max-height: calc(100% - 48px);
+.lb-stage .carousel-slide {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+}
+
+.lb-stage .carousel-slide img {
+  display: block;
   width: auto;
   height: auto;
+  max-width: 100%;
+  max-height: calc(100% - 24px);
   object-fit: contain;
   border-radius: 2px;
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  -webkit-user-drag: none;
 }
 
-#lb-caption {
+.lb-caption {
+  grid-column: 2;
+  grid-row: 2;
+  margin: 14px 0 0;
   font-family: var(--font-display);
   font-size: 1.2rem;
   color: rgba(255, 253, 249, 0.85);

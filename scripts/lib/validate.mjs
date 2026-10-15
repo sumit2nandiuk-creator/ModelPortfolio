@@ -127,11 +127,16 @@ export async function validateModel(model, { folder, dir }) {
     await checkMedia({ file: entry.poster }, `${where}.poster`, IMAGE_EXTENSIONS);
   }
 
-  if (!model.cover) {
-    fail('"cover" is required (the hero image)');
+  // "cover" is the hero slideshow: a list of photos (a single {file, alt} object also works).
+  const covers = coverList(model);
+  if (!covers.length) {
+    fail('"cover" is required (the hero image, or a list of hero images)');
   } else {
-    await checkMedia(model.cover, 'cover', IMAGE_EXTENSIONS);
-    if (!isNonEmptyString(model.cover.alt)) fail('"cover.alt" is required for accessibility');
+    for (const [i, cover] of covers.entries()) {
+      const where = Array.isArray(model.cover) ? `cover[${i}]` : 'cover';
+      await checkMedia(cover, where, IMAGE_EXTENSIONS);
+      if (!isNonEmptyString(cover?.alt)) fail(`"${where}.alt" is required for accessibility`);
+    }
   }
 
   if (model.photos !== undefined) {
@@ -188,10 +193,16 @@ export async function validateModel(model, { folder, dir }) {
   return errors;
 }
 
+// The hero slideshow photos, as a list. Accepts a list or a single {file, alt} object.
+export function coverList(model) {
+  if (Array.isArray(model.cover)) return model.cover;
+  return model.cover ? [model.cover] : [];
+}
+
 // Every media file a model's page depends on (and therefore must be published).
 export function referencedMediaFiles(model) {
   const files = new Set();
-  if (model.cover?.file) files.add(model.cover.file);
+  for (const cover of coverList(model)) if (cover?.file) files.add(cover.file);
   for (const photo of model.photos ?? []) files.add(photo.file);
   for (const video of model.videos ?? []) {
     files.add(video.file);

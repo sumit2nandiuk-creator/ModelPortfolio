@@ -1,0 +1,11 @@
+# Generated site output
+dist/
+
+# Dependencies (none are required, but keep npm artefacts out of Git)
+node_modules/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

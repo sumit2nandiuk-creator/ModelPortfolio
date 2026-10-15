@@ -370,6 +370,7 @@ p {
 .carousel {
   position: relative;
   overflow: hidden;
+  overscroll-behavior-x: contain;
   touch-action: pan-y;
   -webkit-user-select: none;
   user-select: none;
@@ -385,7 +386,8 @@ p {
   display: block;
   background: var(--ink);
   cursor: zoom-in;
-  will-change: transform;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
 }
 
 .carousel-slide:focus-visible {
@@ -883,6 +885,7 @@ main section {
 
 .lightbox {
   touch-action: pan-y;
+  overscroll-behavior: contain;
   width: 100vw;
   height: 100vh;
   height: 100dvh;
@@ -906,84 +909,95 @@ main section {
 }
 
 .lightbox[open] .lb-inner {
-  animation: fade-in 0.35s var(--ease);
-}
-
-.lb-inner {
   position: relative;
   width: 100%;
   height: 100%;
-  display: grid;
-  grid-template-columns: 64px 1fr 64px;
-  grid-template-rows: 1fr auto;
-  align-items: center;
-  padding: 56px 12px 40px;
+  overflow: hidden;
 }
 
-/* The viewer stage holds the photos; each photo is centred in its slide. */
+/* The stage fills the whole screen. Each photo is scaled to the largest size that fits. */
 .lb-stage {
-  height: 100%;
+  position: absolute;
+  inset: 0;
   min-width: 0;
   min-height: 0;
   touch-action: pan-y;
+  overscroll-behavior: contain;
 }
 
 .lb-stage .carousel-slide {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: transparent;
   cursor: default;
 }
 
 .lb-stage .carousel-slide img {
   display: block;
-  width: auto;
-  height: auto;
-  max-width: 100%;
-  max-height: calc(100% - 24px);
+  width: 100%;
+  height: 100%;
   object-fit: contain;
-  border-radius: 2px;
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
   pointer-events: none;
   -webkit-user-drag: none;
 }
 
+/* The caption sits over the bottom of the photo so the photo keeps the full height. */
 .lb-caption {
-  grid-column: 2;
-  grid-row: 2;
-  margin: 14px 0 0;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 16px;
+  z-index: 2;
+  margin: 0;
+  padding: 0 64px;
   font-family: var(--font-display);
-  font-size: 1.2rem;
-  color: rgba(255, 253, 249, 0.85);
+  font-size: 1.1rem;
+  color: rgba(255, 253, 249, 0.92);
   text-align: center;
-  min-height: 1.5em;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.85);
+  pointer-events: none;
 }
 
 .lb-btn {
-  border: 0;
-  background: transparent;
-  color: var(--white);
-  font-size: 2.4rem;
-  line-height: 1;
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 52px;
   height: 52px;
+  margin: 0;
+  padding: 0;
+  border: 0;
   border-radius: 50%;
-  cursor: pointer;
-  justify-self: center;
-  transition: background-color 0.3s var(--ease);
+  background: rgba(10, 9, 7, 0.45);
+  color: var(--white);
   font-family: var(--font-body);
+  font-size: 2.2rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 0.3s var(--ease);
 }
 
 .lb-btn:hover {
-  background: rgba(255, 253, 249, 0.12);
+  background: rgba(10, 9, 7, 0.7);
+}
+
+.lb-prev {
+  left: 12px;
+}
+
+.lb-next {
+  right: 12px;
 }
 
 .lb-close {
-  position: absolute;
   top: 12px;
   right: 12px;
+  width: 44px;
+  height: 44px;
+  transform: none;
   font-size: 1.1rem;
-  justify-self: auto;
 }
 
 .lightbox.is-single .lb-prev,
@@ -1106,15 +1120,22 @@ main section {
     columns: 1;
   }
 
-  .lb-inner {
-    grid-template-columns: 44px 1fr 44px;
-    padding: 56px 4px 28px;
+  .lb-prev {
+    left: 6px;
+  }
+
+  .lb-next {
+    right: 6px;
   }
 
   .lb-btn {
     width: 44px;
     height: 44px;
-    font-size: 2rem;
+    font-size: 1.9rem;
+  }
+
+  .lb-caption {
+    padding: 0 52px;
   }
 }
 

@@ -66,15 +66,23 @@
   var SNAP_BACK_MS = 440;
   var EASE = 'cubic-bezier(0.25, 0.8, 0.25, 1)';
 
+  var requestFrame = window.requestAnimationFrame
+    ? function (fn) { return window.requestAnimationFrame(fn); }
+    : function (fn) { return setTimeout(fn, 16); };
+  var cancelFrame = window.cancelAnimationFrame
+    ? function (id) { window.cancelAnimationFrame(id); }
+    : function (id) { clearTimeout(id); };
+
   function createCarousel(root, options) {
     options = options || {};
     var index = 0;
-    var dx = 0;          // live drag offset in px
-    var busy = false;    // true while a slide is animating
-    var drag = null;     // gesture in progress
+    var dx = 0;            // live drag offset in px
+    var busy = false;      // true while a slide is animating
+    var drag = null;       // gesture in progress
     var suppressUntil = 0; // clicks before this time came from the end of a drag
     var timers = [];
     var autoTimer = null;
+    var frame = 0;         // pending animation frame for drag updates
 
     function slides() {
       return Array.prototype.slice.call(root.querySelectorAll('.carousel-slide'));
@@ -99,8 +107,10 @@
       autoTimer = setTimeout(function () { step(1); }, options.autoplay);
     }
 
-    // Puts every slide where it belongs for the current index and drag offset.
-    function place(animate, ms) {
+    // Sets where each slide sits for the current index and drag offset.
+    // Only the photo on screen and its two neighbours are painted. The others are
+    // hidden, so the browser holds only a few large photos in memory while swiping.
+    function layout(animate, ms) {
       var els = slides();
       var n = els.length;
       var w = width();
@@ -108,12 +118,39 @@
         var d = (i - index + n) % n;
         if (d > n / 2) d -= n;                              // nearest way round
         if (n === 2 && i !== index) d = dx < 0 ? 1 : -1;    // one neighbour: show it on the side being dragged
+        var near = Math.abs(d) <= 1;
         el.style.transition = animate ? 'transform ' + ms + 'ms ' + EASE : 'none';
         el.style.transform = 'translate3d(' + (d * w + dx) + 'px, 0, 0)';
+        el.style.visibility = near ? 'visible' : 'hidden';
         el.classList.toggle('is-current', i === index);
         el.inert = i !== index;
+        if (near) {
+          var img = el.querySelector('img');
+          if (img && img.getAttribute('loading') === 'lazy') img.setAttribute('loading', 'eager');
+        }
       });
-      void root.offsetWidth; // apply the starting position before any transition runs
+    }
+
+    // Decode the photos that are about to come on screen, so none of them flashes blank.
+    function predecode() {
+      slides().forEach(function (el) {
+        var img = el.querySelector('img');
+        if (img && img.decode && img.getAttribute('src')) img.decode().catch(function () { /* not ready yet */ });
+      });
+    }
+
+    // Drag moves are applied at most once per animation frame.
+    function scheduleLayout() {
+      if (frame) return;
+      frame = requestFrame(function () {
+        frame = 0;
+        layout(false, 0);
+      });
+    }
+
+    function cancelScheduled() {
+      if (frame) cancelFrame(frame);
+      frame = 0;
     }
 
     function notify() {
@@ -123,10 +160,13 @@
     function goTo(next, animate) {
       var n = slides().length;
       if (n < 2) return;
+      cancelScheduled();
       index = ((next % n) + n) % n;
       dx = 0;
       busy = !!animate;
-      place(animate, SLIDE_MS);
+      if (animate) void root.offsetWidth; // start the slide from where the drag left it
+      layout(animate, SLIDE_MS);
+      predecode();
       if (animate) later(SLIDE_MS, function () { busy = false; });
       notify();
       restartAutoplay();
@@ -137,13 +177,16 @@
     }
 
     function snapBack() {
+      cancelScheduled();
       dx = 0;
       busy = !reducedMotion; // only lock input while the slide is actually sliding back
-      place(!reducedMotion, SNAP_BACK_MS);
+      if (busy) void root.offsetWidth;
+      layout(!reducedMotion, SNAP_BACK_MS);
       if (busy) later(SNAP_BACK_MS, function () { busy = false; });
     }
 
     function cancel() {
+      cancelScheduled();
       timers.forEach(clearTimeout);
       timers = [];
       busy = false;
@@ -174,7 +217,7 @@
       }
       if (drag.axis !== 'x') return; // vertical movement scrolls the page instead
       dx = moveX;
-      place(false, 0);
+      scheduleLayout();
     });
 
     function endDrag(e) {
@@ -195,6 +238,9 @@
     root.addEventListener('pointerup', endDrag);
     root.addEventListener('pointercancel', endDrag);
 
+    // Stop the browser from starting a native image drag, which would cancel the swipe.
+    root.addEventListener('dragstart', function (e) { e.preventDefault(); });
+
     // After a drag, swallow the click so the slide does not also open the viewer.
     root.addEventListener('click', function (e) {
       if (Date.now() > suppressUntil) return;
@@ -211,7 +257,8 @@
         var n = slides().length || 1;
         cancel();
         index = ((i % n) + n) % n;
-        place(false, 0);
+        layout(false, 0);
+        predecode();
         notify();
       },
       cancel: cancel,
@@ -341,13 +388,24 @@
       else if (e.key === 'ArrowRight') { e.preventDefault(); viewer.step(1); }
     });
 
+    // The part of the screen the photo actually covers (the photo is letterboxed to fit).
+    function photoBox(img) {
+      var box = img.getBoundingClientRect();
+      if (!img.naturalWidth || !img.naturalHeight || !box.width || !box.height) return null;
+      var scale = Math.min(box.width / img.naturalWidth, box.height / img.naturalHeight);
+      var w = img.naturalWidth * scale;
+      var h = img.naturalHeight * scale;
+      var left = box.left + (box.width - w) / 2;
+      var top = box.top + (box.height - h) / 2;
+      return { left: left, top: top, right: left + w, bottom: top + h };
+    }
+
     // A click on the dark area around the photo closes the viewer.
     function outsidePhoto(e) {
       var slide = e.target.closest ? e.target.closest('.carousel-slide') : null;
       var img = slide && slide.querySelector('img');
-      if (!img) return false;
-      var r = img.getBoundingClientRect();
-      if (!r.width || !r.height) return false;
+      var r = img && photoBox(img);
+      if (!r) return false;
       return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
     }
     dialog.addEventListener('click', function (e) {

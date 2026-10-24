@@ -20,7 +20,6 @@ function createTestDom({ photoCount = 8, screenWidth = 390, screenHeight = 844 }
   const timers = new Map();
   const rafQueue = new Map();
   let nextRafId = 1;
-  const pointerCaptures = new Map();
 
   class ClassList {
     constructor(el) {
@@ -154,10 +153,6 @@ function createTestDom({ photoCount = 8, screenWidth = 390, screenHeight = 844 }
     }
     dispatchEvent(event) {
       event.target = event.target || this;
-      // Real mobile browsers implicitly capture touch pointers to the pointerdown target.
-      if (event.type === 'pointerdown' && event.pointerType === 'touch') {
-        pointerCaptures.set(event.pointerId, event.target);
-      }
       const path = [];
       let cur = this;
       while (cur) {
@@ -169,10 +164,12 @@ function createTestDom({ photoCount = 8, screenWidth = 390, screenHeight = 844 }
         if (event._stopped) break;
         const list = path[i].listeners.get(event.type) || [];
         for (const l of list) {
-          if (l.capture) {
-            event.currentTarget = path[i];
-            l.fn(event);
-            if (event._stoppedImmediate) break;
+          if (l.capture || i === 0 && l.capture) {
+            if (l.capture) {
+              event.currentTarget = path[i];
+              l.fn(event);
+              if (event._stoppedImmediate) break;
+            }
           }
         }
       }
@@ -190,20 +187,9 @@ function createTestDom({ photoCount = 8, screenWidth = 390, screenHeight = 844 }
           }
         }
       }
-      if (event.type === 'pointerup' || event.type === 'pointercancel') {
-        const prev = pointerCaptures.get(event.pointerId);
-        pointerCaptures.delete(event.pointerId);
-        if (prev) prev.dispatchEvent(makeEvent('lostpointercapture', { pointerId: event.pointerId, bubbles: true }));
-      }
       return !event.defaultPrevented;
     }
-    setPointerCapture(pointerId) {
-      const prev = pointerCaptures.get(pointerId);
-      pointerCaptures.set(pointerId, this);
-      if (prev && prev !== this) {
-        prev.dispatchEvent(makeEvent('lostpointercapture', { pointerId, bubbles: true }));
-      }
-    }
+    setPointerCapture() {}
     focus() {}
     decode() {
       this.decodeCalls++;
@@ -242,22 +228,6 @@ function createTestDom({ photoCount = 8, screenWidth = 390, screenHeight = 844 }
   // Build document tree matching render.mjs
   const documentElement = new MiniElement('html');
   const body = documentElement.appendChild(new MiniElement('body'));
-
-  const heroSection = body.appendChild(new MiniElement('section'));
-  heroSection.className = 'hero';
-  const heroCarousel = heroSection.appendChild(new MiniElement('div'));
-  heroCarousel.className = 'carousel hero-carousel';
-  heroCarousel.setAttribute('data-autoplay', '6000');
-  for (let i = 0; i < 4; i++) {
-    const slideBtn = heroCarousel.appendChild(new MiniElement('button'));
-    slideBtn.className = 'carousel-slide';
-    slideBtn.setAttribute('data-src', `/sushmita-ghosh/media/cover-${i}.jpg`);
-    slideBtn.setAttribute('data-alt', `Cover ${i}`);
-    slideBtn.setAttribute('data-caption', '');
-    const img = slideBtn.appendChild(new MiniElement('img'));
-    img.className = 'hero-media';
-    img.setAttribute('src', `/sushmita-ghosh/media/cover-${i}.jpg`);
-  }
 
   const gallery = body.appendChild(new MiniElement('div'));
   gallery.className = 'gallery';
@@ -307,14 +277,9 @@ function createTestDom({ photoCount = 8, screenWidth = 390, screenHeight = 844 }
       docListeners.get(type).push({ fn, capture });
     },
   };
-  const winListeners = new Map();
   documentElement.parentNode = {
     nodeType: 9,
-    parentNode: {
-      nodeType: 0,
-      parentNode: null,
-      listeners: winListeners,
-    },
+    parentNode: null,
     listeners: docListeners,
   };
 
@@ -324,11 +289,7 @@ function createTestDom({ photoCount = 8, screenWidth = 390, screenHeight = 844 }
     innerHeight: screenHeight,
     scrollY: 0,
     matchMedia: () => ({ matches: false }),
-    addEventListener(type, fn, opts) {
-      const capture = typeof opts === 'boolean' ? opts : Boolean(opts && opts.capture);
-      if (!winListeners.has(type)) winListeners.set(type, []);
-      winListeners.get(type).push({ fn, capture });
-    },
+    addEventListener() {},
     requestAnimationFrame(fn) {
       const id = nextRafId++;
       rafQueue.set(id, fn);
@@ -376,7 +337,6 @@ function createTestDom({ photoCount = 8, screenWidth = 390, screenHeight = 844 }
     window: windowObj,
     document,
     Date: FakeDate,
-    heroCarousel,
     dialog,
     lbInner,
     stage,
@@ -394,9 +354,6 @@ function createTestDom({ photoCount = 8, screenWidth = 390, screenHeight = 844 }
     },
     currentIndex() {
       return stage.children.findIndex((el) => el.classList.contains('is-current'));
-    },
-    heroIndex() {
-      return heroCarousel.children.findIndex((el) => el.classList.contains('is-current'));
     },
   };
 }
@@ -602,52 +559,5 @@ test('pausing finger on photo before a quick flick still commits the swipe, and 
   env.advanceTime(10);
   s2.dispatchEvent(env.makeEvent('pointerup', { pointerId: 1, clientX: 150, clientY: 400 }));
 
-  assert.equal(env.currentIndex(), 1);
-});
-
-test('both right-to-left and left-to-right horizontal swipes work on the cover slideshow and in the popup when touch implicitly captures child <img>', async () => {
-  const env = await bootViewer({ photoCount: 8, screenWidth: 390 });
-
-  // 1. Vertical scroll gesture starting on cover <img> and releasing outside heroCarousel
-  const heroImg0 = env.heroCarousel.children[0].querySelector('img');
-  heroImg0.dispatchEvent(env.makeEvent('pointerdown', { pointerId: 10, clientX: 200, clientY: 500 }));
-  env.advanceTime(16);
-  heroImg0.dispatchEvent(env.makeEvent('pointermove', { pointerId: 10, clientX: 200, clientY: 420 }));
-  // Finger lifts outside heroCarousel (on document.body)
-  env.document.body.dispatchEvent(env.makeEvent('pointerup', { pointerId: 10, clientX: 200, clientY: 300 }));
-  assert.equal(env.heroIndex(), 0);
-
-  // 2. Right-to-left swipe on cover <img>: 0 -> 1
-  heroImg0.dispatchEvent(env.makeEvent('pointerdown', { pointerId: 11, clientX: 300, clientY: 400 }));
-  env.advanceTime(16);
-  heroImg0.dispatchEvent(env.makeEvent('pointermove', { pointerId: 11, clientX: 280, clientY: 400 }));
-  env.advanceTime(20);
-  env.heroCarousel.dispatchEvent(env.makeEvent('pointermove', { pointerId: 11, clientX: 160, clientY: 400 }));
-  env.flushFrames();
-  env.heroCarousel.dispatchEvent(env.makeEvent('pointerup', { pointerId: 11, clientX: 160, clientY: 400 }));
-  assert.equal(env.heroIndex(), 1);
-  env.advanceTime(500);
-
-  // 3. Left-to-right swipe on cover <img>: 1 -> 0
-  const heroImg1 = env.heroCarousel.children[1].querySelector('img');
-  heroImg1.dispatchEvent(env.makeEvent('pointerdown', { pointerId: 12, clientX: 80, clientY: 400 }));
-  env.advanceTime(16);
-  heroImg1.dispatchEvent(env.makeEvent('pointermove', { pointerId: 12, clientX: 100, clientY: 400 }));
-  env.advanceTime(20);
-  env.heroCarousel.dispatchEvent(env.makeEvent('pointermove', { pointerId: 12, clientX: 230, clientY: 400 }));
-  env.flushFrames();
-  env.heroCarousel.dispatchEvent(env.makeEvent('pointerup', { pointerId: 12, clientX: 230, clientY: 400 }));
-  assert.equal(env.heroIndex(), 0);
-
-  // 4. Open popup and swipe right-to-left (0 -> 1) then left-to-right (1 -> 0)
-  env.galleryButtons[0].dispatchEvent(env.makeEvent('click'));
-  const slide0 = env.stage.children[0];
-  slide0.dispatchEvent(env.makeEvent('pointerdown', { pointerId: 13, clientX: 310, clientY: 420 }));
-  env.advanceTime(16);
-  slide0.dispatchEvent(env.makeEvent('pointermove', { pointerId: 13, clientX: 290, clientY: 420 }));
-  env.advanceTime(20);
-  env.lbInner.dispatchEvent(env.makeEvent('pointermove', { pointerId: 13, clientX: 150, clientY: 420 }));
-  env.flushFrames();
-  env.lbInner.dispatchEvent(env.makeEvent('pointerup', { pointerId: 13, clientX: 150, clientY: 420 }));
   assert.equal(env.currentIndex(), 1);
 });

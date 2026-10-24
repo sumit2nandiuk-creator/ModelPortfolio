@@ -321,24 +321,26 @@
     }
 
     // Inside the fullscreen viewer there is no page scroll, so prevent browser
-    // rubber-banding during active single-finger horizontal swipes.
+    // rubber-banding / back-swipe cancellation during single-finger swipes.
     if (!allowVerticalScroll) {
       gestureEl.addEventListener('touchmove', function (e) {
-        if (!drag || (e.touches && e.touches.length > 1)) return;
-        if (drag.axis === 'x' && e.cancelable) e.preventDefault();
+        if (e.touches && e.touches.length > 1) return;
+        if (e.cancelable) e.preventDefault();
       }, { passive: false });
     }
 
     gestureEl.addEventListener('pointerdown', function (e) {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
-      if (e.isPrimary === false) return; // ignore secondary multi-touch fingers
+      if (e.pointerType === 'touch' && e.isPrimary === false) return;
+      if (drag) return; // ignore secondary fingers while a swipe is already active
       if (e.target && e.target.closest && e.target.closest('.lb-close')) return;
       if (slides().length < 2) return;
 
       var onControl = !!(e.target && e.target.closest && e.target.closest('.lb-btn'));
-      var caughtMidSlide = busy && !onControl;
-      if ((busy || dx !== 0) && !onControl) {
+      var caughtMidSlide = false;
+      if (busy && !onControl) {
         settleNow();
+        caughtMidSlide = true;
       }
 
       var now = Date.now();
@@ -429,8 +431,7 @@
     }
     gestureEl.addEventListener('pointerup', endDrag);
     gestureEl.addEventListener('pointercancel', endDrag);
-    window.addEventListener('pointerup', endDrag);
-    window.addEventListener('pointercancel', endDrag);
+    gestureEl.addEventListener('lostpointercapture', endDrag);
 
     // Stop the browser from starting a native image drag, which would cancel the swipe.
     gestureEl.addEventListener('dragstart', function (e) { e.preventDefault(); });

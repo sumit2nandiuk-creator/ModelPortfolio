@@ -1250,44 +1250,179 @@ main section {
   }
 }
 
-/* WhatsApp: a small round button in the bottom-right corner. On the cover it stays hidden,
-   so it does not cover the "Get in touch" button; it fades in once the visitor scrolls down. */
+/* WhatsApp: a starburst-inspired floating button in the bottom-right corner. On the cover it
+   stays hidden, and fades in once the visitor scrolls down. */
 .whatsapp-float {
   position: fixed;
   right: max(20px, env(safe-area-inset-right));
   bottom: max(20px, env(safe-area-inset-bottom));
   z-index: 40;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 62px;
-  height: 62px;
+  width: 64px;
+  height: 64px;
   background: none;
-  color: #25d366;
+  color: var(--white);
+  text-decoration: none;
   transition:
     opacity 0.4s var(--ease),
-    transform 0.4s var(--ease),
-    filter 0.3s var(--ease);
+    transform 0.4s var(--ease);
 }
 
-/* The WhatsApp logo itself, in its own green, with no circle behind it.
-   The soft shadow keeps it readable over light and dark photos. */
+.whatsapp-badge {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+
 .whatsapp-float svg {
-  width: 58px;
-  height: 58px;
-  fill: currentColor;
-  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.35));
+  width: 62px;
+  height: 62px;
+  overflow: visible;
+  filter: drop-shadow(0 10px 20px rgba(21, 19, 15, 0.36));
+}
+
+/* 12-point geometric starburst seal matching the site's ink, bronze-gold and ivory palette. */
+.whatsapp-starburst {
+  fill: var(--ink);
+  stroke: var(--accent-soft);
+  stroke-width: 2;
+  stroke-linejoin: miter;
+  stroke-miterlimit: 6;
+  transform-origin: 32px 32px;
+  transition:
+    fill 0.35s var(--ease),
+    stroke 0.35s var(--ease),
+    transform 0.45s var(--ease);
+}
+
+.whatsapp-bubble {
+  fill: rgba(201, 167, 125, 0.14);
+  stroke: var(--white);
+  stroke-width: 2;
+  stroke-linejoin: miter;
+  stroke-miterlimit: 6;
+  transition:
+    fill 0.35s var(--ease),
+    stroke 0.35s var(--ease);
+}
+
+.whatsapp-handset {
+  fill: none;
+  stroke: var(--accent-soft);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 0.35s var(--ease);
+}
+
+/* Geometric "Chat on WhatsApp" tooltip revealed on hover and keyboard focus. */
+.whatsapp-tooltip {
+  position: absolute;
+  right: calc(100% + 12px);
+  top: 50%;
+  padding: 10px 14px;
+  background: var(--ink);
+  color: var(--white);
+  border: 1px solid var(--accent-soft);
+  border-radius: var(--radius);
+  box-shadow: 0 14px 28px -10px rgba(21, 19, 15, 0.55);
+  font-family: var(--font-body);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(6px, -50%);
+  transition:
+    opacity 0.28s var(--ease),
+    transform 0.28s var(--ease);
+}
+
+.whatsapp-tooltip::after {
+  content: '';
+  position: absolute;
+  right: -5px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  background: var(--ink);
+  border-top: 1px solid var(--accent-soft);
+  border-right: 1px solid var(--accent-soft);
+  transform: translateY(-50%) rotate(45deg);
 }
 
 .whatsapp-float:hover,
 .whatsapp-float:focus-visible {
-  transform: translateY(-2px);
-  filter: brightness(1.08);
+  transform: translateY(-3px);
 }
 
+.whatsapp-float:hover .whatsapp-starburst,
+.whatsapp-float:focus-visible .whatsapp-starburst {
+  fill: var(--ink-soft);
+  stroke: var(--white);
+  transform: rotate(15deg);
+}
+
+.whatsapp-float:hover .whatsapp-bubble,
+.whatsapp-float:focus-visible .whatsapp-bubble {
+  fill: rgba(201, 167, 125, 0.24);
+  stroke: var(--accent-soft);
+}
+
+.whatsapp-float:hover .whatsapp-handset,
+.whatsapp-float:focus-visible .whatsapp-handset {
+  stroke: var(--white);
+}
+
+.whatsapp-float:hover .whatsapp-tooltip,
+.whatsapp-float:focus-visible .whatsapp-tooltip {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
+/* Two-tone focus ring stays clearly visible over both ivory paper and dark ink sections. */
 .whatsapp-float:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 3px;
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--white);
+}
+
+@media (max-width: 560px) {
+  .whatsapp-float {
+    right: max(14px, env(safe-area-inset-right));
+    bottom: max(14px, env(safe-area-inset-bottom));
+    width: 54px;
+    height: 54px;
+  }
+
+  .whatsapp-float svg {
+    width: 52px;
+    height: 52px;
+  }
+
+  .whatsapp-tooltip {
+    right: calc(100% + 10px);
+    padding: 8px 11px;
+    font-size: 0.64rem;
+    letter-spacing: 0.14em;
+    max-width: calc(100vw - 88px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .whatsapp-float:hover .whatsapp-starburst,
+  .whatsapp-float:focus-visible .whatsapp-starburst {
+    transform: none;
+  }
 }
 
 .js .whatsapp-float {
@@ -1304,5 +1439,5 @@ main section {
 
 .js .whatsapp-float.is-visible:hover,
 .js .whatsapp-float.is-visible:focus-visible {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
 }

@@ -556,16 +556,13 @@ test('WhatsApp is a floating button in the bottom-right corner, and only when a 
     const no = await fs.readFile(path.join(ws.outDir, 'wa-no', 'index.html'), 'utf8');
     assert.equal((yes.match(/class="whatsapp-float"/g) ?? []).length, 1);
     assert.match(yes, /aria-label="Chat on WhatsApp"/);
-    assert.match(yes, /<span class="whatsapp-tooltip" aria-hidden="true">Chat on WhatsApp<\/span>/);
-    assert.match(yes, /class="whatsapp-starburst"/);
-    assert.match(yes, /class="whatsapp-bubble"/);
-    assert.match(yes, /class="whatsapp-handset"/);
-    assert.doesNotMatch(yes, /#65D073|#25D366/i);
+    assert.match(yes, /<svg viewBox="0 0 24 24"/);
+    assert.match(yes, /fill="#25D366"/i);
+    assert.doesNotMatch(yes, /whatsapp-starburst|whatsapp-tooltip/);
     assert.doesNotMatch(no, /whatsapp-float|wa\.me/);
     const css = await fs.readFile(path.join(siteDir, 'assets', 'site.css'), 'utf8');
     assert.match(css, /\.whatsapp-float \{[\s\S]*?bottom: max\(20px/);
-    assert.match(css, /\.whatsapp-starburst \{[\s\S]*?fill: var\(--ink\);[\s\S]*?stroke: var\(--accent-soft\);/);
-    assert.match(css, /\.whatsapp-tooltip \{/);
+    assert.doesNotMatch(css, /\.whatsapp-starburst/);
   } finally {
     await ws.cleanup();
   }

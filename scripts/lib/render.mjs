@@ -333,16 +333,16 @@ function renderFooter(model, year) {
   </footer>`;
 }
 
-// Starburst-inspired geometric WhatsApp mark: a 12-point editorial starburst seal framing
-// a clean geometric chat bubble and phone handset in the site's palette and stroke weight.
-const WHATSAPP_GLYPH = `<svg viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path class="whatsapp-starburst" d="M32 2L38.32 8.43L47 6.02L49.25 14.75L57.98 17L55.57 25.68L62 32L55.57 38.32L57.98 47L49.25 49.25L47 57.98L38.32 55.57L32 62L25.68 55.57L17 57.98L14.75 49.25L6.02 47L8.43 38.32L2 32L8.43 25.68L6.02 17L14.75 14.75L17 6.02L25.68 8.43Z"/><path class="whatsapp-bubble" d="M19.55 37.29A14.4 14.4 0 1 1 24.76 43.28L17.91 45.89Z"/><path class="whatsapp-handset" d="M39.4 34.55L39.4 36.59A1.36 1.36 0 0 1 37.92 37.95A13.46 13.46 0 0 1 32.05 35.86A13.26 13.26 0 0 1 27.97 31.78A13.46 13.46 0 0 1 25.88 25.88A1.36 1.36 0 0 1 27.23 24.4L29.27 24.4A1.36 1.36 0 0 1 30.63 25.57A8.73 8.73 0 0 0 31.11 27.48A1.36 1.36 0 0 1 30.8 28.92L29.94 29.78A10.88 10.88 0 0 0 34.02 33.86L34.88 33A1.36 1.36 0 0 1 36.32 32.69A8.73 8.73 0 0 0 38.23 33.17A1.36 1.36 0 0 1 39.4 34.55Z"/></svg>`;
+// Official WhatsApp logo mark: outer white speech-bubble border, WhatsApp brand-green
+// (#25D366) speech-bubble interior, and white phone handset.
+const WHATSAPP_GLYPH = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="#fff" d="m 20.463,3.488 A 11.815,11.815 0 0,0 12.05,0 C 5.495,0 0.16,5.335 0.157,11.892 c 0,2.096 0.547,4.142 1.588,5.945 L 0.057,24 l 6.305,-1.654 a 11.882,11.882 0 0,0 5.683,1.448 l 0.005,0 c 6.554,0 11.89,-5.335 11.893,-11.893 a 11.821,11.821 0 0,0 -3.48,-8.413 Z"/><path fill="#25D366" d="M 12.05,21.785 h -0.004 a 9.87,9.87 0 0,1 -5.031,-1.378 l -0.361,-0.214 -3.741,0.982 0.998,-3.648 -0.235,-0.374 a 9.86,9.86 0 0,1 -1.51,-5.26 c 0.002,-5.45 4.436,-9.884 9.888,-9.884 2.64,0 5.122,1.03 6.988,2.898 a 9.825,9.825 0 0,1 2.893,6.994 c -0.003,5.45 -4.437,9.884 -9.885,9.884 Z"/><path fill="#fff" d="M 17.472,14.382 c -0.297,-0.149 -1.758,-0.867 -2.03,-0.967 c -0.273,-0.099 -0.471,-0.148 -0.67,0.15 c -0.197,0.297 -0.767,0.966 -0.94,1.164 c -0.173,0.199 -0.347,0.223 -0.644,0.075 c -0.297,-0.15 -1.255,-0.463 -2.39,-1.475 c -0.883,-0.788 -1.48,-1.761 -1.653,-2.059 c -0.173,-0.297 -0.018,-0.458 0.13,-0.606 c 0.134,-0.133 0.298,-0.347 0.446,-0.52 c 0.149,-0.174 0.198,-0.298 0.298,-0.497 c 0.099,-0.198 0.05,-0.371 -0.025,-0.52 c -0.075,-0.149 -0.669,-1.612 -0.916,-2.207 c -0.242,-0.579 -0.487,-0.5 -0.669,-0.51 c -0.173,-0.008 -0.371,-0.01 -0.57,-0.01 c -0.198,0 -0.52,0.074 -0.792,0.372 c -0.272,0.297 -1.04,1.016 -1.04,2.479 c 0,1.462 1.065,2.875 1.213,3.074 c 0.149,0.198 2.096,3.2 5.077,4.487 c 0.709,0.306 1.262,0.489 1.694,0.625 c 0.712,0.227 1.36,0.195 1.871,0.118 c 0.571,-0.085 1.758,-0.719 2.006,-1.413 c 0.248,-0.694 0.248,-1.289 0.173,-1.413 c -0.074,-0.124 -0.272,-0.198 -0.57,-0.347 Z"/></svg>`;
 
-// Floating starburst WhatsApp contact button in the bottom-right corner with accessible label and tooltip.
+// A small WhatsApp logo button in the bottom-right corner. Shown only when a WhatsApp number is set.
 function renderWhatsAppFloat(model) {
   const number = model.contact?.whatsapp;
   if (!number) return '';
   return `
-  <a class="whatsapp-float" href="https://wa.me/${esc(digitsOnly(number))}" target="_blank" rel="noopener noreferrer" aria-label="Chat on WhatsApp"><span class="whatsapp-tooltip" aria-hidden="true">Chat on WhatsApp</span><span class="whatsapp-badge" aria-hidden="true">${WHATSAPP_GLYPH}</span></a>`;
+  <a class="whatsapp-float" href="https://wa.me/${esc(digitsOnly(number))}" target="_blank" rel="noopener noreferrer" aria-label="Chat on WhatsApp">${WHATSAPP_GLYPH}</a>`;
 }
 
 function renderLightbox() {

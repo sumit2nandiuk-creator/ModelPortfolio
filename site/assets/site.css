@@ -964,16 +964,10 @@ main section {
 
 /* Lightbox ----------------------------------------------------------------- */
 
-html:has(.lightbox[open]) {
-  overflow: hidden;
-}
-
 .lightbox {
-  position: fixed;
-  inset: 0;
-  touch-action: none;
-  overscroll-behavior: none;
-  width: 100%;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  width: 100vw;
   height: 100vh;
   height: 100dvh;
   max-width: none;
@@ -1000,7 +994,6 @@ html:has(.lightbox[open]) {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  touch-action: none;
 }
 
 /* The stage fills the whole screen. Each photo is scaled to the largest size that fits. */
@@ -1009,8 +1002,8 @@ html:has(.lightbox[open]) {
   inset: 0;
   min-width: 0;
   min-height: 0;
-  touch-action: none;
-  overscroll-behavior: none;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
 }
 
 .lb-stage .carousel-slide {

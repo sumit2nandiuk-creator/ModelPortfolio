@@ -83,9 +83,9 @@
   // Slides sit side by side. While you drag, the slide under your finger moves
   // with it, and the neighbour on that side is already in place, so it comes
   // along. Slides wrap around, so the first and last photo are neighbours.
-  var SLIDE_MS = 380;
-  var SNAP_BACK_MS = 300;
-  var EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';
+  var SLIDE_MS = 520;
+  var SNAP_BACK_MS = 440;
+  var EASE = 'cubic-bezier(0.25, 0.8, 0.25, 1)';
 
   var requestFrame = window.requestAnimationFrame
     ? function (fn) { return window.requestAnimationFrame(fn); }
@@ -96,11 +96,8 @@
 
   function createCarousel(root, options) {
     options = options || {};
-    var gestureEl = options.gestureTarget || root;
-    var allowVerticalScroll = options.verticalScroll !== false;
     var index = 0;
     var dx = 0;            // live drag offset in px
-    var lastSide = -1;     // which side a single neighbour sits on (-1 left, +1 right)
     var busy = false;      // true while a slide is animating
     var drag = null;       // gesture in progress
     var suppressUntil = 0; // clicks before this time came from the end of a drag
@@ -113,13 +110,7 @@
     }
 
     function width() {
-      var rect = root.getBoundingClientRect ? root.getBoundingClientRect() : null;
-      return (rect && rect.width) || root.clientWidth || window.innerWidth;
-    }
-
-    function clearTimers() {
-      timers.forEach(clearTimeout);
-      timers = [];
+      return root.clientWidth || window.innerWidth;
     }
 
     function later(ms, fn) {
@@ -137,14 +128,6 @@
       autoTimer = setTimeout(function () { step(1); }, options.autoplay);
     }
 
-    function slotFor(i, n, side) {
-      if (i === index) return 0;
-      if (n === 2) return side;
-      var d = (i - index + n) % n;
-      if (d > n / 2) d -= n; // nearest way round
-      return d;
-    }
-
     // Sets where each slide sits for the current index and drag offset.
     // Only the photo on screen and its two neighbours are painted. The others are
     // hidden, so the browser holds only a few large photos in memory while swiping.
@@ -152,15 +135,14 @@
       var els = slides();
       var n = els.length;
       var w = width();
-      var side = dx < 0 ? 1 : dx > 0 ? -1 : lastSide;
-      if (dx !== 0) lastSide = side;
       els.forEach(function (el, i) {
-        var d = slotFor(i, n, side);
+        var d = (i - index + n) % n;
+        if (d > n / 2) d -= n;                              // nearest way round
+        if (n === 2 && i !== index) d = dx < 0 ? 1 : -1;    // one neighbour: show it on the side being dragged
         var near = Math.abs(d) <= 1;
-        el.style.transition = animate && near ? 'transform ' + ms + 'ms ' + EASE : 'none';
+        el.style.transition = animate ? 'transform ' + ms + 'ms ' + EASE : 'none';
         el.style.transform = 'translate3d(' + (d * w + dx) + 'px, 0, 0)';
         el.style.visibility = near ? 'visible' : 'hidden';
-        el.style.willChange = near ? 'transform' : 'auto';
         el.classList.toggle('is-current', i === index);
         el.inert = i !== index;
         if (near) {
@@ -192,127 +174,42 @@
       frame = 0;
     }
 
-    function settleNow() {
-      cancelScheduled();
-      clearTimers();
-      busy = false;
-      dx = 0;
-      layout(false, 0);
-    }
-
     function notify() {
       if (options.onChange) options.onChange(index);
     }
 
-    // Moves to `next`. `dirHint` is +1 when advancing (right-to-left swipe) and
-    // -1 when going back (left-to-right swipe), so the outgoing and incoming slides
-    // always continue in the direction of the swipe without wrapping across the screen.
-    function goTo(next, animate, dirHint) {
-      var els = slides();
-      var n = els.length;
+    function goTo(next, animate) {
+      var n = slides().length;
       if (n < 2) return;
       cancelScheduled();
-      clearTimers();
-
-      var prevIndex = index;
-      var nextIndex = ((next % n) + n) % n;
-      if (nextIndex === prevIndex) {
-        if (dx !== 0) snapBack();
-        return;
-      }
-
-      var dir = dirHint;
-      if (!dir) {
-        if (dx !== 0) {
-          dir = dx < 0 ? 1 : -1;
-        } else {
-          var diff = (nextIndex - prevIndex + n) % n;
-          if (diff > n / 2) diff -= n;
-          dir = diff >= 0 ? 1 : -1;
-        }
-      }
-
-      var w = width();
-      var startOffset = dx;
-      index = nextIndex;
+      index = ((next % n) + n) % n;
       dx = 0;
-      lastSide = -dir;
-
-      notify();
+      busy = !!animate;
+      if (animate) void root.offsetWidth; // start the slide from where the drag left it
+      layout(animate, SLIDE_MS);
       predecode();
-
-      if (!animate) {
-        busy = false;
-        layout(false, 0);
-        restartAutoplay();
-        return;
-      }
-
-      // Place the outgoing and incoming slides at their exact starting positions without
-      // transition, and park all other slides out of sight so wrapping never crosses the screen.
-      busy = true;
-      els.forEach(function (el, i) {
-        el.style.transition = 'none';
-        el.classList.toggle('is-current', i === index);
-        el.inert = i !== index;
-        if (i === prevIndex) {
-          el.style.transform = 'translate3d(' + startOffset + 'px, 0, 0)';
-          el.style.visibility = 'visible';
-          el.style.willChange = 'transform';
-        } else if (i === index) {
-          el.style.transform = 'translate3d(' + (dir * w + startOffset) + 'px, 0, 0)';
-          el.style.visibility = 'visible';
-          el.style.willChange = 'transform';
-          var img = el.querySelector('img');
-          if (img && img.getAttribute('loading') === 'lazy') img.setAttribute('loading', 'eager');
-        } else {
-          var d = slotFor(i, n, lastSide);
-          el.style.transform = 'translate3d(' + (d * w) + 'px, 0, 0)';
-          el.style.visibility = 'hidden';
-          el.style.willChange = 'auto';
-        }
-      });
-
-      void root.offsetWidth; // commit starting positions before animating
-      var prevEl = els[prevIndex];
-      var currEl = els[index];
-      if (prevEl) {
-        prevEl.style.transition = 'transform ' + SLIDE_MS + 'ms ' + EASE;
-        prevEl.style.transform = 'translate3d(' + (-dir * w) + 'px, 0, 0)';
-      }
-      if (currEl) {
-        currEl.style.transition = 'transform ' + SLIDE_MS + 'ms ' + EASE;
-        currEl.style.transform = 'translate3d(0px, 0, 0)';
-      }
-
-      later(SLIDE_MS, function () {
-        busy = false;
-        layout(false, 0);
-      });
+      if (animate) later(SLIDE_MS, function () { busy = false; });
+      notify();
       restartAutoplay();
     }
 
     function step(delta) {
-      goTo(index + delta, !reducedMotion, delta < 0 ? -1 : 1);
+      goTo(index + delta, !reducedMotion);
     }
 
     function snapBack() {
-      if (frame) {
-        cancelScheduled();
-        layout(false, 0);
-      }
-      clearTimers();
+      cancelScheduled();
       dx = 0;
       busy = !reducedMotion; // only lock input while the slide is actually sliding back
       if (busy) void root.offsetWidth;
       layout(!reducedMotion, SNAP_BACK_MS);
       if (busy) later(SNAP_BACK_MS, function () { busy = false; });
-      restartAutoplay();
     }
 
     function cancel() {
       cancelScheduled();
-      clearTimers();
+      timers.forEach(clearTimeout);
+      timers = [];
       busy = false;
       drag = null;
       dx = 0;
@@ -320,78 +217,27 @@
       stopAutoplay();
     }
 
-    // Inside the fullscreen viewer there is no page scroll, so prevent browser
-    // rubber-banding during active single-finger horizontal swipes.
-    if (!allowVerticalScroll) {
-      gestureEl.addEventListener('touchmove', function (e) {
-        if (!drag || (e.touches && e.touches.length > 1)) return;
-        if (drag.axis === 'x' && e.cancelable) e.preventDefault();
-      }, { passive: false });
-    }
-
-    gestureEl.addEventListener('pointerdown', function (e) {
+    root.addEventListener('pointerdown', function (e) {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
-      if (e.isPrimary === false) return; // ignore secondary multi-touch fingers
-      if (e.target && e.target.closest && e.target.closest('.lb-close')) return;
-      if (slides().length < 2) return;
-
-      var onControl = !!(e.target && e.target.closest && e.target.closest('.lb-btn'));
-      var caughtMidSlide = busy && !onControl;
-      if ((busy || dx !== 0) && !onControl) {
-        settleNow();
-      }
-
-      var now = Date.now();
-      drag = {
-        id: e.pointerId,
-        x: e.clientX,
-        y: e.clientY,
-        lastX: e.clientX,
-        lastT: now,
-        vx: 0,
-        axis: null,
-        moved: false,
-        caughtMidSlide: caughtMidSlide,
-      };
+      suppressUntil = 0;
+      if (busy || slides().length < 2) return;
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, t: Date.now(), axis: null };
       stopAutoplay();
     });
 
-    gestureEl.addEventListener('pointermove', function (e) {
+    root.addEventListener('pointermove', function (e) {
       if (!drag || e.pointerId !== drag.id) return;
       var moveX = e.clientX - drag.x;
       var moveY = e.clientY - drag.y;
-      if (Math.abs(moveX) >= 6 || Math.abs(moveY) >= 6) drag.moved = true;
-
       if (drag.axis === null) {
         if (Math.abs(moveX) < 6 && Math.abs(moveY) < 6) return; // wait until the direction is clear
-        if (allowVerticalScroll) {
-          drag.axis = Math.abs(moveX) >= Math.abs(moveY) ? 'x' : 'y';
-        } else {
-          // In the fullscreen popup there is nothing to scroll vertically, so never
-          // lock out horizontal swipes if the thumb starts at a slight vertical angle.
-          if (Math.abs(moveX) < 6) return;
-          drag.axis = 'x';
-        }
-        if (drag.axis === 'x') {
-          if (busy) settleNow();
-          if (gestureEl.setPointerCapture) {
-            try { gestureEl.setPointerCapture(e.pointerId); } catch (err) { /* keep going without capture */ }
-          }
+        drag.axis = Math.abs(moveX) > Math.abs(moveY) ? 'x' : 'y';
+        if (drag.axis === 'x' && root.setPointerCapture) {
+          try { root.setPointerCapture(e.pointerId); } catch (err) { /* keep going without capture */ }
         }
       }
       if (drag.axis !== 'x') return; // vertical movement scrolls the page instead
-
-      var now = Date.now();
-      var dt = now - drag.lastT;
-      if (dt > 0) {
-        var instantVx = (e.clientX - drag.lastX) / dt;
-        drag.vx = drag.vx ? drag.vx * 0.4 + instantVx * 0.6 : instantVx;
-        drag.lastX = e.clientX;
-        drag.lastT = now;
-      }
-
-      var w = width();
-      dx = Math.max(-w, Math.min(w, moveX));
+      dx = moveX;
       scheduleLayout();
     });
 
@@ -399,44 +245,25 @@
       if (!drag || e.pointerId !== drag.id) return;
       var finished = drag;
       drag = null;
-
       if (finished.axis !== 'x') {
-        if (finished.moved || finished.caughtMidSlide) {
-          suppressUntil = Date.now() + 350;
-        }
         restartAutoplay();
         return;
       }
-
       suppressUntil = Date.now() + 350; // a drag is not a tap; the click that follows it is ignored
-      if (e.type !== 'pointerup') {
-        if (dx !== 0) snapBack();
-        else restartAutoplay();
-        return;
-      }
-
       var distance = Math.abs(dx);
-      var recentVx = Date.now() - finished.lastT > 100 ? 0 : finished.vx;
-      var flickForward = distance > 24 && recentVx * dx > 0 && Math.abs(recentVx) > 0.3;
-      var flickBack = recentVx * dx < 0 && Math.abs(recentVx) > 0.3;
-      var commit = !flickBack && (distance > width() * 0.18 || flickForward);
-      if (commit) {
-        var delta = dx < 0 ? 1 : -1;
-        goTo(index + delta, !reducedMotion, delta);
-      } else {
-        snapBack();
-      }
+      var speed = distance / Math.max(1, Date.now() - finished.t); // px per ms
+      var commit = distance > width() * 0.22 || (distance > 40 && speed > 0.45);
+      if (commit) goTo(index + (dx < 0 ? 1 : -1), !reducedMotion);
+      else snapBack();
     }
-    gestureEl.addEventListener('pointerup', endDrag);
-    gestureEl.addEventListener('pointercancel', endDrag);
-    window.addEventListener('pointerup', endDrag);
-    window.addEventListener('pointercancel', endDrag);
+    root.addEventListener('pointerup', endDrag);
+    root.addEventListener('pointercancel', endDrag);
 
     // Stop the browser from starting a native image drag, which would cancel the swipe.
-    gestureEl.addEventListener('dragstart', function (e) { e.preventDefault(); });
+    root.addEventListener('dragstart', function (e) { e.preventDefault(); });
 
-    // After a drag, swallow the click so the slide does not also open or close the viewer.
-    gestureEl.addEventListener('click', function (e) {
+    // After a drag, swallow the click so the slide does not also open the viewer.
+    root.addEventListener('click', function (e) {
       if (Date.now() > suppressUntil) return;
       suppressUntil = 0;
       e.preventDefault();
@@ -459,10 +286,9 @@
         var n = slides().length || 1;
         cancel();
         index = ((i % n) + n) % n;
-        lastSide = -1;
-        notify();
         layout(false, 0);
         predecode();
+        notify();
       },
       cancel: cancel,
       pause: stopAutoplay,
@@ -513,13 +339,11 @@
   var dialog = document.getElementById('lightbox');
   var stage = document.getElementById('lb-stage');
   if (dialog && stage && typeof dialog.showModal === 'function') {
-    var lbInner = dialog.querySelector('.lb-inner') || stage;
     var caption = document.getElementById('lb-caption');
     var closeBtn = dialog.querySelector('.lb-close');
     var prevBtn = dialog.querySelector('.lb-prev');
     var nextBtn = dialog.querySelector('.lb-next');
     var items = [];
-    var dialogDown = null;
 
     function readItem(btn) {
       return {
@@ -529,19 +353,14 @@
       };
     }
 
-    // Loads the photo on screen and its neighbours on both sides so swiping
-    // left-to-right or right-to-left never meets an unloaded slide.
+    // Loads the photo on screen and its two neighbours; the rest load when reached.
     function loadAround(i) {
       var els = stage.querySelectorAll('.carousel-slide');
       var n = items.length;
-      if (!n) return;
-      [0, -1, 1, -2, 2].forEach(function (d) {
-        var j = ((i + d) % n + n) % n;
+      [-1, 0, 1].forEach(function (d) {
+        var j = (i + d + n) % n;
         var img = els[j] && els[j].querySelector('img');
-        if (img && !img.getAttribute('src')) {
-          img.setAttribute('src', items[j].src);
-          if (img.decode) img.decode().catch(function () { /* not ready yet */ });
-        }
+        if (img && !img.getAttribute('src')) img.setAttribute('src', items[j].src);
       });
     }
 
@@ -552,8 +371,6 @@
     }
 
     viewerCarousel = createCarousel(stage, {
-      gestureTarget: lbInner,
-      verticalScroll: false,
       onChange: function (i) {
         loadAround(i);
         showCaption(i);
@@ -575,8 +392,8 @@
       });
       dialog.classList.toggle('is-single', list.length < 2);
       if (hero) hero.pause();
-      if (!dialog.open) dialog.showModal();
       viewerCarousel.reset(start);
+      dialog.showModal();
       closeBtn.focus({ preventScroll: true });
     }
 
@@ -627,7 +444,7 @@
       return { left: left, top: top, right: left + w, bottom: top + h };
     }
 
-    // A click on the dark area around the photo closes the viewer, unless the finger moved.
+    // A click on the dark area around the photo closes the viewer.
     function outsidePhoto(e) {
       var slide = e.target.closest ? e.target.closest('.carousel-slide') : null;
       var img = slide && slide.querySelector('img');
@@ -635,22 +452,13 @@
       if (!r) return false;
       return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
     }
-    dialog.addEventListener('pointerdown', function (e) {
-      dialogDown = { x: e.clientX, y: e.clientY };
-    });
     dialog.addEventListener('click', function (e) {
-      if (dialogDown && (Math.abs(e.clientX - dialogDown.x) >= 8 || Math.abs(e.clientY - dialogDown.y) >= 8)) {
-        dialogDown = null;
-        return;
-      }
-      dialogDown = null;
       if (e.target === dialog || e.target === stage || e.target.classList.contains('lb-inner') || outsidePhoto(e)) {
         dialog.close();
       }
     });
 
     dialog.addEventListener('close', function () {
-      dialogDown = null;
       viewerCarousel.cancel();
       stage.textContent = '';
       if (hero) hero.resume();

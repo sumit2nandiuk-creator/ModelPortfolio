@@ -9,6 +9,32 @@
 
   var reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  // ---- Always open / refresh at the top of the page ------------------------
+  if ('scrollRestoration' in history) {
+    history.scrollRestoration = 'manual';
+  }
+
+  function scrollToTopInstant() {
+    var prev = root.style.scrollBehavior;
+    root.style.scrollBehavior = 'auto';
+    window.scrollTo(0, 0);
+    root.style.scrollBehavior = prev;
+  }
+
+  if (window.location.hash) {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+  scrollToTopInstant();
+
+  var userInteracted = false;
+  function markInteracted() {
+    userInteracted = true;
+  }
+  window.addEventListener('wheel', markInteracted, { passive: true, once: true });
+  window.addEventListener('touchstart', markInteracted, { passive: true, once: true });
+  window.addEventListener('pointerdown', markInteracted, { passive: true, once: true });
+  window.addEventListener('keydown', markInteracted, { passive: true, once: true });
+
   // ---- Photos and videos: block the easy ways to save them -----------------
   // No right-click or long-press menu on media, and no native drag. This stops
   // casual saving. It is not real protection: the browser can still load the files.
@@ -17,13 +43,20 @@
     if (e.target.closest && e.target.closest(MEDIA_SELECTOR)) e.preventDefault();
   });
   document.addEventListener('dragstart', function (e) {
-    if (e.target.tagName === 'IMG' || e.target.tagName === 'VIDEO') e.preventDefault();
+    if (
+      e.target.tagName === 'IMG' ||
+      e.target.tagName === 'VIDEO' ||
+      (e.target.closest && e.target.closest('.whatsapp-float'))
+    ) {
+      e.preventDefault();
+    }
   });
 
   // ---- Header: solid background after scrolling, mobile menu ------------
   var header = document.querySelector('.site-header');
   var toggle = document.querySelector('.nav-toggle');
   var nav = document.getElementById('site-nav');
+  var heroSection = document.querySelector('.hero');
 
   function updateHeader() {
     if (header) header.classList.toggle('is-scrolled', window.scrollY > 40);
@@ -31,15 +64,43 @@
   updateHeader();
 
   // The WhatsApp button fades in once the visitor has scrolled past the cover.
+  // Measure against the cover height (100svh) with hysteresis so mobile toolbar
+  // expand/collapse on touch never hides the button mid-tap.
   var whatsapp = document.querySelector('.whatsapp-float');
+  var whatsappVisible = false;
   function updateWhatsApp() {
-    if (whatsapp) whatsapp.classList.toggle('is-visible', window.scrollY > window.innerHeight * 0.7);
+    if (!whatsapp) return;
+    var refHeight = (heroSection && heroSection.offsetHeight) || window.innerHeight;
+    var showAt = refHeight * 0.7;
+    var hideBelow = refHeight * 0.58;
+    if (!whatsappVisible && window.scrollY > showAt) {
+      whatsappVisible = true;
+    } else if (whatsappVisible && window.scrollY < hideBelow) {
+      whatsappVisible = false;
+    }
+    whatsapp.classList.toggle('is-visible', whatsappVisible);
   }
   if (whatsapp) {
     updateWhatsApp();
     window.addEventListener('scroll', updateWhatsApp, { passive: true });
   }
   window.addEventListener('scroll', updateHeader, { passive: true });
+
+  window.addEventListener('load', function () {
+    if (!userInteracted && window.scrollY > 0) {
+      scrollToTopInstant();
+      updateHeader();
+      updateWhatsApp();
+    }
+  });
+
+  window.addEventListener('pageshow', function (e) {
+    if (e.persisted || (!userInteracted && window.scrollY > 0)) {
+      scrollToTopInstant();
+      updateHeader();
+      updateWhatsApp();
+    }
+  });
 
   function setMenu(open) {
     if (!header || !toggle) return;
@@ -57,6 +118,29 @@
       if (e.target.closest('a')) setMenu(false);
     });
   }
+  document.addEventListener('click', function (e) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    var link = e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if (!link) return;
+    var hash = link.getAttribute('href');
+    if (!hash || hash === '#') return;
+    var target = document.getElementById(hash.slice(1));
+    if (!target) return;
+    e.preventDefault();
+    setMenu(false);
+    if (hash === '#top') {
+      window.scrollTo({ top: 0, left: 0, behavior: reducedMotion ? 'auto' : 'smooth' });
+    } else {
+      target.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
+      if (hash === '#main') {
+        target.setAttribute('tabindex', '-1');
+        target.focus({ preventScroll: true });
+      }
+    }
+    if (window.location.hash) {
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+  });
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') setMenu(false);
   });
@@ -297,7 +381,6 @@
   }
 
   // ---- Cover slideshow -----------------------------------------------------
-  var heroSection = document.querySelector('.hero');
   var heroRoot = heroSection ? heroSection.querySelector('.carousel') : null;
   var heroDots = heroSection
     ? Array.prototype.slice.call(heroSection.querySelectorAll('.carousel-dot'))
@@ -327,6 +410,7 @@
   function relayoutCarousels() {
     if (hero) hero.relayout();
     if (viewerCarousel) viewerCarousel.relayout();
+    updateWhatsApp();
   }
   window.addEventListener('resize', function () {
     clearTimeout(resizeTimer);

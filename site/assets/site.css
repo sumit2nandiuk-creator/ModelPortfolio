@@ -1256,7 +1256,7 @@ main section {
   position: fixed;
   right: max(20px, env(safe-area-inset-right));
   bottom: max(20px, env(safe-area-inset-bottom));
-  z-index: 40;
+  z-index: 60;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1264,25 +1264,36 @@ main section {
   height: 62px;
   background: none;
   color: #25d366;
-  transition:
-    opacity 0.4s var(--ease),
-    transform 0.4s var(--ease),
-    filter 0.3s var(--ease);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-drag: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: opacity 0.35s var(--ease);
 }
 
 /* Official WhatsApp logo mark in its own brand green with crisp white speech-bubble outline.
-   The soft drop shadow keeps it readable over both light and dark photos. */
+   pointer-events: none keeps the outer <a> as the single stationary click/tap target. */
 .whatsapp-float svg {
   width: 56px;
   height: 56px;
   overflow: visible;
+  pointer-events: none;
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.35));
+  transition: transform 0.3s var(--ease);
 }
 
-.whatsapp-float:hover,
-.whatsapp-float:focus-visible {
-  transform: translateY(-2px);
-  filter: brightness(1.06);
+/* Only apply hover transform on true hover pointers so mobile browsers never swallow
+   the first tap as a synthetic :hover state change, and move the SVG rather than <a>. */
+@media (hover: hover) and (pointer: fine) {
+  .whatsapp-float:hover svg {
+    transform: translateY(-2px);
+  }
+}
+
+.whatsapp-float:active svg {
+  transform: scale(0.95);
 }
 
 .whatsapp-float:focus-visible {
@@ -1291,33 +1302,36 @@ main section {
   border-radius: 50%;
 }
 
+.whatsapp-float:focus-visible svg {
+  transform: translateY(-2px);
+}
+
 @media (max-width: 560px) {
   .whatsapp-float {
-    right: max(14px, env(safe-area-inset-right));
-    bottom: max(14px, env(safe-area-inset-bottom));
-    width: 54px;
-    height: 54px;
+    right: max(16px, env(safe-area-inset-right));
+    bottom: max(24px, calc(env(safe-area-inset-bottom) + 12px));
+    width: 58px;
+    height: 58px;
   }
 
   .whatsapp-float svg {
-    width: 48px;
-    height: 48px;
+    width: 50px;
+    height: 50px;
   }
 }
 
 .js .whatsapp-float {
   opacity: 0;
   visibility: hidden;
-  transform: translateY(12px);
+  pointer-events: none;
 }
 
 .js .whatsapp-float.is-visible {
   opacity: 1;
   visibility: visible;
-  transform: none;
+  pointer-events: auto;
 }
 
-.js .whatsapp-float.is-visible:hover,
-.js .whatsapp-float.is-visible:focus-visible {
-  transform: translateY(-2px);
+.js .whatsapp-float:not(.is-visible) svg {
+  transform: translateY(10px);
 }

@@ -562,7 +562,24 @@ test('WhatsApp is a floating button in the bottom-right corner, and only when a 
     assert.doesNotMatch(no, /whatsapp-float|wa\.me/);
     const css = await fs.readFile(path.join(siteDir, 'assets', 'site.css'), 'utf8');
     assert.match(css, /\.whatsapp-float \{[\s\S]*?bottom: max\(20px/);
+    assert.match(css, /\.whatsapp-float \{[\s\S]*?touch-action: manipulation;/);
+    assert.match(css, /\.whatsapp-float svg \{[\s\S]*?pointer-events: none;/);
+    assert.match(css, /@media \(hover: hover\) and \(pointer: fine\) \{[\s\S]*?\.whatsapp-float:hover svg/);
     assert.doesNotMatch(css, /\.whatsapp-starburst/);
+  } finally {
+    await ws.cleanup();
+  }
+});
+
+test('refreshing a page resets scroll restoration and starts at the top', async () => {
+  const ws = await tempWorkspace();
+  try {
+    await build({ siteDir, outDir: ws.outDir });
+    const html = await fs.readFile(path.join(ws.outDir, 'sushmita-ghosh', 'index.html'), 'utf8');
+    assert.match(html, /history\.scrollRestoration='manual'/);
+    const js = await fs.readFile(path.join(siteDir, 'assets', 'site.js'), 'utf8');
+    assert.match(js, /history\.scrollRestoration = 'manual'/);
+    assert.match(js, /window\.scrollTo\(0, 0\)/);
   } finally {
     await ws.cleanup();
   }

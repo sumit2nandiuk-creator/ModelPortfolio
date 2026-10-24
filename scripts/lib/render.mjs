@@ -52,6 +52,7 @@ function documentShell({ title, description = '', body, bodyClass = '', extraHea
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+  <script>if('scrollRestoration' in history)history.scrollRestoration='manual';if(location.hash)history.replaceState(null,'',location.pathname+location.search);</script>
   <link rel="stylesheet" href="${esc(base)}assets/site.css">
   ${extraHead}
 </head>

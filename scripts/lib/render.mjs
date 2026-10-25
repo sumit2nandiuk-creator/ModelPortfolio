@@ -30,11 +30,15 @@ function dimensionAttrs(size) {
 function imageSource(entry, ctx) {
   const full = ctx.mediaUrl(entry.file);
   const thumb = entry.thumbnail ? ctx.mediaUrl(entry.thumbnail) : '';
-  return { src: thumb || full, full, thumb };
+  const preview = entry.preview ? ctx.mediaUrl(entry.preview) : '';
+  return { src: preview || thumb || full, full, thumb, preview };
 }
 
 function progressiveAttrs(source) {
-  return source.thumb ? ` data-full-src="${esc(source.full)}"` : '';
+  const attrs = [];
+  if (source.preview && source.thumb) attrs.push(`data-medium-src="${esc(source.thumb)}"`);
+  if (source.preview || source.thumb) attrs.push(`data-full-src="${esc(source.full)}"`);
+  return attrs.length ? ` ${attrs.join(' ')}` : '';
 }
 
 function uniqueInOrder(values) {
@@ -178,7 +182,7 @@ function renderHero(model, ctx) {
       const src = source.full;
       const label = many ? `Open cover photo ${i + 1} of ${covers.length}` : 'Open cover photo';
       return `
-        <button class="carousel-slide" type="button" data-src="${esc(src)}"${source.thumb ? ` data-thumb="${esc(source.thumb)}"` : ''} data-alt="${esc(cover.alt)}" data-caption="" aria-label="${esc(label)}">
+        <button class="carousel-slide" type="button" data-src="${esc(src)}"${(source.thumb || source.preview) ? ` data-thumb="${esc(source.thumb || source.preview)}"` : ''} data-alt="${esc(cover.alt)}" data-caption="" aria-label="${esc(label)}">
           <img class="hero-media" src="${esc(source.src)}"${progressiveAttrs(source)} alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} loading="${i === 0 ? 'eager' : 'lazy'}"${i === 0 ? ' fetchpriority="high"' : ''} decoding="async" draggable="false">
         </button>`;
     })
@@ -408,7 +412,7 @@ function renderPortfolio(model, ctx) {
           const label = [group.title, photo.title].filter(Boolean).join(' · ');
           return `
               <figure class="media-card media-card--photo gallery-item" data-category="${esc(group.title)}">
-                <button class="gallery-btn" type="button" data-index="${i}" data-src="${esc(src)}"${source.thumb ? ` data-thumb="${esc(source.thumb)}"` : ''} data-alt="${esc(alt)}" data-caption="${esc(caption)}" aria-label="Open photo: ${esc(label)}">
+                <button class="gallery-btn" type="button" data-index="${i}" data-src="${esc(src)}"${(source.thumb || source.preview) ? ` data-thumb="${esc(source.thumb || source.preview)}"` : ''} data-alt="${esc(alt)}" data-caption="${esc(caption)}" aria-label="Open photo: ${esc(label)}">
                   <img src="${esc(source.src)}"${progressiveAttrs(source)} alt="${esc(alt)}"${dimensionAttrs(pDim)} loading="lazy" decoding="async" draggable="false">
                 </button>${
                   photo.year
@@ -599,7 +603,7 @@ export function renderModelPage(model, ctx) {
     }
   };
   for (const coverEntry of covers) {
-    if (coverEntry?.file) registerRemoteOrigin(ctx.mediaUrl(coverEntry.thumbnail || coverEntry.file));
+    if (coverEntry?.file) registerRemoteOrigin(ctx.mediaUrl(coverEntry.preview || coverEntry.thumbnail || coverEntry.file));
   }
   for (const p of model.photos ?? []) {
     if (p.file) registerRemoteOrigin(ctx.mediaUrl(p.file));
@@ -620,7 +624,7 @@ export function renderModelPage(model, ctx) {
   const coverPreloads = covers
     .slice(0, 1)
     .map((c, i) => {
-      const url = c.thumbnail ? ctx.mediaUrl(c.thumbnail) : ctx.mediaUrl(c.file);
+      const url = ctx.mediaUrl(c.preview || c.thumbnail || c.file);
       if (!url) return '';
       return `<link rel="preload" as="image" href="${esc(url)}"${i === 0 ? ' fetchpriority="high"' : ''}>`;
     })

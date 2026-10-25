@@ -367,11 +367,13 @@ function createAdminUploadHarness(modelOverrides = {}, modelSlugs = ['sushmita-g
     }
     if (url.endsWith('/api/models/sushmita-ghosh/media') && opts.method === 'POST') {
       thumbnailUploads.push(opts.body);
+      const file = opts.body.entries.find((entry) => entry.name === 'file');
+      const isPreview = String(file?.filename || '').startsWith('preview-');
       return {
         status: 201,
         ok: true,
         headers: { get: () => 'application/json' },
-        json: async () => ({ url: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/thumb-cover.webp' }),
+        json: async () => ({ url: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/' + (isPreview ? 'preview-cover.webp' : 'thumb-cover.webp') }),
       };
     }
     if (url.endsWith('/api/models/sushmita-ghosh') && opts.method === 'PUT') {
@@ -787,8 +789,9 @@ test('admin panel moves measurement attributes up/down and adds newly uploaded p
     'https://modelportfolio.pages.dev/media/sushmita-ghosh/1-new-hero.jpg',
     'cover-old.jpg',
   ]);
-  assert.ok(saved.cover[0].thumbnail, 'new slideshow cover receives a small thumbnail automatically');
-  assert.equal(h.thumbnailUploads.length, 3, 'cover and both new portfolio photos each upload a thumbnail');
+  assert.ok(saved.cover[0].thumbnail, 'new slideshow cover receives a normal thumbnail automatically');
+  assert.ok(saved.cover[0].preview, 'new slideshow cover receives a tiny preview automatically');
+  assert.equal(h.thumbnailUploads.length, 6, 'cover and both new portfolio photos each upload normal and tiny thumbnails');
   assert.deepEqual(saved.videos.map((v) => v.file), [
     'https://modelportfolio.pages.dev/media/sushmita-ghosh/4-new-reel.mp4',
     'https://modelportfolio.pages.dev/media/sushmita-ghosh/old-bridal.mp4',
@@ -847,18 +850,36 @@ test('Generate Thumbnails downsizes missing model images, uploads them to R2 and
   h.doc.getElementById('generate-thumbnails').dispatchEvent({ type: 'click', bubbles: true });
   for (let i = 0; i < 8; i++) await h.flush();
 
-  assert.equal(h.thumbnailUploads.length, 1, 'one thumbnail is uploaded for the cover image');
-  assert.equal(h.canvases[0].width, 240, 'thumbnail is resized to at most 360 pixels on its longest edge');
-  assert.equal(h.canvases[0].height, 360);
-  assert.equal(h.savedPayloads.length, 1, 'profile is saved after the thumbnail upload');
+  assert.equal(h.thumbnailUploads.length, 2, 'one tiny preview and one normal thumbnail are uploaded for the cover');
+  assert.ok(h.canvases.some((canvas) => canvas.width === 43 && canvas.height === 64), 'tiny preview is resized to at most 64 pixels on its longest edge');
+  assert.ok(h.canvases.some((canvas) => canvas.width === 240 && canvas.height === 360), 'normal thumbnail is resized to at most 360 pixels on its longest edge');
+  assert.equal(h.savedPayloads.length, 1, 'profile is saved after thumbnail upload');
   assert.equal(
     h.savedPayloads[0].model.cover[0].thumbnail,
     'https://modelportfolio.pages.dev/media/sushmita-ghosh/thumb-cover.webp',
   );
+  assert.equal(
+    h.savedPayloads[0].model.cover[0].preview,
+    'https://modelportfolio.pages.dev/media/sushmita-ghosh/preview-cover.webp',
+  );
 
   h.doc.getElementById('generate-thumbnails').dispatchEvent({ type: 'click', bubbles: true });
   await h.flush();
-  assert.equal(h.thumbnailUploads.length, 1, 'a second run skips images that already have thumbnails');
+  assert.equal(h.thumbnailUploads.length, 2, 'a second run skips images that already have both thumbnail sizes');
+});
+
+test('Generate Thumbnails backfills only the tiny preview when a normal cover thumbnail already exists', async () => {
+  const h = await createAdminUploadHarness({
+    cover: [{ file: 'cover.jpg', thumbnail: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/existing-normal.webp', alt: 'Cover' }],
+  });
+  await h.boot();
+  h.doc.getElementById('generate-thumbnails').dispatchEvent({ type: 'click', bubbles: true });
+  for (let i = 0; i < 8; i++) await h.flush();
+
+  assert.equal(h.thumbnailUploads.length, 1, 'only the missing tiny preview is generated');
+  assert.equal(h.thumbnailUploads[0].entries[0].filename.startsWith('preview-'), true);
+  assert.equal(h.savedPayloads[0].model.cover[0].thumbnail, 'https://modelportfolio.pages.dev/media/sushmita-ghosh/existing-normal.webp');
+  assert.equal(h.savedPayloads[0].model.cover[0].preview, 'https://modelportfolio.pages.dev/media/sushmita-ghosh/preview-cover.webp');
 });
 
 test('a batch of four cover slideshow photos receives a thumbnail per image before publishing', async () => {
@@ -883,12 +904,12 @@ test('a batch of four cover slideshow photos receives a thumbnail per image befo
     for (let wait = 0; wait < 10; wait++) await h.flush();
   }
 
-  assert.equal(h.thumbnailUploads.length, 4, 'every uploaded cover generates and uploads a small WebP thumbnail');
+  assert.equal(h.thumbnailUploads.length, 8, 'every uploaded cover generates and uploads tiny and normal WebP thumbnails');
   h.doc.getElementById('save').dispatchEvent({ type: 'click', bubbles: true });
   await h.flush();
   await h.flush();
   assert.equal(h.savedPayloads[0].model.cover.length, 4);
-  assert.ok(h.savedPayloads[0].model.cover.every((cover) => cover.thumbnail), 'all four saved cover entries include thumbnail URLs');
+  assert.ok(h.savedPayloads[0].model.cover.every((cover) => cover.thumbnail && cover.preview), 'all four saved cover entries include both thumbnail sizes');
 });
 
 test('a newly uploaded portfolio photo gets a thumbnail uploaded and linked automatically', async () => {
@@ -911,14 +932,19 @@ test('a newly uploaded portfolio photo gets a thumbnail uploaded and linked auto
   h.xhrs[0].emit('load');
   for (let i = 0; i < 8; i++) await h.flush();
 
-  assert.equal(h.thumbnailUploads.length, 1, 'generated thumbnail is uploaded to R2 automatically');
+  assert.equal(h.thumbnailUploads.length, 2, 'generated normal and tiny thumbnails are uploaded to R2 automatically');
   h.doc.getElementById('save').dispatchEvent({ type: 'click', bubbles: true });
   await h.flush();
   await h.flush();
   assert.equal(
     h.savedPayloads[0].model.photos[0].thumbnail,
     'https://modelportfolio.pages.dev/media/sushmita-ghosh/thumb-cover.webp',
-    'saved photo references the generated thumbnail URL',
+    'saved photo references the normal thumbnail URL',
+  );
+  assert.equal(
+    h.savedPayloads[0].model.photos[0].preview,
+    'https://modelportfolio.pages.dev/media/sushmita-ghosh/preview-cover.webp',
+    'saved photo references the tiny preview URL',
   );
 });
 

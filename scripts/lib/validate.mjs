@@ -234,7 +234,7 @@ export function mediaEntries(model) {
   for (const photo of model.photos ?? []) entries.push(photo);
   for (const video of model.videos ?? []) {
     entries.push(video);
-    if (video.poster) entries.push({ file: video.poster, width: video.posterWidth, height: video.posterHeight });
+    if (video.poster) entries.push({ file: video.poster, width: video.posterWidth, height: video.posterHeight, thumbnail: video.posterThumbnail, preview: video.posterPreview });
   }
   return entries.filter((e) => e && typeof e.file === 'string');
 }
@@ -244,7 +244,9 @@ export function mediaEntries(model) {
 export function referencedMediaFiles(model) {
   const files = new Set();
   for (const entry of mediaEntries(model)) {
-    if (!isHttpUrl(entry.file)) files.add(entry.file);
+    for (const file of [entry.file, entry.thumbnail, entry.preview]) {
+      if (typeof file === 'string' && file && !isHttpUrl(file)) files.add(file);
+    }
   }
   return [...files];
 }

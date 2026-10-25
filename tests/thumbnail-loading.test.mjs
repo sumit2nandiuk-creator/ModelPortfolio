@@ -12,8 +12,8 @@ const media = (file) => file.startsWith('http') ? file : `/media/jane-doe/${enco
 const profile = {
   slug: 'jane-doe',
   name: 'Jane Doe',
-  cover: { file: 'cover.jpg', thumbnail: 'cover-thumb.webp', alt: 'Jane' },
-  photos: [{ file: 'photo.jpg', thumbnail: 'photo-thumb.webp', title: 'Look', category: 'Editorial' }],
+  cover: { file: 'cover.jpg', preview: 'cover-preview.webp', thumbnail: 'cover-thumb.webp', alt: 'Jane' },
+  photos: [{ file: 'photo.jpg', preview: 'photo-preview.webp', thumbnail: 'photo-thumb.webp', title: 'Look', category: 'Editorial' }],
   videos: [{ file: 'reel.mp4', poster: 'poster.jpg', posterThumbnail: 'poster-thumb.webp', title: 'Reel', category: 'Film' }],
 };
 
@@ -28,30 +28,30 @@ function render(model = profile) {
 
 test('site markup starts with R2 thumbnails and retains full-size sources for progressive replacement and popup', () => {
   const html = render();
-  assert.match(html, /<img class="hero-media" src="\/media\/jane-doe\/cover-thumb\.webp" data-full-src="\/media\/jane-doe\/cover\.jpg"/);
+  assert.match(html, /<img class="hero-media" src="\/media\/jane-doe\/cover-preview\.webp" data-medium-src="\/media\/jane-doe\/cover-thumb\.webp" data-full-src="\/media\/jane-doe\/cover\.jpg"/);
   assert.match(html, /data-src="\/media\/jane-doe\/cover\.jpg" data-thumb="\/media\/jane-doe\/cover-thumb\.webp"/);
-  assert.match(html, /<img src="\/media\/jane-doe\/photo-thumb\.webp" data-full-src="\/media\/jane-doe\/photo\.jpg"/);
+  assert.match(html, /<img src="\/media\/jane-doe\/photo-preview\.webp" data-medium-src="\/media\/jane-doe\/photo-thumb\.webp" data-full-src="\/media\/jane-doe\/photo\.jpg"/);
   assert.match(html, /data-src="\/media\/jane-doe\/photo\.jpg" data-thumb="\/media\/jane-doe\/photo-thumb\.webp"/);
   assert.match(html, /poster="\/media\/jane-doe\/poster-thumb\.webp" data-full-poster="\/media\/jane-doe\/poster\.jpg"/);
-  assert.match(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-thumb\.webp" fetchpriority="high">/);
+  assert.match(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-preview\.webp" fetchpriority="high">/);
 });
 
-test('cover slideshow uses stored small thumbnails, loads only the first cover eagerly, and preloads only its thumbnail', () => {
+test('cover slideshow uses tiny previews first, loads only the first cover eagerly, and preloads only its preview', () => {
   const html = render({
     ...profile,
     cover: [
-      { file: 'cover-1.jpg', thumbnail: 'cover-1-thumb.webp', alt: 'First cover' },
-      { file: 'cover-2.jpg', thumbnail: 'cover-2-thumb.webp', alt: 'Second cover' },
-      { file: 'cover-3.jpg', thumbnail: 'cover-3-thumb.webp', alt: 'Third cover' },
-      { file: 'cover-4.jpg', thumbnail: 'cover-4-thumb.webp', alt: 'Fourth cover' },
+      { file: 'cover-1.jpg', preview: 'cover-1-preview.webp', thumbnail: 'cover-1-thumb.webp', alt: 'First cover' },
+      { file: 'cover-2.jpg', preview: 'cover-2-preview.webp', thumbnail: 'cover-2-thumb.webp', alt: 'Second cover' },
+      { file: 'cover-3.jpg', preview: 'cover-3-preview.webp', thumbnail: 'cover-3-thumb.webp', alt: 'Third cover' },
+      { file: 'cover-4.jpg', preview: 'cover-4-preview.webp', thumbnail: 'cover-4-thumb.webp', alt: 'Fourth cover' },
     ],
   });
   for (let i = 1; i <= 4; i++) {
-    assert.match(html, new RegExp(`src="/media/jane-doe/cover-${i}-thumb\\.webp" data-full-src="/media/jane-doe/cover-${i}\\.jpg"`));
+    assert.match(html, new RegExp(`src="/media/jane-doe/cover-${i}-preview\\.webp" data-medium-src="/media/jane-doe/cover-${i}-thumb\\.webp" data-full-src="/media/jane-doe/cover-${i}\\.jpg"`));
   }
-  assert.match(html, /cover-1-thumb\.webp" data-full-src[^>]*loading="eager" fetchpriority="high"/);
-  assert.match(html, /cover-2-thumb\.webp" data-full-src[^>]*loading="lazy"/);
-  assert.match(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-1-thumb\.webp" fetchpriority="high">/);
+  assert.match(html, /cover-1-preview\.webp" data-medium-src[^>]*loading="eager" fetchpriority="high"/);
+  assert.match(html, /cover-2-preview\.webp" data-medium-src[^>]*loading="lazy"/);
+  assert.match(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-1-preview\.webp" fetchpriority="high">/);
   assert.doesNotMatch(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-[2-4]-thumb\.webp"/);
 });
 
@@ -75,5 +75,8 @@ test('admin exposes the Generate Thumbnails action and the site upgrades thumbna
   assert.match(admin, /href="\.\.\/errors"[^>]*aria-label="Application errors"/);
   assert.match(admin, /id="view-site"[^>]*aria-label="View site"/);
   assert.match(siteJs, /function loadFullImageAfterThumbnail\(img\)/);
+  assert.match(siteJs, /var mediumUrl = typeof img\.getAttribute === 'function' \? img\.getAttribute\('data-medium-src'\) : ''/);
+  assert.match(siteJs, /setMediaSrc\(img, mediumUrl\);\s*loadFullImageAfterThumbnail\(img\);/);
   assert.match(siteJs, /full\.onload = function \(\)[\s\S]*?img\.removeAttribute\('data-full-src'\)[\s\S]*?setMediaSrc\(img, fullUrl\)/);
+  assert.match(siteJs, /activeImg && activeImg\.complete && \(activeImg\.naturalWidth \|\| 0\) > 0\) loadFullImageAfterThumbnail\(activeImg\)/);
 });

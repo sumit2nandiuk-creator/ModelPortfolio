@@ -61,6 +61,12 @@ test('the shape check rejects reserved slugs and photos without a title', () => 
 test('uploads: images and videos are allowed, other types and oversize files are not', () => {
   assert.equal(checkUpload({ name: 'Bridal.JPG', size: 1000 }).kind, 'image');
   assert.equal(checkUpload({ name: 'reel.mp4', size: 1000 }).contentType, 'video/mp4');
+  // iPhone gallery .MOV videos and extensionless Android gallery files with MIME types work cleanly.
+  assert.equal(checkUpload({ name: 'IMG_4821.MOV', size: 12 * 1024 * 1024 }).contentType, 'video/quicktime');
+  const androidVideo = checkUpload({ name: '1000048291', size: 5 * 1024 * 1024, type: 'video/mp4' });
+  assert.equal(androidVideo.ok, true);
+  assert.equal(androidVideo.normalizedName, '1000048291.mp4');
+  assert.equal(parseMediaPath('/media/jane-doe/1700000-abcd-img-4821.mov')?.contentType, 'video/quicktime');
   assert.equal(checkUpload({ name: 'run.exe', size: 1000 }).ok, false);
   assert.equal(checkUpload({ name: 'huge.jpg', size: 26 * 1024 * 1024 }).ok, false);
   assert.equal(checkUpload({ name: 'big.mp4', size: 90 * 1024 * 1024 }).ok, true);

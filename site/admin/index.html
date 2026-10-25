@@ -43,8 +43,11 @@
       <div id="status" class="status" role="status" aria-live="polite"></div>
       <div id="editor-body"></div>
       <div class="savebar">
-        <span id="dirty-note" class="muted"></span>
-        <button type="button" class="btn primary" id="save">Save changes</button>
+        <div id="savebar-progress" class="savebar-progress" hidden></div>
+        <div class="savebar-row">
+          <span id="dirty-note" class="muted"></span>
+          <button type="button" class="btn primary" id="save">Save changes</button>
+        </div>
       </div>
     </section>
   </main>

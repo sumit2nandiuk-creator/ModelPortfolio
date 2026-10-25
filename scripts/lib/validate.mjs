@@ -30,7 +30,7 @@ export const RESERVED_SLUGS = new Set([
 ]);
 
 export const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.avif', '.gif']);
-export const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.m4v']);
+export const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.m4v', '.mov']);
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

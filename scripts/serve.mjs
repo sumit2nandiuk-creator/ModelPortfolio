@@ -30,6 +30,7 @@ const TYPES = {
   '.svg': 'image/svg+xml',
   '.mp4': 'video/mp4',
   '.m4v': 'video/mp4',
+  '.mov': 'video/quicktime',
   '.webm': 'video/webm',
   '.txt': 'text/plain; charset=utf-8',
 };

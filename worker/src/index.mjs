@@ -500,10 +500,10 @@ async function route(request, url, ctx) {
       if (!file || typeof file !== 'object' || typeof file.size !== 'number') {
         return fail(cors, 400, 'Choose a file to upload.');
       }
-      const check = checkUpload({ name: file.name, size: file.size });
+      const check = checkUpload({ name: file.name, size: file.size, type: file.type });
       if (!check.ok) return fail(cors, 400, check.error);
 
-      const key = mediaKeyFor(slug, file.name, ctx.now(), ctx.randomId());
+      const key = mediaKeyFor(slug, check.normalizedName || file.name, ctx.now(), ctx.randomId());
       await env.MEDIA.put(key, file, {
         httpMetadata: { contentType: check.contentType, cacheControl: MEDIA_CACHE },
       });

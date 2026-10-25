@@ -279,7 +279,40 @@ label > input, label > textarea, label > select { color: var(--ink); }
 
 .item-fields { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 .item-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 8px; }
-.stat-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; margin-bottom: 8px; }
+.stats-editor-list { display: grid; gap: 6px; }
+.stats-head-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 98px;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0 2px;
+}
+.stats-head-row span:last-child { text-align: right; padding-right: 4px; }
+.stat-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+.stat-row input {
+  padding: 6px 8px;
+  font-size: 0.9rem;
+}
+.stat-row-actions {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.stat-icon-btn {
+  min-width: 30px;
+  height: 32px;
+  padding: 0 7px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  line-height: 1;
+}
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .toolbar-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 

@@ -1190,13 +1190,24 @@
   }
 
   function statsHtml() {
+    var count = S.model.stats.length;
+    if (!count) return '<p class="muted">No measurements yet.</p>';
     var statStyle = esc(boxInlineCss('stats'));
-    return S.model.stats.map(function (s, i) {
+    var head = '<div class="stats-head-row" aria-hidden="true">' +
+      '<span>Label</span><span>Value</span><span>Order</span>' +
+    '</div>';
+    var rows = S.model.stats.map(function (s, i) {
       return '<div class="stat-row">' +
-        '<label>Label<input data-list="stats" data-i="' + i + '" data-key="label" data-styled-slot="stats" style="' + statStyle + '" value="' + esc(s.label) + '"></label>' +
-        '<label>Value<input data-list="stats" data-i="' + i + '" data-key="value" data-styled-slot="stats" style="' + statStyle + '" value="' + esc(s.value) + '"></label>' +
-        removeButton('stats', i) + '</div>';
-    }).join('') || '<p class="muted">No measurements yet.</p>';
+        '<input aria-label="Measurement label" placeholder="Label (e.g. Height)" data-list="stats" data-i="' + i + '" data-key="label" data-styled-slot="stats" style="' + statStyle + '" value="' + esc(s.label) + '">' +
+        '<input aria-label="Measurement value" placeholder="Value (e.g. 5′4″)" data-list="stats" data-i="' + i + '" data-key="value" data-styled-slot="stats" style="' + statStyle + '" value="' + esc(s.value) + '">' +
+        '<div class="stat-row-actions">' +
+          '<button type="button" class="btn small stat-icon-btn" data-action="move" data-list="stats" data-i="' + i + '" data-dir="-1"' + (i === 0 ? ' disabled' : '') + ' title="Move up" aria-label="Move measurement up">↑</button>' +
+          '<button type="button" class="btn small stat-icon-btn" data-action="move" data-list="stats" data-i="' + i + '" data-dir="1"' + (i === count - 1 ? ' disabled' : '') + ' title="Move down" aria-label="Move measurement down">↓</button>' +
+          '<button type="button" class="btn small danger stat-icon-btn" data-action="remove" data-list="stats" data-i="' + i + '" title="Remove measurement" aria-label="Remove measurement">✕</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    return '<div class="stats-editor-list">' + head + rows + '</div>';
   }
 
   function render() {
@@ -2329,18 +2340,43 @@
     }
 
     var cancelled = false;
+    var batchInserted = 0;
     files.reduce(function (chain, file, idx) {
       return chain.then(function () {
         if (cancelled) return;
-        return addMedia(kind, file, idx, files.length, groupId).then(function (res) {
+        return addMedia(kind, file, idx, files.length, groupId, batchInserted).then(function (res) {
           if (res && res.aborted) cancelled = true;
+          else if (res && res.ok) batchInserted++;
         });
       });
     }, Promise.resolve()).then(doneReset, doneReset);
   }
 
-  function addMedia(kind, file, fileIndex, totalFiles, groupId) {
+  function shiftPosterUploadSlots(fromIndex) {
+    var keys = Object.keys(S.uploads || {});
+    var posterNums = [];
+    keys.forEach(function (k) {
+      if (k.indexOf('poster-') === 0) {
+        var n = Number(k.slice(7));
+        if (!isNaN(n) && n >= fromIndex) posterNums.push(n);
+      }
+    });
+    posterNums.sort(function (a, b) { return b - a; }).forEach(function (n) {
+      var oldKey = 'poster-' + n;
+      var newKey = 'poster-' + (n + 1);
+      S.uploads[newKey] = S.uploads[oldKey];
+      delete S.uploads[oldKey];
+      if (uploadDoneTimers[oldKey]) {
+        clearTimeout(uploadDoneTimers[oldKey]);
+        delete uploadDoneTimers[oldKey];
+        scheduleUploadAutoClear(newKey);
+      }
+    });
+  }
+
+  function addMedia(kind, file, fileIndex, totalFiles, groupId, insertIndex) {
     var isVideo = kind === 'video';
+    var insertPos = Math.max(0, Number(insertIndex) || 0);
     var targetGrp = (kind === 'photo' || kind === 'video') ? findEditorGroup(groupId) : null;
     if (kind === 'cover') delete S.collapsedSections.cover;
     else delete S.collapsedSections.portfolio;
@@ -2403,7 +2439,8 @@
       var uploaded = results[0];
       var size = results[1];
       if (kind === 'cover') {
-        S.model.cover.push(withSize({ file: uploaded.url, alt: titleFrom(prep.uploadName, fallbackTitle) }, size));
+        var coverIdx = Math.min(insertPos, S.model.cover.length);
+        S.model.cover.splice(coverIdx, 0, withSize({ file: uploaded.url, alt: titleFrom(prep.uploadName, fallbackTitle) }, size));
       } else if (kind === 'photo') {
         var pEntry = withSize({
           file: uploaded.url,
@@ -2413,7 +2450,8 @@
           alt: '',
         }, size);
         if (targetGrp) pEntry._gid = targetGrp.id;
-        S.model.photos.push(pEntry);
+        var photoIdx = Math.min(insertPos, S.model.photos.length);
+        S.model.photos.splice(photoIdx, 0, pEntry);
       } else if (kind === 'video') {
         var vEntry = withSize({
           file: uploaded.url,
@@ -2422,7 +2460,9 @@
           description: '',
         }, size);
         if (targetGrp) vEntry._gid = targetGrp.id;
-        S.model.videos.push(vEntry);
+        var videoIdx = Math.min(insertPos, S.model.videos.length);
+        shiftPosterUploadSlots(videoIdx);
+        S.model.videos.splice(videoIdx, 0, vEntry);
       }
       S.abortUpload = null;
       var isLast = !(totalFiles > 1 && fileIndex + 1 < totalFiles);

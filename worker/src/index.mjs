@@ -52,7 +52,7 @@ async function profileState(bucket, slug) {
   const value = await readObjectText(obj).catch(() => '');
   try {
     const state = JSON.parse(value).state;
-    return state === 'archived' || state === 'deleted' ? state : null;
+    return ['archived', 'deleted', 'recreated', 'recreated-archived'].includes(state) ? state : null;
   } catch {
     return null;
   }
@@ -298,7 +298,8 @@ async function readSeedSlugs(url, ctx) {
 }
 
 async function readSeedProfile(url, ctx, slug) {
-  if (await profileState(ctx.env.MEDIA, slug) === 'deleted') return null;
+  const state = await profileState(ctx.env.MEDIA, slug);
+  if (state === 'deleted' || state === 'recreated' || state === 'recreated-archived') return null;
   const fromAssets = await fetchAssetJson(url, ctx.env, `/_seed/${encodeURIComponent(slug)}.json`);
   if (fromAssets && typeof fromAssets.model === 'object' && fromAssets.model) {
     return { model: fromAssets.model, sizes: fromAssets.sizes ?? {}, sha: 'seed' };
@@ -350,7 +351,7 @@ export async function handleSeedMediaRequest(context) {
     await persistBackendError(context.env, context.request, err, { status: 500, area: 'seed-media' });
     return new Response('Something went wrong.', { status: 500, headers: { 'Cache-Control': 'no-store' } });
   }
-  if (state === 'archived' || state === 'deleted') {
+  if (state === 'archived' || state === 'deleted' || state === 'recreated' || state === 'recreated-archived') {
     return new Response('This profile is not available.', {
       status: 404,
       headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
@@ -388,7 +389,7 @@ async function renderModelPageRequest(context, { trailingSlash = true } = {}) {
   const url = new URL(request.url);
   const base = normalizeBasePath(env.SITE_BASE_PATH);
   const state = await profileState(env.MEDIA, slug);
-  if (state === 'archived' || state === 'deleted') {
+  if (state === 'archived' || state === 'deleted' || state === 'recreated-archived') {
     return new Response('This profile is not available.', {
       status: 404,
       headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
@@ -398,7 +399,10 @@ async function renderModelPageRequest(context, { trailingSlash = true } = {}) {
   if (!trailingSlash) {
     if (request.method !== 'GET' && request.method !== 'HEAD') return context.next();
     const meta = await headObject(env.MEDIA, profileKeyFor(slug));
-    if (!meta) return context.next();
+    if (!meta) {
+      if (state === 'recreated') return new Response('This profile is not available.', { status: 404, headers: { 'Cache-Control': 'no-store' } });
+      return context.next();
+    }
     return Response.redirect(`${url.origin}${base}${encodeURIComponent(slug)}/${url.search}`, 308);
   }
 
@@ -407,7 +411,10 @@ async function renderModelPageRequest(context, { trailingSlash = true } = {}) {
   }
 
   const stored = await env.MEDIA.get(profileKeyFor(slug));
-  if (!stored) return context.next();
+  if (!stored) {
+    if (state === 'recreated') return new Response('This profile is not available.', { status: 404, headers: { 'Cache-Control': 'no-store' } });
+    return context.next();
+  }
 
   const version = objectVersion(stored);
   const etag = stored.httpEtag || `"${String(version).replace(/"/g, '')}"`;
@@ -682,10 +689,11 @@ async function route(request, url, ctx) {
       readSeedSlugs(url, ctx),
       listProfileStates(env.MEDIA),
     ]);
-    const models = [...new Set([...storedSlugs, ...seedSlugs])]
+    const visibleSeedSlugs = seedSlugs.filter((slug) => !['recreated', 'recreated-archived'].includes(states.get(slug)));
+    const models = [...new Set([...storedSlugs, ...visibleSeedSlugs])]
       .filter((slug) => states.get(slug) !== 'deleted')
       .sort();
-    const archived = models.filter((slug) => states.get(slug) === 'archived');
+    const archived = models.filter((slug) => ['archived', 'recreated-archived'].includes(states.get(slug)));
     return reply(cors, { models, archived });
   }
 
@@ -708,21 +716,23 @@ async function route(request, url, ctx) {
     }
 
     if (request.method === 'PUT') {
-      if (await profileState(env.MEDIA, slug) === 'deleted') {
-        return fail(cors, 410, 'This profile was permanently deleted and cannot be restored.');
-      }
+      const state = await profileState(env.MEDIA, slug);
       const body = await request.json().catch(() => null);
       if (!body || typeof body !== 'object') return fail(cors, 400, 'Send the profile as JSON.');
+      const recreatingDeletedProfile = state === 'deleted' && !body.sha;
+      if (state === 'deleted' && !recreatingDeletedProfile) {
+        return fail(cors, 410, 'This profile was permanently deleted. Create it again without a version token to reuse this address.');
+      }
       const errors = validateModelShape(body.model, slug);
       if (errors.length) return fail(cors, 400, errors[0], { errors });
 
       const profileKey = profileKeyFor(slug);
       const existingStored = await headObject(env.MEDIA, profileKey);
       if (existingStored) {
-        if (!body.sha) {
+        if (!body.sha && !recreatingDeletedProfile) {
           return fail(cors, 409, 'A profile with this address already exists. Open it from the list instead.');
         }
-        if (body.sha !== objectVersion(existingStored)) {
+        if (body.sha && body.sha !== objectVersion(existingStored)) {
           return fail(
             cors,
             409,
@@ -730,7 +740,7 @@ async function route(request, url, ctx) {
           );
         }
       } else {
-        const seed = await readSeedProfile(url, ctx, slug);
+        const seed = state === 'deleted' ? null : await readSeedProfile(url, ctx, slug);
         if (seed) {
           if (!body.sha) {
             return fail(cors, 409, 'A profile with this address already exists. Open it from the list instead.');
@@ -759,6 +769,7 @@ async function route(request, url, ctx) {
         },
         customMetadata: { version: newVersion },
       });
+      if (recreatingDeletedProfile) await writeProfileState(env.MEDIA, slug, 'recreated');
       return reply(cors, { sha: newVersion });
     }
 
@@ -768,12 +779,14 @@ async function route(request, url, ctx) {
       const state = await profileState(env.MEDIA, slug);
       if (action === 'archive') {
         if (state === 'deleted') return fail(cors, 410, 'This profile was permanently deleted.');
-        await writeProfileState(env.MEDIA, slug, 'archived');
+        const archivedState = state === 'recreated' || state === 'recreated-archived' ? 'recreated-archived' : 'archived';
+        await writeProfileState(env.MEDIA, slug, archivedState);
         return reply(cors, { state: 'archived' });
       }
       if (action === 'restore') {
         if (state === 'deleted') return fail(cors, 410, 'This profile was permanently deleted.');
-        await env.MEDIA.delete(profileStateKeyFor(slug));
+        if (state === 'recreated-archived') await writeProfileState(env.MEDIA, slug, 'recreated');
+        else if (state !== 'recreated') await env.MEDIA.delete(profileStateKeyFor(slug));
         return reply(cors, { state: 'active' });
       }
       if (action === 'permanent') {

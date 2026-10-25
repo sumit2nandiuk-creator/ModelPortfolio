@@ -200,7 +200,7 @@ Hosted files are referenced in `model.json` by their full `https://` URL. Option
 ### Notes
 
 - A new profile needs at least one cover photo before its first save. The admin generates a small WebP thumbnail for each newly uploaded cover/gallery image; use **Generate Thumbnails** to backfill older images.
-- Profiles can be archived and restored, or permanently removed from the public site. Permanent deletion removes R2 profile/media and blocks seed fallback; source files remain in Git.
+- Profiles can be archived and restored, or permanently removed from the public site. Permanent deletion removes R2 profile/media and blocks seed fallback; source files remain in Git. An administrator can later create a fresh profile with the same slug by submitting it without a version token; the deleted profile and its media are not restored, and stale versioned edits remain rejected.
 - Open `/errors` on the Cloudflare Pages site to inspect frontend JavaScript/media errors and backend API/runtime errors. The dashboard requires the admin token; records are stored in the private `MEDIA` R2 bucket.
 - Uploads are checked for size (25 MB for photos, 95 MB for videos) and file type. The build still checks that repo files exist.
 - If two people edit the same profile, the second save is refused with a conflict message. Reload the profile and make the change again.

@@ -560,8 +560,7 @@ test('a cover list builds a slideshow with dots and autoplay; a single cover has
     assert.equal((manyHero.match(/class="carousel-dot(?: is-active)?"/g) ?? []).length, 3);
     assert.match(manyHero, /data-autoplay="6000"/);
     assert.match(manyHero, /aria-label="Open cover photo 2 of 3"/);
-    assert.match(manyHero, /aria-label="Previous cover photo"/);
-    assert.match(manyHero, /aria-label="Next cover photo"/);
+    assert.doesNotMatch(manyHero, /carousel-control|Previous cover photo|Next cover photo/);
     // Only the first cover is eager and preloaded; adjacent slides are promoted lazily.
     assert.match(manyHero, /fetchpriority="high"/);
     assert.match(manyHero, /loading="lazy"/);

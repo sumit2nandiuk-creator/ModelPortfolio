@@ -497,6 +497,36 @@ async function route(request, url, ctx) {
   }
 
   if (parts.length === 4 && parts[3] === 'media') {
+    if (request.method === 'GET') {
+      const rawSource = url.searchParams.get('url') || '';
+      let source;
+      try {
+        const parsedSource = new URL(rawSource);
+        source = `${parsedSource.origin}${parsedSource.pathname}`;
+      } catch {
+        return fail(cors, 400, 'That image URL is not valid.');
+      }
+      const primaryBase = publicMediaBase(url, env);
+      const key = keyFromPublicUrl(source, primaryBase, slug) ??
+        keyFromPublicUrl(source, `${url.origin}/media`, slug);
+      if (!key || key.split('/').length !== 2) return fail(cors, 404, 'That image is not stored in this profile.');
+      const file = key.split('/')[1];
+      const target = parseMediaPath(`/media/${encodeURIComponent(slug)}/${encodeURIComponent(file)}`);
+      if (!target || !target.contentType.startsWith('image/')) {
+        return fail(cors, 400, 'Only profile images can be used to generate thumbnails.');
+      }
+      const object = await env.MEDIA.get(key);
+      if (!object) return fail(cors, 404, 'That image is not stored in this profile.');
+      return new Response(object.body, {
+        status: 200,
+        headers: {
+          ...cors,
+          'Content-Type': object.httpMetadata?.contentType || target.contentType,
+          'Cache-Control': 'private, no-store',
+          'X-Content-Type-Options': 'nosniff',
+        },
+      });
+    }
     if (request.method === 'POST') {
       const form = await request.formData().catch(() => null);
       const file = form?.get('file');

@@ -79,6 +79,7 @@
     pendingDeletes: [],
     savedSelections: {}, // richKey -> { startPara, startOffset, endPara, endOffset, collapsed }
     uploads: {},         // slotId -> { state, title, detail, percent, indeterminate, canCancel }
+    collapsedSections: {}, // sectionId -> true when collapsed in the editor
     collapsedGroups: {}, // groupId -> true when collapsed in the editor
     activeUploadSlot: '',
     abortUpload: null,
@@ -532,6 +533,7 @@
     S.model = null;
     S.slug = '';
     S.uploads = {};
+    S.collapsedSections = {};
     S.collapsedGroups = {};
     S.activeUploadSlot = '';
     paintSavebarProgress();
@@ -566,6 +568,7 @@
       S.pendingDeletes = [];
       S.savedSelections = {};
       S.uploads = {};
+      S.collapsedSections = {};
       S.collapsedGroups = {};
       S.activeUploadSlot = '';
       paintSavebarProgress();
@@ -599,6 +602,7 @@
     S.pendingDeletes = [];
     S.savedSelections = {};
     S.uploads = {};
+    S.collapsedSections = {};
     S.collapsedGroups = {};
     S.activeUploadSlot = '';
     paintSavebarProgress();
@@ -930,10 +934,55 @@
     }
   }
 
-  function listCard(title, addControl, body, uploadSlotId) {
-    return '<section class="card"><div class="toolbar"><h2>' + esc(title) + '</h2>' + addControl + '</div>' +
+  var SECTION_IDS = ['profile', 'measurements', 'contact', 'cover', 'portfolio'];
+
+  function areAllSectionsCollapsed() {
+    return SECTION_IDS.every(function (id) { return Boolean(S.collapsedSections[id]); });
+  }
+
+  function syncSectionCollapseDom(sectionId) {
+    var root = $('editor-body');
+    if (!root) return;
+    var collapsed = Boolean(S.collapsedSections[sectionId]);
+    var card = root.querySelector('[data-section-card="' + sectionId + '"]');
+    if (card) {
+      card.classList.toggle('is-collapsed', collapsed);
+      var bodyEl = card.querySelector('.section-card-body');
+      if (bodyEl) bodyEl.hidden = collapsed;
+      var toggleBtns = card.querySelectorAll('[data-action="toggle-section"]');
+      for (var b = 0; b < toggleBtns.length; b++) {
+        toggleBtns[b].setAttribute('aria-expanded', String(!collapsed));
+      }
+      var chev = card.querySelector('.section-chevron');
+      if (chev) chev.textContent = collapsed ? '▸' : '▾';
+      var lbl = card.querySelector('.section-collapse-text');
+      if (lbl) lbl.textContent = collapsed ? 'Expand' : 'Collapse';
+    }
+    var toggleAllBtn = root.querySelector('[data-action="toggle-all-sections"]');
+    if (toggleAllBtn) {
+      toggleAllBtn.textContent = areAllSectionsCollapsed() ? 'Expand all sections' : 'Collapse all sections';
+    }
+  }
+
+  function sectionCard(sectionId, title, actionsHtml, bodyHtml, uploadSlotId) {
+    var isCollapsed = Boolean(S.collapsedSections[sectionId]);
+    var bodyId = 'section-body-' + sectionId;
+    return '<section class="card section-card' + (isCollapsed ? ' is-collapsed' : '') + '" data-section-card="' + esc(sectionId) + '">' +
+      '<div class="toolbar section-card-head">' +
+        '<div class="section-title-wrap">' +
+          '<button type="button" class="btn small ghost section-collapse-btn" data-action="toggle-section" data-section-id="' + esc(sectionId) + '" aria-expanded="' + String(!isCollapsed) + '" aria-controls="' + esc(bodyId) + '" title="Collapse or expand section">' +
+            '<span class="section-chevron" aria-hidden="true">' + (isCollapsed ? '▸' : '▾') + '</span>' +
+            '<span class="section-collapse-text">' + (isCollapsed ? 'Expand' : 'Collapse') + '</span>' +
+          '</button>' +
+          '<h2><button type="button" class="section-heading-btn" data-action="toggle-section" data-section-id="' + esc(sectionId) + '" aria-expanded="' + String(!isCollapsed) + '" aria-controls="' + esc(bodyId) + '">' + esc(title) + '</button></h2>' +
+        '</div>' +
+        (actionsHtml ? '<div class="toolbar-actions">' + actionsHtml + '</div>' : '') +
+      '</div>' +
       (uploadSlotId ? uploadSlotHtml(uploadSlotId) : '') +
-      body + '</section>';
+      '<div id="' + esc(bodyId) + '" class="section-card-body"' + (isCollapsed ? ' hidden' : '') + '>' +
+        bodyHtml +
+      '</div>' +
+    '</section>';
   }
 
   function moveButtons(list, i, count) {
@@ -1035,6 +1084,19 @@
 
       var totalItems = groupVideos.length + groupPhotos.length;
       var groupTitleVal = grp.title == null ? '' : grp.title;
+      var knownGroupDims = [];
+      groupVideos.forEach(function (ref) {
+        var v = ref.entry;
+        if (v.width && v.height) knownGroupDims.push({ w: v.width, h: v.height });
+        else if (v.posterWidth && v.posterHeight) knownGroupDims.push({ w: v.posterWidth, h: v.posterHeight });
+      });
+      groupPhotos.forEach(function (ref) {
+        var p = ref.entry;
+        if (p.width && p.height) knownGroupDims.push({ w: p.width, h: p.height });
+      });
+      var isAllLandscapeGroup = totalItems > 0 &&
+        knownGroupDims.length === totalItems &&
+        knownGroupDims.every(function (d) { return d.w > d.h; });
 
       var videoCardsHtml = groupVideos.map(function (ref, vPos) {
         var v = ref.entry;
@@ -1042,10 +1104,11 @@
         var isPortrait = (v.width && v.height && v.height > v.width) ||
           (!v.width && v.posterWidth && v.posterHeight && v.posterHeight > v.posterWidth);
         var ratioCls = isPortrait ? 'portrait' : 'wide';
+        var naturalVideoAttr = (v.width && v.height) ? ' data-natural-w="' + v.width + '" data-natural-h="' + v.height + '"' : '';
         var preview = v.poster
-          ? thumbBoxHtml('<img class="thumb ' + ratioCls + '" alt="" src="' + esc(mediaSrc(v.poster)) + '" loading="lazy">', 'Loading poster…')
+          ? thumbBoxHtml('<img class="thumb ' + ratioCls + '"' + naturalVideoAttr + ' alt="" src="' + esc(mediaSrc(v.poster)) + '" loading="lazy">', 'Loading poster…')
           : (v.file
-            ? thumbBoxHtml('<video class="thumb ' + ratioCls + '" data-video-index="' + i + '" preload="auto" muted playsinline src="' + esc(mediaSrc(v.file)) + '#t=0.1"></video>', 'Loading video…')
+            ? thumbBoxHtml('<video class="thumb ' + ratioCls + '"' + naturalVideoAttr + ' data-video-index="' + i + '" preload="auto" muted playsinline src="' + esc(mediaSrc(v.file)) + '#t=0.1"></video>', 'Loading video…')
             : '<div class="thumb-box"><div class="thumb wide" aria-hidden="true"></div></div>');
         return '<div class="item video admin-media-card">' +
           preview +
@@ -1073,8 +1136,9 @@
         var p = ref.entry;
         var i = ref.index;
         var seqNum = groupVideos.length + pPos + 1;
+        var naturalPhotoAttr = (p.width && p.height) ? ' data-natural-w="' + p.width + '" data-natural-h="' + p.height + '"' : '';
         return '<div class="item photo admin-media-card">' +
-          thumbBoxHtml('<img class="thumb" alt="" src="' + esc(mediaSrc(p.file)) + '" loading="lazy">', 'Loading photo…') +
+          thumbBoxHtml('<img class="thumb"' + naturalPhotoAttr + ' alt="" src="' + esc(mediaSrc(p.file)) + '" loading="lazy">', 'Loading photo…') +
           '<div class="admin-media-body">' +
             '<div class="admin-media-badge-row">' +
               '<span class="media-kind-badge is-photo">#' + seqNum + ' · Photo</span>' +
@@ -1097,7 +1161,7 @@
         ? '<div class="admin-media-row' + (totalItems < 2 ? ' is-single' : '') + '">' + videoCardsHtml + photoCardsHtml + '</div>'
         : '<p class="muted group-empty">Empty group — use <b>Add video</b> (shown first) or <b>Add photo</b> above to populate this horizontal row.</p>';
 
-      return '<div class="group-card' + (isCollapsed ? ' is-collapsed' : '') + '" data-group-card="' + esc(grp.id) + '"' + (groupPhotos.length > 0 ? ' data-has-photos="1"' : '') + '>' +
+      return '<div class="group-card' + (isCollapsed ? ' is-collapsed' : '') + (isAllLandscapeGroup ? ' is-landscape-group' : '') + '" data-group-card="' + esc(grp.id) + '"' + (groupPhotos.length > 0 ? ' data-has-photos="1"' : '') + (isAllLandscapeGroup ? ' data-landscape-group="1"' : '') + '>' +
         '<div class="group-card-head">' +
           '<div class="group-title-wrap">' +
             '<button type="button" class="btn small ghost group-collapse-btn" data-action="toggle-group" data-group-id="' + esc(grp.id) + '" aria-expanded="' + String(!isCollapsed) + '" aria-controls="group-body-' + esc(grp.id) + '" title="Collapse or expand category">' +
@@ -1141,98 +1205,123 @@
     var contact = m.contact || {};
     var seo = m.seo || {};
     $('editor-body').innerHTML = [
-      '<section class="card"><h2>Profile &amp; About</h2><div class="stack">',
-      composerBoxHtml({
-        richKey: 'name',
-        slot: 'name',
-        label: 'Name',
-        hint: 'Shown in the top header; select words or use the bar to style the box',
-        multiline: false,
-        editorClass: 'composer-editor--name',
-        baseRem: 1.55,
-        placeholder: 'Model name',
-      }),
-      composerBoxHtml({
-        richKey: 'aboutLabel',
-        slot: 'aboutLabel',
-        label: 'About section label',
-        multiline: false,
-        alignable: true,
-        editorClass: 'composer-editor--label',
-        baseRem: 0.82,
-        placeholder: DEFAULT_TEXTS.aboutLabel,
-      }),
-      composerBoxHtml({
-        richKey: 'bio',
-        slot: 'bio',
-        label: 'About (biography)',
-        hint: 'Press Enter for a new paragraph; highlight words to style them like an email',
-        multiline: true,
-        alignable: true,
-        baseRem: 1,
-        placeholder: 'Write the model’s biography here…',
-      }),
-      '<div class="subhead">Search &amp; browser tab metadata</div>',
-      '<div class="grid">',
-      field('Browser tab tagline (optional)', 'tagline', m.tagline || ''),
-      field('Search description (optional)', 'seo.description', seo.description || ''),
-      '<label class="full" style="display:flex;gap:8px;align-items:center">' +
-        '<input type="checkbox" data-field="seo.noindex"' + (seo.noindex ? ' checked' : '') + ' style="width:auto"> Hide this page from search engines</label>',
-      '</div></div></section>',
+      '<div class="sections-overview-bar">' +
+        '<span class="muted">Sections</span>' +
+        '<button type="button" class="btn small ghost" data-action="toggle-all-sections">' +
+          (areAllSectionsCollapsed() ? 'Expand all sections' : 'Collapse all sections') +
+        '</button>' +
+      '</div>',
 
-      listCard(
+      sectionCard(
+        'profile',
+        'Profile & About',
+        '',
+        '<div class="stack">' +
+          composerBoxHtml({
+            richKey: 'name',
+            slot: 'name',
+            label: 'Name',
+            hint: 'Shown in the top header; select words or use the bar to style the box',
+            multiline: false,
+            editorClass: 'composer-editor--name',
+            baseRem: 1.55,
+            placeholder: 'Model name',
+          }) +
+          composerBoxHtml({
+            richKey: 'aboutLabel',
+            slot: 'aboutLabel',
+            label: 'About section label',
+            multiline: false,
+            alignable: true,
+            editorClass: 'composer-editor--label',
+            baseRem: 0.82,
+            placeholder: DEFAULT_TEXTS.aboutLabel,
+          }) +
+          composerBoxHtml({
+            richKey: 'bio',
+            slot: 'bio',
+            label: 'About (biography)',
+            hint: 'Press Enter for a new paragraph; highlight words to style them like an email',
+            multiline: true,
+            alignable: true,
+            baseRem: 1,
+            placeholder: 'Write the model’s biography here…',
+          }) +
+          '<div class="subhead">Search &amp; browser tab metadata</div>' +
+          '<div class="grid">' +
+            field('Browser tab tagline (optional)', 'tagline', m.tagline || '') +
+            field('Search description (optional)', 'seo.description', seo.description || '') +
+            '<label class="full" style="display:flex;gap:8px;align-items:center">' +
+              '<input type="checkbox" data-field="seo.noindex"' + (seo.noindex ? ' checked' : '') + ' style="width:auto"> Hide this page from search engines</label>' +
+          '</div>' +
+        '</div>'
+      ),
+
+      sectionCard(
+        'measurements',
         'Measurements',
         '<button type="button" class="btn small" data-action="add-stat">Add row</button>',
         groupFormatBarHtml('stats', 'Measurements font:') + statsHtml()
       ),
 
-      '<section class="card"><h2>Contact</h2><div class="stack">',
-      composerBoxHtml({
-        richKey: 'contactLabel',
-        slot: 'contactLabel',
-        label: 'Contact section label',
-        multiline: false,
-        alignable: true,
-        dark: true,
-        editorClass: 'composer-editor--label',
-        baseRem: 0.82,
-        placeholder: DEFAULT_TEXTS.contactLabel,
-      }),
-      composerBoxHtml({
-        richKey: 'contactHeading',
-        slot: 'contactHeading',
-        label: 'Contact heading',
-        hint: 'Shown on the dark Contact banner',
-        multiline: false,
-        alignable: true,
-        dark: true,
-        editorClass: 'composer-editor--heading',
-        baseRem: 1.45,
-        placeholder: DEFAULT_TEXTS.contactHeading,
-      }),
-      '<div class="subhead">Contact links &amp; details</div>',
-      groupFormatBarHtml('contact', 'Contact details font:'),
-      '<div class="grid">',
-      field('Email', 'contact.email', contact.email || '', '', 'contact'),
-      field('Phone', 'contact.phone', contact.phone || '', '', 'contact'),
-      field('WhatsApp number', 'contact.whatsapp', contact.whatsapp || ''),
-      field('Instagram (full link)', 'contact.instagram', contact.instagram || '', '', 'contact'),
-      field('LinkedIn (full link)', 'contact.linkedin', contact.linkedin || '', '', 'contact'),
-      field('TikTok (full link)', 'contact.tiktok', contact.tiktok || '', '', 'contact'),
-      field('IMDb (full link)', 'contact.imdb', contact.imdb || '', '', 'contact'),
-      field('Website (full link)', 'contact.website', contact.website || '', '', 'contact'),
-      '</div></div></section>',
+      sectionCard(
+        'contact',
+        'Contact',
+        '',
+        '<div class="stack">' +
+          composerBoxHtml({
+            richKey: 'contactLabel',
+            slot: 'contactLabel',
+            label: 'Contact section label',
+            multiline: false,
+            alignable: true,
+            dark: true,
+            editorClass: 'composer-editor--label',
+            baseRem: 0.82,
+            placeholder: DEFAULT_TEXTS.contactLabel,
+          }) +
+          composerBoxHtml({
+            richKey: 'contactHeading',
+            slot: 'contactHeading',
+            label: 'Contact heading',
+            hint: 'Shown on the dark Contact banner',
+            multiline: false,
+            alignable: true,
+            dark: true,
+            editorClass: 'composer-editor--heading',
+            baseRem: 1.45,
+            placeholder: DEFAULT_TEXTS.contactHeading,
+          }) +
+          '<div class="subhead">Contact links &amp; details</div>' +
+          groupFormatBarHtml('contact', 'Contact details font:') +
+          '<div class="grid">' +
+            field('Email', 'contact.email', contact.email || '', '', 'contact') +
+            field('Phone', 'contact.phone', contact.phone || '', '', 'contact') +
+            field('WhatsApp number', 'contact.whatsapp', contact.whatsapp || '') +
+            field('Instagram (full link)', 'contact.instagram', contact.instagram || '', '', 'contact') +
+            field('LinkedIn (full link)', 'contact.linkedin', contact.linkedin || '', '', 'contact') +
+            field('TikTok (full link)', 'contact.tiktok', contact.tiktok || '', '', 'contact') +
+            field('IMDb (full link)', 'contact.imdb', contact.imdb || '', '', 'contact') +
+            field('Website (full link)', 'contact.website', contact.website || '', '', 'contact') +
+          '</div>' +
+        '</div>'
+      ),
 
-      listCard('Cover photos (hero slideshow)', uploadButton('Add cover photo', 'cover', ' accept="image/*" multiple'), '<div class="list">' + coverHtml() + '</div>', 'cover'),
+      sectionCard(
+        'cover',
+        'Cover photos (hero slideshow)',
+        uploadButton('Add cover photo', 'cover', ' accept="image/*" multiple'),
+        '<div class="list">' + coverHtml() + '</div>',
+        'cover'
+      ),
 
-      listCard(
+      sectionCard(
+        'portfolio',
         'Portfolio groups (videos first, then photos)',
-        '<div class="toolbar-actions">' +
-          ((m._groups && m._groups.length > 1)
-            ? '<button type="button" class="btn small ghost" data-action="toggle-all-groups">' + (areAllGroupsCollapsed() ? 'Expand all' : 'Collapse all') + '</button>'
-            : '') +
-          '<button type="button" class="btn small primary" data-action="add-group">+ Add category / group</button>' +
-        '</div>',
+        ((m._groups && m._groups.length > 1)
+          ? '<button type="button" class="btn small ghost" data-action="toggle-all-groups">' + (areAllGroupsCollapsed() ? 'Expand all' : 'Collapse all') + '</button>'
+          : '') +
+          '<button type="button" class="btn small primary" data-action="add-group">+ Add category / group</button>',
         '<div class="stack">' +
           '<p class="muted" style="margin:0">Each group renders as a horizontal scrollable row on the website: its video(s) appear first on the left, followed by its photos (with 10% of the next item peeking on the right whenever more exist).</p>' +
           '<div class="grid">' +
@@ -1840,6 +1929,24 @@
       }
       return;
     }
+    if (action === 'toggle-section') {
+      var toggleSid = btn.getAttribute('data-section-id');
+      if (toggleSid) {
+        if (S.collapsedSections[toggleSid]) delete S.collapsedSections[toggleSid];
+        else S.collapsedSections[toggleSid] = true;
+        syncSectionCollapseDom(toggleSid);
+      }
+      return;
+    }
+    if (action === 'toggle-all-sections') {
+      var collapseAllNext = !areAllSectionsCollapsed();
+      SECTION_IDS.forEach(function (sid) {
+        if (collapseAllNext) S.collapsedSections[sid] = true;
+        else delete S.collapsedSections[sid];
+        syncSectionCollapseDom(sid);
+      });
+      return;
+    }
     if (action === 'toggle-group') {
       var toggleGid = btn.getAttribute('data-group-id');
       if (toggleGid) {
@@ -1863,6 +1970,7 @@
       if (!Array.isArray(S.model._groups)) S.model._groups = [];
       var newIdx = S.model._groups.length;
       var newGrpId = nextGroupId();
+      delete S.collapsedSections.portfolio;
       delete S.collapsedGroups[newGrpId];
       S.model._groups.push({ id: newGrpId, title: 'Category ' + (newIdx + 1) });
       render();
@@ -1903,6 +2011,7 @@
     } else if (action === 'move-in-group') {
       moveInGroup(list, i, Number(btn.getAttribute('data-dir')));
     } else if (action === 'add-stat') {
+      delete S.collapsedSections.measurements;
       S.model.stats.push({ label: '', value: '' });
       render();
     }
@@ -1989,13 +2098,49 @@
     return { ok: true, uploadName: uploadName, displayName: rawName || uploadName };
   }
 
-  function imageSize(file) {
+  function imageSizeViaBitmap(file) {
     if (typeof createImageBitmap !== 'function') return Promise.resolve(null);
     return createImageBitmap(file).then(function (bmp) {
       var size = { width: bmp.width, height: bmp.height };
       if (bmp.close) bmp.close();
       return size;
     }, function () { return null; });
+  }
+
+  function imageSize(file) {
+    if (typeof window.Image !== 'function' || !window.URL || typeof window.URL.createObjectURL !== 'function') {
+      return imageSizeViaBitmap(file);
+    }
+    return new Promise(function (resolve) {
+      var url = '';
+      var img = new window.Image();
+      var done = false;
+      var finish = function (size) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        if (url && window.URL && typeof window.URL.revokeObjectURL === 'function') {
+          try { window.URL.revokeObjectURL(url); } catch (_) {}
+        }
+        if (size) resolve(size);
+        else imageSizeViaBitmap(file).then(resolve);
+      };
+      var timer = setTimeout(function () { finish(null); }, 3000);
+      img.onload = function () {
+        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+          finish({ width: img.naturalWidth, height: img.naturalHeight });
+        } else {
+          finish(null);
+        }
+      };
+      img.onerror = function () { finish(null); };
+      try {
+        url = window.URL.createObjectURL(file);
+        img.src = url;
+      } catch (_) {
+        finish(null);
+      }
+    });
   }
 
   function videoSize(file) {
@@ -2197,6 +2342,8 @@
   function addMedia(kind, file, fileIndex, totalFiles, groupId) {
     var isVideo = kind === 'video';
     var targetGrp = (kind === 'photo' || kind === 'video') ? findEditorGroup(groupId) : null;
+    if (kind === 'cover') delete S.collapsedSections.cover;
+    else delete S.collapsedSections.portfolio;
     if (targetGrp) delete S.collapsedGroups[targetGrp.id];
     var slotId = targetGrp ? ('group-' + targetGrp.id) : kind;
     var prep = prepareUploadFile(file, isVideo);
@@ -2408,6 +2555,32 @@
     return entry;
   }
 
+  function syncAdminGroupOrientation(groupCard) {
+    if (!groupCard) return;
+    var thumbs = Array.prototype.slice.call(groupCard.querySelectorAll('.admin-media-card .thumb'));
+    if (!thumbs.length) {
+      groupCard.classList.remove('is-landscape-group');
+      if (typeof groupCard.removeAttribute === 'function') groupCard.removeAttribute('data-landscape-group');
+      return;
+    }
+    var dims = [];
+    thumbs.forEach(function (el) {
+      if (el.tagName === 'VIDEO' && el.videoWidth > 0 && el.videoHeight > 0) {
+        dims.push({ w: el.videoWidth, h: el.videoHeight });
+      } else if (el.tagName === 'IMG' && el.naturalWidth > 0 && el.naturalHeight > 0) {
+        dims.push({ w: el.naturalWidth, h: el.naturalHeight });
+      } else {
+        var nw = Number(el.getAttribute && el.getAttribute('data-natural-w'));
+        var nh = Number(el.getAttribute && el.getAttribute('data-natural-h'));
+        if (nw > 0 && nh > 0) dims.push({ w: nw, h: nh });
+      }
+    });
+    var allLandscape = dims.length === thumbs.length && dims.every(function (d) { return d.w > d.h; });
+    groupCard.classList.toggle('is-landscape-group', allLandscape);
+    if (allLandscape) groupCard.setAttribute('data-landscape-group', '1');
+    else if (typeof groupCard.removeAttribute === 'function') groupCard.removeAttribute('data-landscape-group');
+  }
+
   function onMediaReady(e) {
     var t = e.target;
     if (!t || (t.tagName !== 'IMG' && t.tagName !== 'VIDEO')) return;
@@ -2416,6 +2589,8 @@
       t.classList.toggle('portrait', portrait);
       t.classList.toggle('wide', !portrait);
     }
+    var groupCard = t.closest ? t.closest('.group-card') : null;
+    if (groupCard) syncAdminGroupOrientation(groupCard);
     var box = t.closest ? t.closest('.thumb-box') : null;
     if (!box) return;
     box.classList.remove('is-loading');

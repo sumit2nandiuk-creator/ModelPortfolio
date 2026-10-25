@@ -223,6 +223,18 @@ test('imageSize reads PNG and JPEG dimensions', async () => {
     0xff, 0xc0, 0x00, 0x0b, 0x08, 0x01, 0x2c, 0x01, 0x90, 0x01, 0x00, 0x00,
   ]);
   assert.deepEqual(imageSize(jpeg), { width: 400, height: 300 });
+
+  // JPEG with EXIF APP1 Orientation=6 (rotated 90° CW): raw 400x300 reports visual 300x400 portrait.
+  const rotatedJpeg = Buffer.from([
+    0xff, 0xd8,
+    0xff, 0xe1, 0x00, 0x1e,
+    0x45, 0x78, 0x69, 0x66, 0x00, 0x00, // "Exif\0\0"
+    0x4d, 0x4d, 0x00, 0x2a, 0x00, 0x00, 0x00, 0x08, // TIFF big-endian, IFD0 @ 8
+    0x00, 0x01, // 1 entry
+    0x01, 0x12, 0x00, 0x03, 0x00, 0x00, 0x00, 0x01, 0x00, 0x06, 0x00, 0x00, // Orientation = 6
+    0xff, 0xc0, 0x00, 0x0b, 0x08, 0x01, 0x2c, 0x01, 0x90, 0x01, 0x00, 0x00,
+  ]);
+  assert.deepEqual(imageSize(rotatedJpeg), { width: 300, height: 400 });
   assert.equal(imageSize(Buffer.from('not an image')), null);
 });
 
@@ -681,13 +693,14 @@ test('popup stage preserves pan-y swipe when unzoomed and switches to touch-acti
   assert.match(css, /\.lb-stage \.carousel-slide img \{[\s\S]*?transform-origin: 50% 50%;[\s\S]*?\}/);
 });
 
-test('photos in rows are uniform 2:3 size and landscape videos without photos beside them keep their landscape ratio', async () => {
+test('photos in rows are uniform 2:3 size while all-landscape categories keep landscape framing', async () => {
   const css = await fs.readFile(path.join(siteDir, 'assets', 'site.css'), 'utf8');
   assert.doesNotMatch(css, /\.video-frame \{[^}]*aspect-ratio:\s*16\s*\/\s*9/);
   assert.doesNotMatch(css, /\.media-row\.is-single \.media-card/);
-  assert.match(css, /\.gallery-btn img \{[\s\S]*?aspect-ratio: 2 \/ 3;[\s\S]*?object-fit: cover;/);
+  assert.match(css, /\.media-row \{[\s\S]*?--row-frame-ratio: 2 \/ 3;/);
+  assert.match(css, /\.gallery-btn img \{[\s\S]*?aspect-ratio: var\(--row-frame-ratio, 2 \/ 3\);[\s\S]*?object-fit: cover;/);
   assert.match(css, /\.video-frame \{[\s\S]*?border: clamp\(6px, 0\.9vw, 10px\) solid var\(--white\);[\s\S]*?border-radius: 4px;/);
-  assert.match(css, /\.media-row\[data-has-photos="1"\] \.video-frame video \{\s*aspect-ratio: 2 \/ 3;\s*\}/);
+  assert.match(css, /\.media-row\[data-has-photos="1"\] \.video-frame video \{\s*aspect-ratio: var\(--row-frame-ratio, 2 \/ 3\);\s*\}/);
 
   // Verify exact 10% right-peek horizontal flex geometry across desktop (N=3), tablet (N=2), and mobile (N=1):
   // N * cardWidth + N * gap + 0.1 * cardWidth = 100%  =>  cardWidth = (100% - N * gap) / (N + 0.1)
@@ -699,45 +712,68 @@ test('photos in rows are uniform 2:3 size and landscape videos without photos be
   try {
     await fs.mkdir(ws.modelsDir, { recursive: true });
     await writeModel(ws.modelsDir, 'portrait-model', 'Portrait Model', {
-      groups: ['Bridal', 'Serial', 'Meesho'],
+      groups: ['Bridal', 'Serial', 'Campaign', 'Short Film', 'Meesho'],
       photos: [
+        // Mixed portrait + landscape category -> uniform 2:3 portrait
         { file: 'https://modelportfolio.pages.dev/media/portrait-model/bridal-1.jpg', title: 'Bridal Look 1', category: 'Bridal', width: 1080, height: 1920 },
         { file: 'https://modelportfolio.pages.dev/media/portrait-model/bridal-2.jpg', title: 'Bridal Look 2', category: 'bridal', width: 1440, height: 1080 },
+        // All-landscape photo category -> stays landscape (never resized to portrait)
+        { file: 'https://modelportfolio.pages.dev/media/portrait-model/camp-1.jpg', title: 'Campaign 1', category: 'Campaign', width: 1600, height: 1067 },
+        { file: 'https://modelportfolio.pages.dev/media/portrait-model/camp-2.jpg', title: 'Campaign 2', category: 'Campaign', width: 1600, height: 1067 },
+        // All-landscape video + photo category -> both stay landscape with matching frame size
+        { file: 'https://modelportfolio.pages.dev/media/portrait-model/film-still.jpg', title: 'Film Still', category: 'Short Film', width: 1920, height: 1080 },
       ],
       videos: [
-        // Category with photos beside it -> uniform 2:3 frame
+        // Mixed category with portrait items -> uniform 2:3 frame
         { file: 'https://modelportfolio.pages.dev/media/portrait-model/1-bridal.mov', title: 'Bridal', width: 1080, height: 1920 },
         // Landscape video in a category with NO photos beside it ("Serial") -> keeps natural 1280 / 720 landscape!
         { file: 'https://modelportfolio.pages.dev/media/portrait-model/2-serial.mp4', title: 'Lokkhi Jhanpi', category: 'Serial', width: 1280, height: 720 },
+        // Landscape video + landscape photo in "Short Film" -> both stay 1920 / 1080 landscape!
+        { file: 'https://modelportfolio.pages.dev/media/portrait-model/3-film.mp4', title: 'Short Film', category: 'Short Film', width: 1920, height: 1080 },
         // Portrait video in a category with NO photos beside it ("Meesho") -> matches uniform 2:3 portrait frame!
-        { file: 'https://modelportfolio.pages.dev/media/portrait-model/3-meesho.mp4', title: 'Meesho', width: 720, height: 1280 },
+        { file: 'https://modelportfolio.pages.dev/media/portrait-model/4-meesho.mp4', title: 'Meesho', width: 720, height: 1280 },
       ],
     });
     await build({ modelsDir: ws.modelsDir, siteDir, outDir: ws.outDir });
     const html = await fs.readFile(path.join(ws.outDir, 'portrait-model', 'index.html'), 'utf8');
 
     const groupHeadings = [...html.matchAll(/<h3 class="media-group-title">([^<]+)<\/h3>/g)].map((m) => m[1]);
-    assert.deepEqual(groupHeadings, ['Bridal', 'Serial', 'Meesho']);
+    assert.deepEqual(groupHeadings, ['Bridal', 'Serial', 'Campaign', 'Short Film', 'Meesho']);
 
     const bridalStart = html.indexOf('data-group="Bridal"');
     const serialStart = html.indexOf('data-group="Serial"');
+    const campaignStart = html.indexOf('data-group="Campaign"');
+    const shortFilmStart = html.indexOf('data-group="Short Film"');
     const meeshoStart = html.indexOf('data-group="Meesho"');
 
-    // 1. Bridal (has photos): row marked data-has-photos="1" and video gets uniform 2 / 3
+    // 1. Bridal (has portrait items): NOT is-landscape-row; video gets uniform 2 / 3
     const bridalHtml = html.slice(bridalStart, serialStart);
     assert.match(bridalHtml, /data-media-row data-has-photos="1"/);
+    assert.doesNotMatch(bridalHtml, /is-landscape-row/);
     assert.ok(bridalHtml.indexOf('media-card--video') < bridalHtml.indexOf('media-card--photo'));
-    assert.match(bridalHtml, /width="2" height="3" style="aspect-ratio: 2 \/ 3"/);
+    assert.match(bridalHtml, /width="2" height="3" data-natural-w="1080" data-natural-h="1920" style="aspect-ratio: 2 \/ 3"/);
 
     // 2. Serial (landscape video, NO photos beside it): keeps native 1280 / 720 landscape frame!
-    const serialHtml = html.slice(serialStart, meeshoStart);
+    const serialHtml = html.slice(serialStart, campaignStart);
     assert.doesNotMatch(serialHtml, /data-has-photos="1"/);
+    assert.match(serialHtml, /is-landscape-row/);
     assert.match(serialHtml, /class="media-card media-card--video video-card is-landscape"/);
-    assert.match(serialHtml, /width="1280" height="720" style="aspect-ratio: 1280 \/ 720"/);
+    assert.match(serialHtml, /width="1280" height="720" data-natural-w="1280" data-natural-h="720" style="aspect-ratio: 1280 \/ 720"/);
 
-    // 3. Meesho (portrait video, NO photos beside it): matches uniform 2 / 3 portrait frame
+    // 3. Campaign (all-landscape photos): marked is-landscape-row with --row-frame-ratio: 1600 / 1067 (not portrait!)
+    const campaignHtml = html.slice(campaignStart, shortFilmStart);
+    assert.match(campaignHtml, /class="media-row is-landscape-row" data-media-row data-has-photos="1" style="--row-frame-ratio: 1600 \/ 1067"/);
+
+    // 4. Short Film (all-landscape video + photo): both stay 1920 / 1080 landscape!
+    const shortFilmHtml = html.slice(shortFilmStart, meeshoStart);
+    assert.match(shortFilmHtml, /class="media-row is-landscape-row" data-media-row data-has-photos="1" style="--row-frame-ratio: 1920 \/ 1080"/);
+    assert.match(shortFilmHtml, /class="media-card media-card--video video-card is-landscape"/);
+    assert.match(shortFilmHtml, /width="1920" height="1080" data-natural-w="1920" data-natural-h="1080" style="aspect-ratio: 1920 \/ 1080"/);
+
+    // 5. Meesho (portrait video, NO photos beside it): matches uniform 2 / 3 portrait frame
     const meeshoHtml = html.slice(meeshoStart);
-    assert.match(meeshoHtml, /width="2" height="3" style="aspect-ratio: 2 \/ 3"/);
+    assert.doesNotMatch(meeshoHtml, /is-landscape-row/);
+    assert.match(meeshoHtml, /width="2" height="3" data-natural-w="720" data-natural-h="1280" style="aspect-ratio: 2 \/ 3"/);
   } finally {
     await ws.cleanup();
   }

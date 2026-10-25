@@ -484,12 +484,12 @@ test('oversize or extensionless Android gallery files handle errors and MIME fal
 test('redesigned admin groups videos first followed by photos per category/title and persists group order on save', async () => {
   const h = await createAdminUploadHarness({
     photos: [
-      { file: 'bridal-1.jpg', title: 'Bridal Look 1', category: 'Bridal' },
-      { file: 'trad-1.jpg', title: 'Traditional Look', category: 'Traditional' },
+      { file: 'bridal-1.jpg', title: 'Bridal Look 1', category: 'Bridal', width: 1080, height: 1620 },
+      { file: 'trad-1.jpg', title: 'Traditional Look', category: 'Traditional', width: 1600, height: 1067 },
     ],
     videos: [
-      { file: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/1-bridal.mov', title: 'Bridal', category: '' },
-      { file: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/2-meesho.mp4', title: 'Meesho', category: '' },
+      { file: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/1-bridal.mov', title: 'Bridal', category: '', width: 1080, height: 1920 },
+      { file: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/2-meesho.mp4', title: 'Meesho', category: '', width: 720, height: 1280 },
     ],
   });
   await h.boot();
@@ -499,6 +499,10 @@ test('redesigned admin groups videos first followed by photos per category/title
   assert.equal(groupCards.length, 3);
   const groupTitles = groupCards.map((c) => c.querySelector('[data-group-title]').value);
   assert.deepEqual(groupTitles, ['Bridal', 'Meesho', 'Traditional']);
+  // Traditional contains only landscape items (1600x1067) -> marked data-landscape-group="1" (not resized to portrait)
+  assert.equal(groupCards[0].getAttribute('data-landscape-group'), null);
+  assert.equal(groupCards[1].getAttribute('data-landscape-group'), null);
+  assert.equal(groupCards[2].getAttribute('data-landscape-group'), '1');
 
   // 2. Inside Bridal group card, video appears first (#1 · Video) followed by photo (#2 · Photo)
   const bridalCards = groupCards[0].querySelectorAll('.admin-media-card');
@@ -528,6 +532,40 @@ test('redesigned admin groups videos first followed by photos per category/title
 
   toggleAllBtn.dispatchEvent({ type: 'click', bubbles: true });
   assert.equal(groupCards.every((c) => !c.querySelector('.group-card-body').hidden), true);
+
+  // 3b. Every top-level admin section (Profile & About, Measurements, Contact, Cover photos, Portfolio groups)
+  // can be collapsed/expanded individually and via "Collapse all sections" / "Expand all sections"
+  const sectionCards = h.doc.querySelectorAll('.section-card');
+  assert.deepEqual(
+    sectionCards.map((s) => s.getAttribute('data-section-card')),
+    ['profile', 'measurements', 'contact', 'cover', 'portfolio'],
+  );
+  const profileSection = sectionCards[0];
+  const profileToggle = profileSection.querySelector('.section-collapse-btn');
+  const profileBody = profileSection.querySelector('.section-card-body');
+  assert.equal(profileBody.hidden, false);
+  profileToggle.dispatchEvent({ type: 'click', bubbles: true });
+  assert.equal(profileBody.hidden, true);
+  assert.equal(profileSection.classList.contains('is-collapsed'), true);
+  assert.equal(profileToggle.getAttribute('aria-expanded'), 'false');
+
+  const toggleAllSectionsBtn = h.doc.querySelector('[data-action="toggle-all-sections"]');
+  assert.ok(toggleAllSectionsBtn);
+  assert.equal(toggleAllSectionsBtn.textContent, 'Collapse all sections');
+  toggleAllSectionsBtn.dispatchEvent({ type: 'click', bubbles: true });
+  assert.equal(sectionCards.every((s) => s.querySelector('.section-card-body').hidden), true);
+  assert.equal(toggleAllSectionsBtn.textContent, 'Expand all sections');
+
+  // Clicking "Add row" inside collapsed Measurements auto-expands Measurements
+  const addStatBtn = h.doc.querySelector('[data-action="add-stat"]');
+  addStatBtn.dispatchEvent({ type: 'click', bubbles: true });
+  assert.equal(h.doc.querySelector('[data-section-card="measurements"] .section-card-body').hidden, false);
+
+  // Collapse all (since Measurements is open) -> then Expand all sections restores full visibility
+  h.doc.querySelector('[data-action="toggle-all-sections"]').dispatchEvent({ type: 'click', bubbles: true });
+  assert.equal(h.doc.querySelector('[data-action="toggle-all-sections"]').textContent, 'Expand all sections');
+  h.doc.querySelector('[data-action="toggle-all-sections"]').dispatchEvent({ type: 'click', bubbles: true });
+  assert.equal(h.doc.querySelectorAll('.section-card').every((s) => !s.querySelector('.section-card-body').hidden), true);
 
   // 4. Add a new group, rename it to "Editorial", and save -> persists groups & clean items without _gid/_groups
   const addGroupBtn = h.doc.querySelector('[data-action="add-group"]');

@@ -436,3 +436,58 @@ test('max retries reached marks is-failed, and click triggers an immediate retry
   img.dispatchEvent(h.makeEvent('click'));
   assert.equal(img.classList.contains('is-retrying'), true, 'tapping failed image resets attempts and retries');
 });
+
+test('loading animation in frames: frames display loading state while media is loading and clear it when loaded', async () => {
+  // Check CSS rules for the small loading animation spinner in frames
+  const css = await fs.readFile(path.join(siteDir, 'assets', 'site.css'), 'utf8');
+  assert.match(css, /@keyframes frame-spinner/, 'CSS defines frame-spinner animation');
+  assert.match(css, /\.gallery-btn:not\(\.is-loaded\)::before/, 'CSS attaches spinner to loading gallery buttons');
+  assert.match(css, /\.video-frame:not\(\.is-loaded\)::before/, 'CSS attaches spinner to loading video frames');
+  assert.match(css, /\.carousel-slide\.is-loading::before/, 'CSS attaches spinner to loading carousel slides');
+  assert.match(css, /animation:\s*frame-spinner/, 'spinner rotates via frame-spinner animation');
+
+  const h = createRetryHarness();
+  // Frame containers
+  const galleryBtn = h.documentObj.body.appendChild(new (h.testImg.constructor)('button', { className: 'gallery-btn' }));
+  const galleryImg = galleryBtn.appendChild(new (h.testImg.constructor)('img', { attrs: { src: 'https://media.example.com/gallery.jpg' } }));
+  galleryImg.src = 'https://media.example.com/gallery.jpg';
+  galleryImg.naturalWidth = 0;
+  galleryImg.complete = false;
+
+  const videoFrame = h.documentObj.body.appendChild(new (h.testVideo.constructor)('div', { className: 'video-frame' }));
+  const frameVideo = videoFrame.appendChild(new (h.testVideo.constructor)('video', { attrs: { src: 'https://media.example.com/reel.mp4' } }));
+  frameVideo.src = 'https://media.example.com/reel.mp4';
+  frameVideo.readyState = 0;
+
+  await h.boot();
+
+  // Initially while photo and video are loading, frames are marked is-loading and not is-loaded
+  assert.equal(galleryBtn.classList.contains('is-loading'), true, 'gallery frame has is-loading while image is loading');
+  assert.equal(galleryBtn.classList.contains('is-loaded'), false);
+
+  assert.equal(videoFrame.classList.contains('is-loading'), true, 'video frame has is-loading while video is loading');
+  assert.equal(videoFrame.classList.contains('is-loaded'), false);
+
+  // When photo finishes loading, frame transitions to is-loaded
+  galleryImg.naturalWidth = 1200;
+  galleryImg.naturalHeight = 1600;
+  galleryImg.complete = true;
+  galleryImg.dispatchEvent(h.makeEvent('load', { bubbles: false }));
+
+  assert.equal(galleryBtn.classList.contains('is-loaded'), true, 'gallery frame has is-loaded once image loads');
+  assert.equal(galleryBtn.classList.contains('is-loading'), false);
+
+  // When video loads metadata/data, frame transitions to is-loaded
+  frameVideo.readyState = 2;
+  frameVideo.dispatchEvent(h.makeEvent('loadeddata', { bubbles: false }));
+
+  assert.equal(videoFrame.classList.contains('is-loaded'), true, 'video frame has is-loaded once video data loads');
+  assert.equal(videoFrame.classList.contains('is-loading'), false);
+
+  // If photo fails and is retrying, frame keeps is-loading active
+  galleryImg.naturalWidth = 0;
+  galleryImg.complete = false;
+  galleryImg.dispatchEvent(h.makeEvent('error', { bubbles: false }));
+  assert.equal(galleryBtn.classList.contains('is-loading'), true, 'frame stays is-loading while retrying');
+  assert.equal(galleryBtn.classList.contains('is-loaded'), false);
+});

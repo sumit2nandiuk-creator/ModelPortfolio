@@ -762,5 +762,48 @@ test('popup opens dialog before measuring #lb-stage and keeps left/right neighbo
   assert.match(css, /\.lb-stage\s*\{[\s\S]*?touch-action:\s*pan-y;/);
 });
 
+test('popup instantly displays already-fetched page images with is-loaded and CSS maintains absolute positioning for slides', async () => {
+  const h = await createLightboxHarness({ width: 390, height: 844 });
+
+  // Add an img tag inside galleryButtons[0] that has already finished loading on the page
+  const pageImg = h.galleryButtons[0].appendChild(new (h.stage.constructor)('img', {
+    attrs: {
+      src: '/media/demo/photo-1.jpg',
+      alt: 'Photo 1',
+    },
+  }));
+  pageImg.src = '/media/demo/photo-1.jpg';
+  pageImg.naturalWidth = 1440;
+  pageImg.naturalHeight = 1800;
+  pageImg.complete = true;
+
+  await h.boot();
+
+  // Click the gallery button to open the popup
+  h.galleryButtons[0].dispatchEvent(h.makeEvent('click'));
+  assert.equal(h.dialog.open, true);
+
+  const slide0 = h.stage.querySelectorAll('.carousel-slide')[0];
+  assert.ok(slide0, 'popup slide 0 exists');
+  assert.equal(slide0.classList.contains('is-loaded'), true, 'pre-fetched photo marks popup slide as is-loaded');
+  assert.equal(slide0.classList.contains('is-loading'), false, 'pre-fetched photo does not show loading spinner');
+
+  const popupImg = slide0.querySelector('img');
+  assert.ok(popupImg, 'popup img exists');
+  assert.equal(popupImg.getAttribute('src'), '/media/demo/photo-1.jpg', 'popup img has src set immediately');
+  assert.equal(popupImg.width, 1440, 'popup img inherits natural width');
+  assert.equal(popupImg.height, 1800, 'popup img inherits natural height');
+
+  // Verify CSS guarantees: .carousel-slide is position: absolute (never position: relative) so slides don't stack downwards
+  const css = await fs.readFile(path.join(root, 'site', 'assets', 'site.css'), 'utf8');
+  assert.match(css, /\.carousel-slide\s*\{[\s\S]*?position:\s*absolute;/);
+  assert.doesNotMatch(css, /\.carousel-slide\s*\{\s*position:\s*relative;/);
+  assert.doesNotMatch(css, /\.gallery-btn,\s*\.video-frame,\s*\.carousel-slide\s*\{\s*position:\s*relative;/);
+
+  // Verify CSS guarantees: popup images are never hidden by opacity: 0
+  assert.match(css, /\.lb-stage\s+\.carousel-slide\s+img\s*\{[\s\S]*?opacity:\s*1\s*!important;/);
+  assert.doesNotMatch(css, /\.lb-stage\s+\.carousel-slide\.is-loading\s+img\s*\{[\s\S]*?opacity:\s*0;/);
+});
+
 
 

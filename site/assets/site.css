@@ -1051,8 +1051,7 @@ main section {
 }
 
 .gallery-btn,
-.video-frame,
-.carousel-slide {
+.video-frame {
   position: relative;
 }
 
@@ -1090,28 +1089,25 @@ main section {
 
 /* Smooth transition when media finishes loading */
 .gallery-btn img,
-.video-frame video,
-.lb-stage .carousel-slide img {
+.video-frame video {
   transition: opacity 0.35s ease;
 }
 
 .js .gallery-btn:not(.is-loaded) img,
 .js .video-frame:not(.is-loaded) video,
-.js .lb-stage .carousel-slide.is-loading img,
 .gallery-btn.is-loading img,
-.video-frame.is-loading video,
-.lb-stage .carousel-slide.is-loading img {
+.video-frame.is-loading video {
   opacity: 0;
 }
 
 .gallery-btn.is-loaded img,
-.video-frame.is-loaded video,
-.lb-stage .carousel-slide.is-loaded img {
+.video-frame.is-loaded video {
   opacity: 1;
 }
 
-/* Banner slideshow hero media remains visible without being hidden by opacity 0 */
-.hero-media {
+/* Banner slideshow hero media and lightbox popup images remain visible without opacity suppression */
+.hero-media,
+.lb-stage .carousel-slide img {
   opacity: 1 !important;
 }
 

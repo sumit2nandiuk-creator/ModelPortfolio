@@ -44,14 +44,31 @@ async function statOrNull(p) {
 }
 
 async function sendFile(req, res, filePath, status = 200) {
-  const type = TYPES[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream';
+  const ext = path.extname(filePath).toLowerCase();
+  const type = TYPES[ext] ?? 'application/octet-stream';
+  const stat = await statOrNull(filePath);
+  const mtime = stat ? new Date(stat.mtimeMs).toUTCString() : null;
+  const etag = stat ? `"${stat.size}-${Math.floor(stat.mtimeMs)}"` : null;
+
+  if (req.headers['if-none-match'] === etag || (mtime && req.headers['if-modified-since'] === mtime)) {
+    res.writeHead(304);
+    return res.end();
+  }
+
   const body = await fs.readFile(filePath);
-  res.writeHead(status, {
+  const isMedia = /\.(jpg|jpeg|png|webp|avif|gif|svg|mp4|webm|mov|m4v|woff2?)$/i.test(ext);
+  const cacheControl = isMedia ? 'public, max-age=86400, stale-while-revalidate=604800' : 'no-cache';
+
+  const headers = {
     'Content-Type': type,
     'Content-Length': body.length,
-    'Cache-Control': 'no-cache',
+    'Cache-Control': cacheControl,
     'X-Content-Type-Options': 'nosniff',
-  });
+  };
+  if (etag) headers['ETag'] = etag;
+  if (mtime) headers['Last-Modified'] = mtime;
+
+  res.writeHead(status, headers);
   res.end(req.method === 'HEAD' ? undefined : body);
 }
 

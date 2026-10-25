@@ -290,7 +290,7 @@
         var d = (i - index + n) % n;
         if (d > n / 2) d -= n;                              // nearest way round
         if (n === 2 && i !== index) d = dx < 0 ? 1 : -1;    // one neighbour: show it on the side being dragged
-        var near = Math.abs(d) <= 1;
+        var near = Math.abs(d) <= (animate || dx !== 0 ? 2 : 1);
         el.style.transition = animate ? 'transform ' + ms + 'ms ' + EASE : 'none';
         el.style.transform = 'translate3d(' + (d * stride + dx) + 'px, 0, 0)';
         el.style.visibility = near ? 'visible' : 'hidden';
@@ -339,7 +339,12 @@
       if (animate) void root.offsetWidth; // start the slide from where the drag left it
       layout(animate, SLIDE_MS);
       predecode();
-      if (animate) later(SLIDE_MS, function () { busy = false; });
+      if (animate) {
+        later(SLIDE_MS, function () {
+          busy = false;
+          layout(false, 0);
+        });
+      }
       notify();
       restartAutoplay();
     }
@@ -577,11 +582,34 @@
     return attr || el.src || '';
   }
 
+  function findExistingImage(src) {
+    if (!src || typeof document === 'undefined') return null;
+    var imgs = document.querySelectorAll('img');
+    for (var i = 0; i < imgs.length; i++) {
+      var candidate = imgs[i];
+      if (candidate.closest && candidate.closest('#lb-stage')) continue;
+      var candidateSrc = candidate.getAttribute('src') || candidate.src || '';
+      if (candidateSrc === src || candidate.src === src) return candidate;
+      if (candidateSrc && src && (candidateSrc.indexOf(src) !== -1 || src.indexOf(candidateSrc) !== -1)) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
   function setMediaSrc(el, url) {
     if (!el || !url) return;
+    var current = getMediaSrc(el);
+    if (current === url) {
+      if (el.complete && (el.naturalWidth || 0) > 0) updateMediaLoaded(el, true);
+      return;
+    }
     try { el.src = url; } catch (_) {}
     if (typeof el.setAttribute === 'function') {
       el.setAttribute('src', url);
+    }
+    if (el.complete && (el.naturalWidth || 0) > 0) {
+      updateMediaLoaded(el, true);
     }
   }
 
@@ -702,9 +730,6 @@
           retryImage(el);
         }
       });
-      if (el.complete && (el.naturalWidth || 0) === 0 && getMediaSrc(el)) {
-        retryImage(el);
-      }
     } else if (el.tagName === 'VIDEO') {
       el.addEventListener('error', function () { retryVideo(el); });
       el.addEventListener('loadeddata', function () { clearRetry(el); });
@@ -889,8 +914,20 @@
       var n = items.length;
       [-1, 0, 1].forEach(function (d) {
         var j = (i + d + n) % n;
-        var img = els[j] && els[j].querySelector('img');
-        if (img && !getMediaSrc(img)) setMediaSrc(img, items[j].src);
+        var slide = els[j];
+        var img = slide && slide.querySelector('img');
+        if (img && !getMediaSrc(img)) {
+          var item = items[j];
+          var existing = findExistingImage(item.src);
+          if (existing && existing.naturalWidth && !img.naturalWidth) {
+            img.width = existing.naturalWidth;
+            img.height = existing.naturalHeight;
+          }
+          setMediaSrc(img, item.src);
+          if ((existing && existing.complete && (existing.naturalWidth || 0) > 0) || (img.complete && (img.naturalWidth || 0) > 0)) {
+            updateMediaLoaded(img, true);
+          }
+        }
       });
     }
 
@@ -915,13 +952,33 @@
       lastTap = null;
       resetZoom(false);
       stage.textContent = '';
-      list.forEach(function (item) {
+      list.forEach(function (item, idx) {
         var figure = document.createElement('figure');
-        figure.className = 'carousel-slide is-loading';
+        figure.className = 'carousel-slide';
         var img = document.createElement('img');
-        img.alt = item.alt;
+        img.alt = item.alt || '';
         img.decoding = 'async';
         img.draggable = false;
+
+        var existing = findExistingImage(item.src);
+        var isPreloaded = !!(existing && existing.complete && (existing.naturalWidth || 0) > 0);
+
+        var isNear = Math.abs(idx - start) <= 1 || (start === 0 && idx === list.length - 1) || (start === list.length - 1 && idx === 0);
+        if (isNear || isPreloaded) {
+          if (existing && existing.naturalWidth) {
+            img.width = existing.naturalWidth;
+            img.height = existing.naturalHeight;
+          }
+          setMediaSrc(img, item.src);
+        }
+
+        if (isPreloaded || (img.complete && (img.naturalWidth || 0) > 0)) {
+          figure.classList.add('is-loaded');
+          figure.classList.remove('is-loading');
+        } else {
+          figure.classList.add('is-loading');
+        }
+
         observeMedia(img);
         figure.appendChild(img);
         stage.appendChild(figure);

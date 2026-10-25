@@ -181,9 +181,13 @@ function renderHero(model, ctx) {
       const source = imageSource(cover, ctx);
       const src = source.full;
       const label = many ? `Open cover photo ${i + 1} of ${covers.length}` : 'Open cover photo';
+      const hasProgressiveSources = Boolean(source.preview || source.thumb);
+      const sourceAttrs = hasProgressiveSources
+        ? `data-preview-src="${esc(source.src)}"${progressiveAttrs(source)}`
+        : `src="${esc(source.full)}"`;
       return `
         <button class="carousel-slide" type="button" data-src="${esc(src)}"${(source.thumb || source.preview) ? ` data-thumb="${esc(source.thumb || source.preview)}"` : ''} data-alt="${esc(cover.alt)}" data-caption="" aria-label="${esc(label)}">
-          <img class="hero-media" src="${esc(source.src)}"${progressiveAttrs(source)} alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} loading="${i === 0 ? 'eager' : 'lazy'}"${i === 0 ? ' fetchpriority="high"' : ''} decoding="async" draggable="false">
+          <img class="hero-media" ${sourceAttrs} alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} loading="${i === 0 ? 'eager' : 'lazy'}"${i === 0 ? ' fetchpriority="high"' : ''} decoding="async" draggable="false">
         </button>`;
     })
     .join('');
@@ -620,16 +624,12 @@ export function renderModelPage(model, ctx) {
     )
     .join('\n  ');
 
-  // Preload only the first cover (the LCP image); neighboring slides load on demand.
-  const coverPreloads = covers
-    .slice(0, 1)
-    .map((c, i) => {
-      const url = ctx.mediaUrl(c.preview || c.thumbnail || c.file);
-      if (!url) return '';
-      return `<link rel="preload" as="image" href="${esc(url)}"${i === 0 ? ' fetchpriority="high"' : ''}>`;
-    })
-    .filter(Boolean)
-    .join('\n  ');
+  // Keep the first full-size cover preload only when no progressive assets exist.
+  // Otherwise, let the client check the browser's cached full-size response first.
+  const firstCoverHasProgressiveSources = Boolean(firstCover?.preview || firstCover?.thumbnail);
+  const coverPreload = !firstCoverHasProgressiveSources && firstCover?.file
+    ? `<link rel="preload" as="image" href="${esc(ctx.mediaUrl(firstCover.file))}" fetchpriority="high">`
+    : '';
 
   const extraHead = [
     `<meta property="og:title" content="${esc(title)}">`,
@@ -637,7 +637,7 @@ export function renderModelPage(model, ctx) {
     `<meta property="og:type" content="profile">`,
     cover ? `<meta property="og:image" content="${esc(cover)}">` : '',
     preconnectTags,
-    coverPreloads,
+    coverPreload,
   ]
     .filter(Boolean)
     .join('\n  ');

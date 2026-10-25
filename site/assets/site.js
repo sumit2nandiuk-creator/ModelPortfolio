@@ -895,10 +895,9 @@
     var w = videoEl.videoWidth;
     var h = videoEl.videoHeight;
     if (!w || !h) return;
-    var frame = videoEl.closest ? videoEl.closest('.video-frame') : null;
     var card = videoEl.closest ? videoEl.closest('.video-card') : null;
     var portrait = h > w;
-    if (frame) frame.style.aspectRatio = w + ' / ' + h;
+    videoEl.style.aspectRatio = w + ' / ' + h;
     if (card) {
       card.classList.toggle('is-portrait', portrait);
       card.classList.toggle('is-landscape', !portrait);

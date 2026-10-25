@@ -541,7 +541,7 @@ test('existing R2 portrait videos without saved dimensions switch to portrait vi
   bridal.vid.dispatchEvent(h.makeEvent('loadedmetadata', { bubbles: false }));
 
   assert.equal(bridal.card.classList.contains('is-portrait'), true);
-  assert.equal(bridal.frame.style.aspectRatio, '1080 / 1920');
+  assert.equal(bridal.vid.style.aspectRatio, '1080 / 1920');
   // Second video has not reported dimensions yet, so grid waits before marking all-portrait
   assert.equal(h.videoGrid.classList.contains('is-all-portrait'), false);
 
@@ -550,7 +550,7 @@ test('existing R2 portrait videos without saved dimensions switch to portrait vi
   meesho.vid.dispatchEvent(h.makeEvent('loadedmetadata', { bubbles: false }));
 
   assert.equal(meesho.card.classList.contains('is-portrait'), true);
-  assert.equal(meesho.frame.style.aspectRatio, '720 / 1280');
+  assert.equal(meesho.vid.style.aspectRatio, '720 / 1280');
   assert.equal(h.videoGrid.classList.contains('is-all-portrait'), true);
 });
 

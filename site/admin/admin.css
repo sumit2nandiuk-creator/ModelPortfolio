@@ -236,6 +236,7 @@ label > input, label > textarea, label > select { color: var(--ink); }
   object-fit: cover; display: block; transition: opacity 0.2s ease;
 }
 .thumb.wide { aspect-ratio: 16 / 9; }
+.thumb.portrait { aspect-ratio: 9 / 16; }
 .thumb-box.is-loading .thumb { opacity: 0.35; }
 .thumb-loader {
   display: none;

@@ -299,7 +299,7 @@
       return cleanEntry(p, ['file', 'title', 'category', 'year', 'alt', 'width', 'height']);
     });
     out.videos = m.videos.map(function (v) {
-      return cleanEntry(v, ['file', 'poster', 'posterWidth', 'posterHeight', 'title', 'category', 'description']);
+      return cleanEntry(v, ['file', 'width', 'height', 'poster', 'posterWidth', 'posterHeight', 'title', 'category', 'description']);
     });
 
     var contact = cleanEntry(m.contact || {}, Object.keys(m.contact || {}));
@@ -875,10 +875,13 @@
     var videoStyle = esc(boxInlineCss('videoText'));
     var captionStyle = esc(boxInlineCss('captions'));
     return S.model.videos.map(function (v, i) {
+      var isPortrait = (v.width && v.height && v.height > v.width) ||
+        (!v.width && v.posterWidth && v.posterHeight && v.posterHeight > v.posterWidth);
+      var ratioCls = isPortrait ? 'portrait' : 'wide';
       var preview = v.poster
-        ? thumbBoxHtml('<img class="thumb wide" alt="" src="' + esc(mediaSrc(v.poster)) + '" loading="lazy">', 'Loading poster…')
+        ? thumbBoxHtml('<img class="thumb ' + ratioCls + '" alt="" src="' + esc(mediaSrc(v.poster)) + '" loading="lazy">', 'Loading poster…')
         : (v.file
-          ? thumbBoxHtml('<video class="thumb wide" preload="metadata" muted playsinline src="' + esc(mediaSrc(v.file)) + '#t=0.001"></video>', 'Loading video…')
+          ? thumbBoxHtml('<video class="thumb ' + ratioCls + '" data-video-index="' + i + '" preload="auto" muted playsinline src="' + esc(mediaSrc(v.file)) + '#t=0.1"></video>', 'Loading video…')
           : '<div class="thumb-box"><div class="thumb wide" aria-hidden="true"></div></div>');
       return '<div class="item video">' + preview +
         '<div><div class="item-fields">' +
@@ -1675,6 +1678,48 @@
     }, function () { return null; });
   }
 
+  function videoSize(file) {
+    if (typeof document === 'undefined' || !window.URL || typeof window.URL.createObjectURL !== 'function') {
+      return Promise.resolve(null);
+    }
+    return new Promise(function (resolve) {
+      var url = '';
+      var v = document.createElement('video');
+      var done = false;
+      var finish = function (size) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        try {
+          v.removeAttribute('src');
+          if (typeof v.load === 'function') v.load();
+        } catch (_) {}
+        if (url && window.URL && typeof window.URL.revokeObjectURL === 'function') {
+          try { window.URL.revokeObjectURL(url); } catch (_) {}
+        }
+        resolve(size);
+      };
+      var timer = setTimeout(function () { finish(null); }, 4000);
+      v.preload = 'metadata';
+      v.muted = true;
+      v.playsInline = true;
+      v.addEventListener('loadedmetadata', function () {
+        if (v.videoWidth > 0 && v.videoHeight > 0) {
+          finish({ width: v.videoWidth, height: v.videoHeight });
+        } else {
+          finish(null);
+        }
+      });
+      v.addEventListener('error', function () { finish(null); });
+      try {
+        url = window.URL.createObjectURL(file);
+        v.src = url;
+      } catch (_) {
+        finish(null);
+      }
+    });
+  }
+
   function titleFrom(nameOrFile, fallback) {
     var name = typeof nameOrFile === 'string' ? nameOrFile : String((nameOrFile && nameOrFile.name) || '');
     var cleaned = name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim();
@@ -1861,7 +1906,7 @@
 
     return Promise.all([
       uploadFile(file, prep.uploadName, hooks),
-      isVideo ? Promise.resolve(null) : imageSize(file),
+      isVideo ? videoSize(file) : imageSize(file),
     ]).then(function (results) {
       var uploaded = results[0];
       var size = results[1];
@@ -1870,7 +1915,7 @@
       } else if (kind === 'photo') {
         S.model.photos.push(withSize({ file: uploaded.url, title: titleFrom(prep.uploadName, fallbackTitle), category: 'Portfolio', year: '', alt: '' }, size));
       } else if (kind === 'video') {
-        S.model.videos.push({ file: uploaded.url, title: titleFrom(prep.uploadName, fallbackTitle), category: '', description: '' });
+        S.model.videos.push(withSize({ file: uploaded.url, title: titleFrom(prep.uploadName, fallbackTitle), category: '', description: '' }, size));
       }
       S.abortUpload = null;
       var isLast = !(totalFiles > 1 && fileIndex + 1 < totalFiles);
@@ -2006,6 +2051,11 @@
   function onMediaReady(e) {
     var t = e.target;
     if (!t || (t.tagName !== 'IMG' && t.tagName !== 'VIDEO')) return;
+    if (t.tagName === 'VIDEO' && t.videoWidth > 0 && t.videoHeight > 0) {
+      var portrait = t.videoHeight > t.videoWidth;
+      t.classList.toggle('portrait', portrait);
+      t.classList.toggle('wide', !portrait);
+    }
     var box = t.closest ? t.closest('.thumb-box') : null;
     if (!box) return;
     box.classList.remove('is-loading');

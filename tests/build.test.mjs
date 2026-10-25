@@ -576,6 +576,35 @@ test('a cover list builds a slideshow with dots and autoplay; a single cover has
   }
 });
 
+test('local tiny previews and normal thumbnails are copied into the profile media folder', async () => {
+  const ws = await tempWorkspace();
+  try {
+    await fs.mkdir(ws.modelsDir, { recursive: true });
+    const model = await writeModel(ws.modelsDir, 'preview-check', 'Preview Check', {
+      cover: {
+        file: 'preview-check-cover.png',
+        preview: 'preview-check-tiny.webp',
+        thumbnail: 'preview-check-thumb.webp',
+        alt: 'Cover preview',
+      },
+    });
+    const mediaDir = path.join(ws.modelsDir, 'preview-check', 'media');
+    const image = await fs.readFile(path.join(mediaDir, 'preview-check-cover.png'));
+    await fs.writeFile(path.join(mediaDir, 'preview-check-tiny.webp'), image);
+    await fs.writeFile(path.join(mediaDir, 'preview-check-thumb.webp'), image);
+    await fs.writeFile(path.join(ws.modelsDir, 'preview-check', 'model.json'), JSON.stringify(model, null, 2));
+
+    await build({ modelsDir: ws.modelsDir, siteDir, outDir: ws.outDir });
+    const outMedia = path.join(ws.outDir, 'preview-check', 'media');
+    assert.equal(await exists(path.join(outMedia, 'preview-check-tiny.webp')), true);
+    assert.equal(await exists(path.join(outMedia, 'preview-check-thumb.webp')), true);
+    const html = await fs.readFile(path.join(ws.outDir, 'preview-check', 'index.html'), 'utf8');
+    assert.match(html, /src="\/preview-check\/media\/preview-check-tiny\.webp" data-medium-src="\/preview-check\/media\/preview-check-thumb\.webp" data-full-src="\/preview-check\/media\/preview-check-cover\.png"/);
+  } finally {
+    await ws.cleanup();
+  }
+});
+
 test('every cover photo in a list needs an alt text', async () => {
   const ws = await tempWorkspace();
   try {

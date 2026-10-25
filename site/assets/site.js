@@ -497,7 +497,7 @@
         heroDots.forEach(function (dot, j) { dot.classList.toggle('is-active', j === i); });
         var active = heroRoot.querySelectorAll('.carousel-slide')[i];
         var activeImg = active && active.querySelector('img');
-        if (activeImg) loadFullImageAfterThumbnail(activeImg);
+        if (activeImg && activeImg.complete && (activeImg.naturalWidth || 0) > 0) loadFullImageAfterThumbnail(activeImg);
       },
     });
     heroDots.forEach(function (dot) {
@@ -662,19 +662,54 @@
     var hero = img.closest && img.closest('.hero-carousel');
     var heroSlide = hero && img.closest('.carousel-slide');
     if (hero && (!heroSlide || !heroSlide.classList.contains('is-current'))) return;
+    var currentUrl = getMediaSrc(img);
+    var mediumUrl = typeof img.getAttribute === 'function' ? img.getAttribute('data-medium-src') : '';
     var fullUrl = typeof img.getAttribute === 'function' ? img.getAttribute('data-full-src') : '';
-    if (!fullUrl || img._loadingFullImage || getMediaSrc(img) === fullUrl || img.src === fullUrl) return;
+    var targetUrl = mediumUrl && currentUrl !== mediumUrl ? mediumUrl : fullUrl;
+    if (!targetUrl || !fullUrl || currentUrl === fullUrl || img.src === fullUrl) return;
+    if (img._loadingFullImage && img._loadingFullUrl === targetUrl) return;
     if (typeof window.Image !== 'function') return;
     img._loadingFullImage = true;
+    img._loadingFullUrl = targetUrl;
     var full = new window.Image();
     full.onload = function () {
+      if (targetUrl === mediumUrl) {
+        if (img.getAttribute('data-medium-src') !== mediumUrl) return;
+        img.removeAttribute('data-medium-src');
+        img._loadingFullImage = false;
+        img._loadingFullUrl = '';
+        setMediaSrc(img, mediumUrl);
+        loadFullImageAfterThumbnail(img);
+        return;
+      }
       if (img.getAttribute('data-full-src') !== fullUrl) return;
       img.removeAttribute('data-full-src');
       img._loadingFullImage = false;
+      img._loadingFullUrl = '';
       setMediaSrc(img, fullUrl);
     };
-    full.onerror = function () { img._loadingFullImage = false; };
-    full.src = fullUrl;
+    full.onerror = function () {
+      var failedMedium = targetUrl === mediumUrl && img.getAttribute('data-medium-src') === mediumUrl;
+      if (failedMedium) img.removeAttribute('data-medium-src');
+      img._loadingFullImage = false;
+      img._loadingFullUrl = '';
+      if (failedMedium) loadFullImageAfterThumbnail(img);
+    };
+    full.src = targetUrl;
+  }
+
+  function advanceImageSourceAfterFailure(img) {
+    if (!img || typeof img.getAttribute !== 'function') return false;
+    var mediumUrl = img.getAttribute('data-medium-src');
+    var fullUrl = img.getAttribute('data-full-src');
+    var nextUrl = mediumUrl || fullUrl;
+    if (!nextUrl) return false;
+    if (mediumUrl) img.removeAttribute('data-medium-src');
+    else img.removeAttribute('data-full-src');
+    img._loadingFullImage = false;
+    img._loadingFullUrl = '';
+    setMediaSrc(img, nextUrl);
+    return true;
   }
 
   function clearRetry(el) {
@@ -801,7 +836,9 @@
     el._retryObserved = true;
     setupMediaFrameState(el);
     if (el.tagName === 'IMG') {
-      el.addEventListener('error', function () { retryImage(el); });
+      el.addEventListener('error', function () {
+        if (!advanceImageSourceAfterFailure(el)) retryImage(el);
+      });
       el.addEventListener('load', function () {
         if ((el.naturalWidth || 0) > 0) {
           clearRetry(el);

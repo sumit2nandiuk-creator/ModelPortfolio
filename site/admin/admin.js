@@ -1964,8 +1964,9 @@
     var item = list[i];
     if (!item) return;
     var files = [];
-    if (item.file) files.push(item.file);
-    if (item.poster) files.push(item.poster);
+    ['file', 'poster', 'thumbnail', 'preview', 'posterThumbnail', 'posterPreview'].forEach(function (key) {
+      if (item[key]) files.push(item[key]);
+    });
     files.forEach(function (f) {
       if (isHttp(f) && S.pendingDeletes.indexOf(f) === -1) S.pendingDeletes.push(f);
     });
@@ -2003,12 +2004,11 @@
       : 'Remove empty group "' + (trimmed(grp.title) || 'Untitled') + '"?';
     if (!window.confirm(msg)) return;
 
-    vInGroup.forEach(function (v) {
-      if (v.file && isHttp(v.file) && S.pendingDeletes.indexOf(v.file) === -1) S.pendingDeletes.push(v.file);
-      if (v.poster && isHttp(v.poster) && S.pendingDeletes.indexOf(v.poster) === -1) S.pendingDeletes.push(v.poster);
-    });
-    pInGroup.forEach(function (p) {
-      if (p.file && isHttp(p.file) && S.pendingDeletes.indexOf(p.file) === -1) S.pendingDeletes.push(p.file);
+    vInGroup.concat(pInGroup).forEach(function (item) {
+      ['file', 'poster', 'thumbnail', 'preview', 'posterThumbnail', 'posterPreview'].forEach(function (key) {
+        var file = item && item[key];
+        if (file && isHttp(file) && S.pendingDeletes.indexOf(file) === -1) S.pendingDeletes.push(file);
+      });
     });
     S.model.videos = (S.model.videos || []).filter(function (v) { return !v || v._gid !== grp.id; });
     S.model.photos = (S.model.photos || []).filter(function (p) { return !p || p._gid !== grp.id; });
@@ -2538,11 +2538,19 @@
     ]).then(function (results) {
       var uploaded = results[0];
       var size = results[1];
-      return (isVideo ? Promise.resolve({ url: '', error: '' }) : makeAndUploadThumbnail(file, fileIndex)).then(function (thumbnail) {
+      return (isVideo
+        ? Promise.resolve([{ url: '', error: '' }, { url: '', error: '' }])
+        : Promise.all([
+            makeAndUploadThumbnail(file, fileIndex),
+            makeAndUploadThumbnail(file, fileIndex, 'preview'),
+          ])).then(function (thumbnails) {
+        var thumbnail = thumbnails[0];
+        var preview = thumbnails[1];
         if (kind === 'cover') {
           var coverIdx = Math.min(insertPos, S.model.cover.length);
           var coverEntry = { file: uploaded.url, alt: titleFrom(prep.uploadName, fallbackTitle) };
           if (thumbnail.url) coverEntry.thumbnail = thumbnail.url;
+          if (preview.url) coverEntry.preview = preview.url;
           S.model.cover.splice(coverIdx, 0, withSize(coverEntry, size));
         } else if (kind === 'photo') {
           var pEntry = withSize({
@@ -2553,6 +2561,7 @@
             alt: '',
           }, size);
           if (thumbnail.url) pEntry.thumbnail = thumbnail.url;
+          if (preview.url) pEntry.preview = preview.url;
           if (targetGrp) pEntry._gid = targetGrp.id;
           var photoIdx = Math.min(insertPos, S.model.photos.length);
           S.model.photos.splice(photoIdx, 0, pEntry);
@@ -2583,8 +2592,9 @@
           scheduleUploadAutoClear(slotId);
         }
         var uploadStatus = 'Uploaded ' + prep.displayName + '. Save to publish it.';
-        if (!isVideo && thumbnail.error) uploadStatus += ' Thumbnail could not be generated; use Generate Thumbnails to retry.';
-        setStatus(uploadStatus, !isVideo && thumbnail.error ? 'error' : 'ok');
+        var thumbnailError = thumbnail.error || preview.error;
+        if (!isVideo && thumbnailError) uploadStatus += ' One or more thumbnails could not be generated; use Generate Thumbnails to retry.';
+        setStatus(uploadStatus, !isVideo && thumbnailError ? 'error' : 'ok');
         render();
         paintSavebarProgress();
         return { ok: true };
@@ -2666,6 +2676,9 @@
         }
         if (video.posterThumbnail && isHttp(video.posterThumbnail) && S.pendingDeletes.indexOf(video.posterThumbnail) === -1) {
           S.pendingDeletes.push(video.posterThumbnail);
+        }
+        if (video.posterPreview && isHttp(video.posterPreview) && S.pendingDeletes.indexOf(video.posterPreview) === -1) {
+          S.pendingDeletes.push(video.posterPreview);
         }
         video.poster = uploaded.url;
         if (thumbnail.url) video.posterThumbnail = thumbnail.url;
@@ -2772,20 +2785,42 @@
   }
 
   function thumbnailTargets() {
-    var refs = [];
-    (S.model.cover || []).forEach(function (entry) { if (entry && entry.file) refs.push({ entry: entry, source: entry.file, key: 'thumbnail' }); });
-    (S.model.photos || []).forEach(function (entry) { if (entry && entry.file) refs.push({ entry: entry, source: entry.file, key: 'thumbnail' }); });
-    (S.model.videos || []).forEach(function (entry) {
-      if (entry && entry.poster) refs.push({ entry: entry, source: entry.poster, key: 'posterThumbnail' });
-    });
     var bySource = {};
-    refs.forEach(function (ref) {
-      var source = String(ref.source);
-      if (!bySource[source]) bySource[source] = { source: source, refs: [], thumbnail: '' };
-      bySource[source].refs.push(ref);
-      if (!bySource[source].thumbnail && ref.entry[ref.key]) bySource[source].thumbnail = ref.entry[ref.key];
+    function add(sourceValue, entry, key, tier) {
+      if (!sourceValue) return;
+      var source = String(sourceValue);
+      if (!bySource[source]) {
+        bySource[source] = { source: source, thumbnailRefs: [], previewRefs: [], thumbnail: '', preview: '' };
+      }
+      var group = bySource[source];
+      var ref = { entry: entry, key: key };
+      if (tier === 'preview') {
+        group.previewRefs.push(ref);
+        if (!group.preview && entry[key]) group.preview = entry[key];
+      } else {
+        group.thumbnailRefs.push(ref);
+        if (!group.thumbnail && entry[key]) group.thumbnail = entry[key];
+      }
+    }
+    (S.model.cover || []).forEach(function (entry) {
+      if (!entry || !entry.file) return;
+      add(entry.file, entry, 'thumbnail', 'thumbnail');
+      add(entry.file, entry, 'preview', 'preview');
     });
-    return Object.keys(bySource).map(function (key) { return bySource[key]; });
+    (S.model.photos || []).forEach(function (entry) {
+      if (!entry || !entry.file) return;
+      add(entry.file, entry, 'thumbnail', 'thumbnail');
+      add(entry.file, entry, 'preview', 'preview');
+    });
+    (S.model.videos || []).forEach(function (entry) {
+      if (entry && entry.poster) add(entry.poster, entry, 'posterThumbnail', 'thumbnail');
+    });
+    return Object.keys(bySource).map(function (key) {
+      var group = bySource[key];
+      if (group.thumbnail) group.thumbnailRefs.forEach(function (ref) { if (!ref.entry[ref.key]) ref.entry[ref.key] = group.thumbnail; });
+      if (group.preview) group.previewRefs.forEach(function (ref) { if (!ref.entry[ref.key]) ref.entry[ref.key] = group.preview; });
+      return group;
+    });
   }
 
   function resolveThumbnailSource(source) {
@@ -2803,13 +2838,15 @@
     }).catch(function () { return { url: direct, revoke: null }; });
   }
 
-  function makeThumbnail(source) {
+  function makeThumbnail(source, tier) {
     return new Promise(function (resolve, reject) {
       var image = new window.Image();
       image.crossOrigin = 'anonymous';
       image.onload = function () {
         try {
-          var maxEdge = 360;
+          var isPreview = tier === 'preview';
+          var maxEdge = isPreview ? 64 : 360;
+          var quality = isPreview ? 0.35 : 0.76;
           var scale = Math.min(1, maxEdge / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
           var canvas = document.createElement('canvas');
           canvas.width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
@@ -2820,7 +2857,7 @@
           canvas.toBlob(function (blob) {
             if (!blob) { reject(new Error('Could not encode thumbnail.')); return; }
             resolve(blob);
-          }, 'image/webp', 0.76);
+          }, 'image/webp', quality);
         } catch (err) { reject(err); }
       };
       image.onerror = function () { reject(new Error('Could not load image: ' + source)); };
@@ -2828,26 +2865,27 @@
     });
   }
 
-  function makeThumbnailFromFile(file) {
+  function makeThumbnailFromFile(file, tier) {
     if (!window.URL || typeof window.URL.createObjectURL !== 'function') {
       return Promise.reject(new Error('This browser cannot read local image files.'));
     }
     var objectUrl = window.URL.createObjectURL(file);
-    return makeThumbnail(objectUrl).finally(function () {
+    return makeThumbnail(objectUrl, tier).finally(function () {
       if (typeof window.URL.revokeObjectURL === 'function') window.URL.revokeObjectURL(objectUrl);
     });
   }
 
-  function uploadThumbnail(blob, index) {
+  function uploadThumbnail(blob, index, tier) {
     var form = new FormData();
     var ext = blob.type === 'image/png' ? 'png' : 'webp';
-    form.append('file', blob, 'thumbnail-' + Date.now() + '-' + index + '.' + ext);
+    var prefix = tier === 'preview' ? 'preview-' : 'thumbnail-';
+    form.append('file', blob, prefix + Date.now() + '-' + index + '.' + ext);
     return api('POST', profilePath(S.slug, '/media'), { form: form }).then(function (data) { return data.url; });
   }
 
-  function makeAndUploadThumbnail(file, index) {
-    return makeThumbnailFromFile(file)
-      .then(function (blob) { return uploadThumbnail(blob, 'upload-' + index); })
+  function makeAndUploadThumbnail(file, index, tier) {
+    return makeThumbnailFromFile(file, tier)
+      .then(function (blob) { return uploadThumbnail(blob, 'upload-' + index, tier); })
       .then(function (url) { return { url: url, error: '' }; })
       .catch(function (err) {
         var message = (err && err.message) || 'Thumbnail generation failed.';
@@ -2861,7 +2899,9 @@
     if (isDirty() && !window.confirm('Generating thumbnails will also save your current profile changes. Continue?')) return;
     var btn = $('generate-thumbnails');
     var groups = thumbnailTargets();
-    var pending = groups.filter(function (group) { return !group.thumbnail; });
+    var pending = groups.filter(function (group) {
+      return (!group.thumbnail && group.thumbnailRefs.length) || (!group.preview && group.previewRefs.length);
+    });
     if (!pending.length) {
       setStatus('All model images already have thumbnails.', 'ok');
       toast('All model images already have thumbnails.', 'ok');
@@ -2873,27 +2913,40 @@
     var generated = 0;
     return pending.reduce(function (chain, group, index) {
       return chain.then(function () {
-        setStatus('Generating thumbnail ' + (index + 1) + ' of ' + pending.length + '…');
+        setStatus('Generating image thumbnails ' + (index + 1) + ' of ' + pending.length + '…');
+        var jobs = [];
+        if (!group.preview && group.previewRefs.length) jobs.push({ tier: 'preview', refs: group.previewRefs });
+        if (!group.thumbnail && group.thumbnailRefs.length) jobs.push({ tier: 'thumbnail', refs: group.thumbnailRefs });
         return resolveThumbnailSource(group.source).then(function (resolved) {
-          return makeThumbnail(resolved.url).finally(function () { if (resolved.revoke) resolved.revoke(); });
-        })
-          .then(function (blob) { return uploadThumbnail(blob, index + 1); })
-          .then(function (url) {
-            group.refs.forEach(function (ref) { ref.entry[ref.key] = url; });
-            generated += 1;
-          })
-          .catch(function (err) {
-            var message = err.message || 'An image could not be processed.';
-            failures.push(message);
-            if (window.__appErrorReporter) window.__appErrorReporter.report('frontend-thumbnail', message, { resource: group.source, name: 'manual-thumbnail-generation' });
-          });
+          return jobs.reduce(function (jobChain, job) {
+            return jobChain.then(function () {
+              return makeThumbnail(resolved.url, job.tier)
+                .then(function (blob) { return uploadThumbnail(blob, (index + 1) + '-' + job.tier, job.tier); })
+                .then(function (url) {
+                  job.refs.forEach(function (ref) { ref.entry[ref.key] = url; });
+                  if (job.tier === 'preview') group.preview = url;
+                  else group.thumbnail = url;
+                  generated += 1;
+                })
+                .catch(function (err) {
+                  var message = err.message || 'An image could not be processed.';
+                  failures.push(message);
+                  if (window.__appErrorReporter) window.__appErrorReporter.report('frontend-thumbnail', message, { resource: group.source, name: 'manual-thumbnail-generation' });
+                });
+            });
+          }, Promise.resolve()).finally(function () { if (resolved.revoke) resolved.revoke(); });
+        }).catch(function (err) {
+          var message = err.message || 'An image could not be processed.';
+          failures.push(message);
+          if (window.__appErrorReporter) window.__appErrorReporter.report('frontend-thumbnail', message, { resource: group.source, name: 'manual-thumbnail-generation' });
+        });
       });
     }, Promise.resolve()).then(function () {
       if (generated) {
         render();
         updateDirtyNote();
         setBusy(false);
-        var message = 'Generated ' + generated + ' thumbnail' + (generated === 1 ? '' : 's') + ' and saved them to R2.';
+        var message = 'Generated ' + generated + ' thumbnail variant' + (generated === 1 ? '' : 's') + ' and saved them to R2.';
         if (failures.length) message += ' ' + failures.length + ' image' + (failures.length === 1 ? ' could' : 's could') + ' not be processed.';
         return save(message);
       } else {

@@ -486,16 +486,17 @@ export function fontStyleVarsFor(fonts) {
     if (spec.family && FONT_BY_ID.has(spec.family)) {
       const stack = FONT_BY_ID.get(spec.family).stack;
       vars.push(`--font-${prefix}-family: ${stack}`);
-      if (slot === 'stats') vars.push(`--font-stats-label-family: ${stack}`);
+      if (slot === 'aboutLabel') vars.push(`--font-stats-label-family: ${stack}`);
       if (slot === 'captions') vars.push(`--font-captions-lb-family: ${stack}`);
     }
     if (spec.style && FONT_STYLES.has(spec.style)) {
       vars.push(`--font-${prefix}-style: ${spec.style}`);
-      if (slot === 'stats') vars.push(`--font-stats-label-style: ${spec.style}`);
+      if (slot === 'aboutLabel') vars.push(`--font-stats-label-style: ${spec.style}`);
     }
     if (spec.weight !== undefined && FONT_WEIGHTS.has(String(spec.weight))) {
       const w = String(spec.weight);
       vars.push(`--font-${prefix}-weight: ${w}`);
+      if (slot === 'aboutLabel') vars.push(`--font-stats-label-weight: ${w}`);
       if (slot === 'headings') vars.push(`--font-contact-heading-weight: ${w}`);
       if (slot === 'captions') vars.push(`--font-captions-strong-weight: ${w}`);
       if (slot === 'contact') vars.push(`--font-contact-strong-weight: ${w}`);
@@ -510,6 +511,7 @@ export function fontStyleVarsFor(fonts) {
     }
     if (spec.color && HEX_COLOR_PATTERN.test(spec.color)) {
       vars.push(`--font-${prefix}-color: ${spec.color}`);
+      if (slot === 'aboutLabel') vars.push(`--font-stats-label-color: ${spec.color}`);
     }
     if (spec.align && FONT_ALIGNS.has(spec.align)) {
       vars.push(`--font-${prefix}-align: ${spec.align}`);

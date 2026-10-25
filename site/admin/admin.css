@@ -289,6 +289,7 @@ label > input, label > textarea, label > select { color: var(--ink); }
   color: var(--muted);
   padding: 0 2px;
 }
+.stats-head-row .stats-head-label { color: var(--accent); }
 .stats-head-row span:last-child { text-align: right; padding-right: 4px; }
 .stat-row {
   display: grid;

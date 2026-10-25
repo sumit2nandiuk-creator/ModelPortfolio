@@ -67,8 +67,10 @@
   --font-bio-style: normal;
   --font-bio-weight: 400;
 
-  --font-stats-label-family: var(--font-body);
-  --font-stats-label-style: normal;
+  --font-stats-label-family: var(--font-about-label-family, var(--font-captions-family));
+  --font-stats-label-style: var(--font-about-label-style, var(--font-captions-style));
+  --font-stats-label-weight: var(--font-about-label-weight, var(--font-captions-strong-weight));
+  --font-stats-label-color: var(--font-about-label-color, var(--accent));
   --font-stats-family: var(--font-display);
   --font-stats-style: normal;
   --font-stats-weight: 400;
@@ -683,14 +685,14 @@ main section {
 }
 
 .stat dt {
-  font-family: var(--font-stats-label-family);
-  font-style: var(--font-stats-label-style);
+  font-family: var(--font-about-label-family, var(--font-captions-family));
+  font-style: var(--font-about-label-style, var(--font-captions-style));
   font-size: 0.62rem;
-  font-weight: 600;
+  font-weight: var(--font-about-label-weight, var(--font-captions-strong-weight));
   letter-spacing: 0.14em;
   line-height: 1.15;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--font-about-label-color, var(--accent));
 }
 
 .stat dd {
@@ -1633,9 +1635,12 @@ main section {
 }
 
 .stat dt {
+  font-family: var(--font-about-label-family, var(--font-captions-family));
+  font-style: var(--font-about-label-style, var(--font-captions-style));
+  font-weight: var(--font-about-label-weight, var(--font-captions-strong-weight));
   font-size: calc(0.62rem * var(--font-stats-scale, 1));
-  text-decoration: var(--font-stats-decoration, none);
-  color: var(--font-stats-color, var(--muted));
+  text-decoration: var(--font-about-label-decoration, var(--font-stats-decoration, none));
+  color: var(--font-about-label-color, var(--accent));
 }
 
 .stat dd {

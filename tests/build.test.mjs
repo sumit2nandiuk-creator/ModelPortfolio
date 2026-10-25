@@ -411,6 +411,8 @@ test('the Sushmita Ghosh profile has compact mobile-friendly stats with no shoe 
   // Category / Row Title font style and color match "ABOUT" in Profile & About section
   assert.match(css, /\.media-group-title \{[\s\S]*?font-family:\s*var\(--font-about-label-family,\s*var\(--font-captions-family\)\);/);
   assert.match(css, /\.media-group-title \{[\s\S]*?color:\s*var\(--font-about-label-color,\s*var\(--accent\)\);/);
+  assert.match(css, /\.media-group-title \{[\s\S]*?text-transform:\s*uppercase;/);
+  assert.match(css, /\.media-group-title \{[\s\S]*?font-size:\s*calc\(0\.72rem/);
 
   const ws = await tempWorkspace();
   try {
@@ -423,6 +425,20 @@ test('the Sushmita Ghosh profile has compact mobile-friendly stats with no shoe 
     assert.doesNotMatch(html, /Shoe/);
   } finally {
     await ws.cleanup();
+  }
+
+  // When portfolioHeading says "Categories", the section heading saying "Categories" is removed
+  const catWs = await tempWorkspace();
+  try {
+    await writeModel(catWs.modelsDir, 'cat-model', 'Cat Model', {
+      texts: { portfolioLabel: 'Portfolio', portfolioHeading: 'Categories' },
+    });
+    await build({ modelsDir: catWs.modelsDir, siteDir, outDir: catWs.outDir });
+    const catHtml = await fs.readFile(path.join(catWs.outDir, 'cat-model', 'index.html'), 'utf8');
+    assert.match(catHtml, /<p id="portfolio-label" class="eyebrow">Portfolio<\/p>/);
+    assert.doesNotMatch(catHtml, /Categories/);
+  } finally {
+    await catWs.cleanup();
   }
 });
 

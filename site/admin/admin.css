@@ -622,6 +622,322 @@ label > input, label > textarea, label > select { color: var(--ink); }
   max-width: calc(100vw - 32px);
 }
 
+/* Spell check & grammar check feedback ------------------------------------- */
+
+.sections-overview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.proofread-summary-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid #d6cdbf;
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.proofread-summary-pill.is-ok {
+  border-color: #b7d7be;
+  background: #f2f9f4;
+  color: var(--ok);
+}
+
+.proofread-summary-pill.has-issues {
+  border-color: #e4b77b;
+  background: #fff8ee;
+  color: #8a4b0f;
+  cursor: pointer;
+}
+
+.proofread-summary-pill.has-issues:hover {
+  border-color: var(--accent);
+  background: #fdf1df;
+}
+
+.proofread-summary-pill.is-off {
+  color: var(--muted);
+  background: #f5f2ec;
+}
+
+input.has-proofread-issue,
+textarea.has-proofread-issue,
+.composer.has-proofread-issue {
+  border-color: #d9822b;
+}
+
+input.has-spelling-issue,
+textarea.has-spelling-issue,
+.composer.has-spelling-issue {
+  border-color: #c94a38;
+}
+
+.proofread-slot:empty {
+  display: none;
+}
+
+.stat-row > .proofread-slot {
+  grid-column: 1 / -1;
+}
+
+.proofread-list {
+  display: grid;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.proofread-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 9px;
+  border-radius: 8px;
+  border: 1px solid #ead8bd;
+  background: #fffaf2;
+  font-size: 0.79rem;
+  font-weight: 400;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.proofread-item.is-spelling {
+  border-color: #ecc8c2;
+  background: #fdf5f3;
+}
+
+.proofread-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.proofread-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.69rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  background: #f1dec0;
+  color: #7c4510;
+}
+
+.proofread-item.is-spelling .proofread-badge {
+  background: #f5d3cd;
+  color: var(--danger);
+}
+
+.proofread-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.proofread-fix-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid #c99d6b;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.77rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.proofread-fix-btn:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+
+.proofread-ignore-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.proofread-ignore-btn:hover {
+  border-color: #cfc7b9;
+  color: var(--ink);
+}
+
+/* Save result popup (Green Tick on success, Red Cross on error) ------------ */
+
+.save-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(24, 21, 17, 0.52);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.save-popup-card {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  background: #ffffff;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  padding: 26px 24px 22px;
+  text-align: center;
+  box-shadow: 0 24px 56px -16px rgba(20, 17, 13, 0.36);
+  animation: save-popup-in 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.save-popup-card.is-success {
+  border-top: 4px solid #1f7a3f;
+}
+
+.save-popup-card.is-error {
+  border-top: 4px solid #c62828;
+}
+
+@keyframes save-popup-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.save-popup-x {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.save-popup-x:hover {
+  background: #f3efe8;
+  color: var(--ink);
+}
+
+.save-popup-icon {
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+}
+
+.save-popup-icon.is-success {
+  background: #1f7a3f;
+  box-shadow: 0 0 0 8px rgba(31, 122, 63, 0.14);
+}
+
+.save-popup-icon.is-error {
+  background: #c62828;
+  box-shadow: 0 0 0 8px rgba(198, 40, 40, 0.14);
+}
+
+.save-popup-title {
+  margin: 0 0 8px;
+  font-size: 1.16rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.save-popup-card.is-success .save-popup-title {
+  color: #185e31;
+}
+
+.save-popup-card.is-error .save-popup-title {
+  color: #a61d1d;
+}
+
+.save-popup-desc {
+  margin: 0;
+  font-size: 0.92rem;
+  color: #464038;
+  line-height: 1.5;
+}
+
+.save-popup-errors {
+  margin: 10px 0 0;
+  padding: 10px 12px 10px 28px;
+  text-align: left;
+  background: #fdf3f2;
+  border: 1px solid #f2c6c2;
+  border-radius: 10px;
+  color: #8b1e1e;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+.save-popup-errors li + li {
+  margin-top: 4px;
+}
+
+.save-popup-actions {
+  margin-top: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.btn.success-solid {
+  background: #1f7a3f;
+  border-color: #1f7a3f;
+  color: #ffffff;
+}
+
+.btn.success-solid:hover {
+  background: #186032;
+  border-color: #186032;
+}
+
+.btn.danger-solid {
+  background: #c62828;
+  border-color: #c62828;
+  color: #ffffff;
+}
+
+.btn.danger-solid:hover {
+  background: #a31f1f;
+  border-color: #a31f1f;
+}
+
 @media (max-width: 680px) {
   .admin-media-row {
     --admin-card-basis: calc((100% - var(--admin-row-gap)) / 1.1);

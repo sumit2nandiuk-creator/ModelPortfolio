@@ -175,7 +175,6 @@ function renderHero(model, ctx) {
   const many = covers.length > 1;
 
   // One slide per cover photo. A tap opens the viewer; a drag moves the slides instead.
-  // Load only the first cover eagerly; adjacent slides are promoted by the carousel as needed.
   const slides = covers
     .map((cover, i) => {
       const source = imageSource(cover, ctx);
@@ -183,7 +182,7 @@ function renderHero(model, ctx) {
       const label = many ? `Open cover photo ${i + 1} of ${covers.length}` : 'Open cover photo';
       return `
         <button class="carousel-slide" type="button" data-src="${esc(src)}"${(source.thumb || source.preview) ? ` data-thumb="${esc(source.thumb || source.preview)}"` : ''} data-alt="${esc(cover.alt)}" data-caption="" aria-label="${esc(label)}">
-          <img class="hero-media" src="${esc(source.src)}"${progressiveAttrs(source)} alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} loading="${i === 0 ? 'eager' : 'lazy'}"${i === 0 ? ' fetchpriority="high"' : ''} decoding="async" draggable="false">
+          <img class="hero-media" src="${esc(source.src)}"${progressiveAttrs(source)} alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} loading="eager"${i === 0 ? ' fetchpriority="high"' : ''} decoding="async" draggable="false">
         </button>`;
     })
     .join('');

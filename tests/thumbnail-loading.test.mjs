@@ -50,7 +50,7 @@ test('cover slideshow uses tiny previews first, loads only the first cover eager
     assert.match(html, new RegExp(`src="/media/jane-doe/cover-${i}-preview\\.webp" data-medium-src="/media/jane-doe/cover-${i}-thumb\\.webp" data-full-src="/media/jane-doe/cover-${i}\\.jpg"`));
   }
   assert.match(html, /cover-1-preview\.webp" data-medium-src[^>]*loading="eager" fetchpriority="high"/);
-  assert.match(html, /cover-2-preview\.webp" data-medium-src[^>]*loading="lazy"/);
+  assert.match(html, /cover-2-preview\.webp" data-medium-src[^>]*loading="eager"/);
   assert.match(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-1-preview\.webp" fetchpriority="high">/);
   assert.doesNotMatch(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-[2-4]-thumb\.webp"/);
 });

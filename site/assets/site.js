@@ -936,22 +936,63 @@
     });
   }
 
-  // ---- Video aspect-ratio & portrait/landscape player sizing ---------------
+  // ---- Video frame sizing (matched to portfolio photo frames) & thumbnails --
   var videoEls = Array.prototype.slice.call(document.querySelectorAll('.video-frame video'));
+  var portfolioImgs = Array.prototype.slice.call(document.querySelectorAll('.gallery-btn img'));
+
+  function readImgDims(img) {
+    if (!img) return null;
+    if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+      return { w: img.naturalWidth, h: img.naturalHeight };
+    }
+    var attrW = Number(img.getAttribute && img.getAttribute('width')) || 0;
+    var attrH = Number(img.getAttribute && img.getAttribute('height')) || 0;
+    if (attrW > 0 && attrH > 0) {
+      return { w: attrW, h: attrH };
+    }
+    if (img.clientWidth > 0 && img.clientHeight > 0) {
+      return { w: img.clientWidth, h: img.clientHeight };
+    }
+    return null;
+  }
+
+  function photoFrameDimsForVideo(videoEl) {
+    var row = videoEl && videoEl.closest ? videoEl.closest('[data-media-row]') : null;
+    if (row) {
+      var rowImgs = row.querySelectorAll('.gallery-btn img');
+      for (var r = 0; r < rowImgs.length; r++) {
+        var rDim = readImgDims(rowImgs[r]);
+        if (rDim) return rDim;
+      }
+    }
+    for (var i = 0; i < portfolioImgs.length; i++) {
+      var pDim = readImgDims(portfolioImgs[i]);
+      if (pDim) return pDim;
+    }
+    return null;
+  }
 
   function syncVideoOrientation(videoEl) {
-    var w = videoEl.videoWidth;
-    var h = videoEl.videoHeight;
-    if (!w || !h) return;
+    var photoDims = photoFrameDimsForVideo(videoEl);
+    var vw = videoEl.videoWidth;
+    var vh = videoEl.videoHeight;
+    var frameDims = photoDims || (vw > 0 && vh > 0 ? { w: vw, h: vh } : null);
+    if (!frameDims) return;
     var card = videoEl.closest ? videoEl.closest('.video-card') : null;
-    var portrait = h > w;
-    videoEl.style.aspectRatio = w + ' / ' + h;
+    var portrait = frameDims.h > frameDims.w;
+    videoEl.style.aspectRatio = frameDims.w + ' / ' + frameDims.h;
     if (card) {
       card.classList.toggle('is-portrait', portrait);
       card.classList.toggle('is-landscape', !portrait);
     }
     syncAllMediaRows();
   }
+
+  portfolioImgs.forEach(function (img) {
+    img.addEventListener('load', function () {
+      videoEls.forEach(syncVideoOrientation);
+    });
+  });
 
   function frameBrightnessState(ctx2d, w, h) {
     var data = ctx2d.getImageData(0, 0, w, h).data;
@@ -969,7 +1010,7 @@
   }
 
   function setupVideoPlayer(v) {
-    if (v.videoWidth > 0 && v.videoHeight > 0) syncVideoOrientation(v);
+    syncVideoOrientation(v);
     v.addEventListener('loadedmetadata', function () { syncVideoOrientation(v); });
     v.addEventListener('loadeddata', function () { syncVideoOrientation(v); });
     v.addEventListener('resize', function () { syncVideoOrientation(v); });
@@ -1006,14 +1047,30 @@
       try {
         var canvas = document.createElement('canvas');
         if (!canvas || typeof canvas.getContext !== 'function') return;
-        var scale = Math.min(1, 720 / Math.max(v.videoWidth, v.videoHeight));
-        var cw = Math.max(1, Math.round(v.videoWidth * scale));
-        var ch = Math.max(1, Math.round(v.videoHeight * scale));
+        var vw = v.videoWidth;
+        var vh = v.videoHeight;
+        var frameDims = photoFrameDimsForVideo(v) || { w: vw, h: vh };
+        var targetRatio = frameDims.w / frameDims.h;
+        var srcRatio = vw / vh;
+        var sx = 0;
+        var sy = 0;
+        var sw = vw;
+        var sh = vh;
+        if (srcRatio > targetRatio) {
+          sw = vh * targetRatio;
+          sx = (vw - sw) / 2;
+        } else if (srcRatio < targetRatio) {
+          sh = vw / targetRatio;
+          sy = (vh - sh) / 2;
+        }
+        var scale = Math.min(1, 720 / Math.max(sw, sh));
+        var cw = Math.max(1, Math.round(sw * scale));
+        var ch = Math.max(1, Math.round(sh * scale));
         canvas.width = cw;
         canvas.height = ch;
         var ctx2d = canvas.getContext('2d');
         if (!ctx2d) return;
-        ctx2d.drawImage(v, 0, 0, cw, ch);
+        ctx2d.drawImage(v, sx, sy, sw, sh, 0, 0, cw, ch);
         var state = frameBrightnessState(ctx2d, cw, ch);
         if (state === 'blank') return;
         // Skip fade-from-black intros so the initial thumbnail shows the model clearly.

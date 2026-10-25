@@ -386,6 +386,12 @@ label > input, label > textarea, label > select { color: var(--ink); }
   width: 96px;
 }
 
+.admin-media-card .thumb,
+.admin-media-card .thumb.portrait,
+.admin-media-card .thumb.wide {
+  aspect-ratio: 2 / 3;
+}
+
 .admin-media-body {
   min-width: 0;
   display: grid;

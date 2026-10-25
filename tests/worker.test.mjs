@@ -10,10 +10,14 @@ import {
   constantTimeEqual,
   keyFromPublicUrl,
   mediaKeyFor,
+  parseByteRange,
+  parseMediaPath,
   utf8ToBase64,
   validateModelShape,
 } from '../worker/src/model.mjs';
 import { handleRequest } from '../worker/src/index.mjs';
+import { onRequest as onApiRequest } from '../functions/api/[[path]].js';
+import { onRequest as onMediaRequest } from '../functions/media/[[path]].js';
 
 const ORIGIN = 'https://admin.example.test';
 const BASE = 'https://media.example.test';
@@ -84,10 +88,48 @@ test('base64 round-trips non-ASCII text and the token comparison is exact', () =
 
 function fakeBucket() {
   const objects = new Map();
+  async function toBytes(value) {
+    if (value instanceof Uint8Array) return value;
+    if (typeof value === 'string') return new TextEncoder().encode(value);
+    if (value && typeof value.arrayBuffer === 'function') {
+      return new Uint8Array(await value.arrayBuffer());
+    }
+    return new Uint8Array(0);
+  }
   return {
     objects,
-    async put(key, value, options) {
-      objects.set(key, { value, options });
+    async put(key, value, options = {}) {
+      const bytes = await toBytes(value);
+      objects.set(key, {
+        value,
+        bytes,
+        options,
+        httpEtag: `"etag-${key}"`,
+      });
+    },
+    async head(key) {
+      const entry = objects.get(key);
+      if (!entry) return null;
+      const bytes = entry.bytes ?? (await toBytes(entry.value));
+      return {
+        size: bytes.byteLength,
+        httpEtag: entry.httpEtag ?? `"etag-${key}"`,
+        httpMetadata: entry.options?.httpMetadata ?? {},
+      };
+    },
+    async get(key, opts = {}) {
+      const entry = objects.get(key);
+      if (!entry) return null;
+      const bytes = entry.bytes ?? (await toBytes(entry.value));
+      const slice = opts.range
+        ? bytes.subarray(opts.range.offset, opts.range.offset + opts.range.length)
+        : bytes;
+      return {
+        body: slice,
+        size: bytes.byteLength,
+        httpEtag: entry.httpEtag ?? `"etag-${key}"`,
+        httpMetadata: entry.options?.httpMetadata ?? {},
+      };
     },
     async delete(key) {
       objects.delete(key);
@@ -312,4 +354,88 @@ test('an invalid profile address is rejected before any GitHub call', async () =
   const res = await handleRequest(apiRequest('GET', '/api/models/Bad_Name'), fakeEnv(), { fetch: gh.fetchImpl });
   assert.equal(res.status, 400);
   assert.equal(gh.calls.length, 0);
+});
+
+test('parseMediaPath and parseByteRange validate paths and HTTP byte ranges', () => {
+  assert.deepEqual(parseMediaPath('/media/jane-doe/1-abc-reel.mp4'), {
+    slug: 'jane-doe',
+    file: '1-abc-reel.mp4',
+    key: 'jane-doe/1-abc-reel.mp4',
+    contentType: 'video/mp4',
+  });
+  assert.equal(parseMediaPath('/media/admin/1-abc-reel.mp4'), null);
+  assert.equal(parseMediaPath('/media/jane-doe/../secret.jpg'), null);
+  assert.equal(parseMediaPath('/media/jane-doe/script.js'), null);
+
+  assert.deepEqual(parseByteRange('bytes=0-1', 100), { type: 'range', offset: 0, length: 2, start: 0, end: 1 });
+  assert.deepEqual(parseByteRange('bytes=90-', 100), { type: 'range', offset: 90, length: 10, start: 90, end: 99 });
+  assert.deepEqual(parseByteRange('bytes=-15', 100), { type: 'range', offset: 85, length: 15, start: 85, end: 99 });
+  assert.deepEqual(parseByteRange('bytes=100-120', 100), { type: 'unsatisfiable' });
+  assert.deepEqual(parseByteRange('bytes=20-10', 100), { type: 'none' });
+  assert.deepEqual(parseByteRange('bytes=0-1, 4-5', 100), { type: 'none' });
+});
+
+test('without R2_PUBLIC_BASE, uploads return same-app /media/ URLs (canonicalised on pages.dev) and stream with Range support', async () => {
+  const env = fakeEnv({ R2_PUBLIC_BASE: '', ADMIN_ORIGIN: '' });
+  const bytes = new Uint8Array([10, 20, 30, 40, 50, 60, 70, 80]);
+  const form = new FormData();
+  form.append('file', new File([bytes], 'Showreel 2026.mp4', { type: 'video/mp4' }));
+
+  // Upload from a Cloudflare Pages preview hash subdomain -> saved URL uses canonical production domain.
+  const uploadReq = new Request('https://1857063f.modelportfolio.pages.dev/api/models/sushmita-ghosh/media', {
+    method: 'POST',
+    headers: {
+      Origin: 'https://1857063f.modelportfolio.pages.dev',
+      Authorization: `Bearer ${TOKEN}`,
+    },
+    body: form,
+  });
+  const uploadRes = await onApiRequest({ request: uploadReq, env });
+  const uploaded = await uploadRes.json();
+  assert.equal(uploadRes.status, 201);
+  assert.match(uploaded.url, /^https:\/\/modelportfolio\.pages\.dev\/media\/sushmita-ghosh\/.+-showreel-2026\.mp4$/);
+
+  // Public visitors can GET, HEAD, and Range-stream /media/* without any admin token.
+  const fullRes = await onMediaRequest({ request: new Request(uploaded.url), env });
+  assert.equal(fullRes.status, 200);
+  assert.equal(fullRes.headers.get('Content-Type'), 'video/mp4');
+  assert.equal(fullRes.headers.get('Accept-Ranges'), 'bytes');
+  assert.deepEqual(new Uint8Array(await fullRes.arrayBuffer()), bytes);
+
+  const rangeRes = await onMediaRequest({
+    request: new Request(uploaded.url, { headers: { Range: 'bytes=2-5' } }),
+    env,
+  });
+  assert.equal(rangeRes.status, 206);
+  assert.equal(rangeRes.headers.get('Content-Range'), 'bytes 2-5/8');
+  assert.equal(rangeRes.headers.get('Content-Length'), '4');
+  assert.deepEqual(new Uint8Array(await rangeRes.arrayBuffer()), new Uint8Array([30, 40, 50, 60]));
+
+  const badRange = await onMediaRequest({
+    request: new Request(uploaded.url, { headers: { Range: 'bytes=50-60' } }),
+    env,
+  });
+  assert.equal(badRange.status, 416);
+  assert.equal(badRange.headers.get('Content-Range'), 'bytes */8');
+
+  const etag = fullRes.headers.get('ETag');
+  const headRes = await onMediaRequest({
+    request: new Request(uploaded.url, { method: 'HEAD', headers: { 'If-None-Match': etag } }),
+    env,
+  });
+  assert.equal(headRes.status, 304);
+
+  // Deleting via the returned URL works on the same Pages project.
+  const delReq = new Request('https://modelportfolio.pages.dev/api/models/sushmita-ghosh/media', {
+    method: 'DELETE',
+    headers: {
+      Origin: 'https://modelportfolio.pages.dev',
+      Authorization: `Bearer ${TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ url: uploaded.url }),
+  });
+  const delRes = await onApiRequest({ request: delReq, env });
+  assert.equal(delRes.status, 204);
+  assert.equal(env.MEDIA.objects.size, 0);
 });

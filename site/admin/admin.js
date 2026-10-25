@@ -55,9 +55,13 @@
     }
     return fetch(API_BASE + path, { method: method, headers: headers, body: body }).then(function (res) {
       if (res.status === 204) return null;
+      var contentType = (res.headers && res.headers.get('content-type')) || '';
       return res.json().catch(function () { return {}; }).then(function (data) {
         if (!res.ok) {
-          var err = new Error(data.error || 'The request failed (' + res.status + ').');
+          var fallback = res.status === 404 && contentType.indexOf('application/json') === -1
+            ? 'Admin API not found at /api. Deploy on Cloudflare Pages or set apiBase in admin/config.js.'
+            : 'The request failed (' + res.status + ').';
+          var err = new Error(data.error || fallback);
           err.status = res.status;
           err.details = data.errors || [];
           throw err;
@@ -186,7 +190,7 @@
   }
 
   function configured() {
-    return API_BASE && API_BASE.indexOf('example.workers.dev') === -1;
+    return API_BASE.indexOf('example.workers.dev') === -1;
   }
 
   function signIn(token) {

@@ -1,6 +1,7 @@
-// Where the admin Worker lives. Replace the placeholder with your Worker's address
-// (for example https://portfolio-admin.<your-subdomain>.workers.dev) and redeploy the site.
-// This address is public; the admin token is what keeps the admin locked.
+// Admin API base URL.
+// Leave empty ('') when hosting on Cloudflare Pages — /admin/ uses the built-in /api Pages Functions
+// on the same domain automatically. Set to 'https://portfolio-admin.<subdomain>.workers.dev' only if
+// you host the static site elsewhere (such as GitHub Pages) and deploy worker/ separately.
 window.ADMIN_CONFIG = {
-  apiBase: 'https://portfolio-admin.example.workers.dev',
+  apiBase: '',
 };

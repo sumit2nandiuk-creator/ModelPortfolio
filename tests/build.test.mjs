@@ -413,6 +413,10 @@ test('the Sushmita Ghosh profile has compact mobile-friendly stats with no shoe 
   assert.match(css, /\.media-group-title \{[\s\S]*?color:\s*var\(--font-about-label-color,\s*var\(--accent\)\);/);
   assert.match(css, /\.media-group-title \{[\s\S]*?text-transform:\s*uppercase;/);
   assert.match(css, /\.media-group-title \{[\s\S]*?font-size:\s*calc\(0\.72rem/);
+  // Compact filter bubbles
+  assert.match(css, /\.filter \{[\s\S]*?min-height:\s*28px;/);
+  assert.match(css, /\.filter \{[\s\S]*?padding:\s*0\s+12px;/);
+  assert.match(css, /\.filters \{[\s\S]*?gap:\s*6px\s+8px;/);
 
   const ws = await tempWorkspace();
   try {

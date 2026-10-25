@@ -585,3 +585,58 @@ test('refreshing a page resets scroll restoration and starts at the top', async 
     await ws.cleanup();
   }
 });
+
+test('per-section font selections load Google Fonts, emit CSS variables, and stay in sync with admin.js', async () => {
+  const { FONT_CATALOG, FONT_SLOTS } = await import('../scripts/lib/fonts.mjs');
+  const adminJs = await fs.readFile(path.join(siteDir, 'admin', 'admin.js'), 'utf8');
+  for (const font of FONT_CATALOG) {
+    assert.ok(adminJs.includes(`id: '${font.id}'`), `admin.js includes font ${font.id}`);
+  }
+  for (const slot of Object.keys(FONT_SLOTS)) {
+    assert.ok(adminJs.includes(`key: '${slot}'`), `admin.js includes slot ${slot}`);
+  }
+
+  const ws = await tempWorkspace();
+  try {
+    await fs.mkdir(ws.modelsDir, { recursive: true });
+    await writeModel(ws.modelsDir, 'styled-model', 'Styled Model', {
+      fonts: {
+        name: { family: 'playfair-display', style: 'normal', weight: '600' },
+        headings: { family: 'bodoni-moda', style: 'italic', weight: '500' },
+        bio: { family: 'lora', style: 'italic', weight: '400' },
+        stats: { family: 'montserrat', style: 'normal', weight: '500' },
+        captions: { family: 'jost', style: 'normal', weight: '400' },
+      },
+    });
+    await build({ modelsDir: ws.modelsDir, siteDir, outDir: ws.outDir });
+    const html = await fs.readFile(path.join(ws.outDir, 'styled-model', 'index.html'), 'utf8');
+    assert.match(html, /family=Playfair\+Display/);
+    assert.match(html, /family=Bodoni\+Moda/);
+    assert.match(html, /family=Lora/);
+    assert.match(html, /family=Montserrat/);
+    assert.match(html, /family=Jost/);
+    assert.match(html, /--font-name-family: &#39;Playfair Display&#39;/);
+    assert.match(html, /--font-name-style: normal/);
+    assert.match(html, /--font-name-weight: 600/);
+    assert.match(html, /--font-headings-style: italic/);
+    assert.match(html, /--font-bio-family: &#39;Lora&#39;/);
+    assert.match(html, /--font-stats-family: &#39;Montserrat&#39;/);
+    assert.match(html, /--font-captions-family: &#39;Jost&#39;/);
+  } finally {
+    await ws.cleanup();
+  }
+
+  const badWs = await tempWorkspace();
+  try {
+    await fs.mkdir(badWs.modelsDir, { recursive: true });
+    await writeModel(badWs.modelsDir, 'bad-font', 'Bad Font', {
+      fonts: { name: { family: 'comic-sans-injected' } },
+    });
+    await assert.rejects(
+      () => build({ modelsDir: badWs.modelsDir, siteDir, outDir: badWs.outDir }),
+      BuildError,
+    );
+  } finally {
+    await badWs.cleanup();
+  }
+});

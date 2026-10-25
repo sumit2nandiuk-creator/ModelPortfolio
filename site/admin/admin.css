@@ -79,6 +79,29 @@ label > input, label > textarea, label > select { color: var(--ink); }
 .stat-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; margin-bottom: 8px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 
+.font-list { display: grid; gap: 12px; }
+.font-row {
+  display: grid; gap: 10px; padding: 14px;
+  border: 1px solid var(--line); border-radius: 12px; background: #fcfaf7;
+}
+.font-row-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.font-row-title { font-weight: 600; font-size: 0.94rem; color: var(--ink); }
+.font-row-hint { font-size: 0.82rem; color: var(--muted); }
+.font-controls {
+  display: grid; gap: 10px;
+  grid-template-columns: minmax(180px, 2fr) minmax(130px, 1fr) minmax(140px, 1fr);
+}
+.font-preview {
+  padding: 10px 12px; border-radius: 8px; background: #fff;
+  border: 1px dashed #dcd4c6; color: var(--ink);
+  line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.font-preview--name { font-size: 1.5rem; }
+.font-preview--headings { font-size: 1.3rem; }
+.font-preview--bio { font-size: 1rem; white-space: normal; }
+.font-preview--stats { font-size: 1.08rem; }
+.font-preview--captions { font-size: 0.94rem; }
+
 .savebar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
   display: flex; gap: 12px; align-items: center; justify-content: space-between;
@@ -99,4 +122,5 @@ label > input, label > textarea, label > select { color: var(--ink); }
   .thumb { width: 100%; max-width: 220px; }
   .stat-row { grid-template-columns: 1fr 1fr; }
   .stat-row .btn { grid-column: 1 / -1; }
+  .font-controls { grid-template-columns: 1fr; }
 }

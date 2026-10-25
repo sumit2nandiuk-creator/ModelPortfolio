@@ -655,3 +655,56 @@ test('without R2_PUBLIC_BASE, uploads return same-app /media/ URLs (canonicalise
   assert.equal(delRes.status, 204);
   assert.equal(env.MEDIA.objects.size, 0);
 });
+
+test('admin API validates per-section fonts and live /:slug/ renders selected fonts immediately', async () => {
+  const env = fakeEnv({ ADMIN_ORIGIN: '' });
+
+  // Unsupported font family or style is rejected with 400.
+  const badFont = await handleRequest(
+    apiRequest('PUT', '/api/models/jane-doe', {
+      origin: 'https://admin.example.test',
+      body: { model: validModel({ fonts: { name: { family: 'unknown-font' } } }) },
+    }),
+    env,
+  );
+  assert.equal(badFont.status, 400);
+
+  const badStyle = await handleRequest(
+    apiRequest('PUT', '/api/models/jane-doe', {
+      origin: 'https://admin.example.test',
+      body: { model: validModel({ fonts: { bio: { style: 'oblique-99' } } }) },
+    }),
+    env,
+  );
+  assert.equal(badStyle.status, 400);
+
+  // Valid font + style + weight saves to R2 and renders live on /:slug/.
+  const modelWithFonts = validModel({
+    fonts: {
+      name: { family: 'pinyon-script', style: 'normal', weight: '400' },
+      bio: { family: 'eb-garamond', style: 'italic', weight: '500' },
+    },
+  });
+  const okSave = await handleRequest(
+    apiRequest('PUT', '/api/models/jane-doe', {
+      origin: 'https://admin.example.test',
+      body: { model: modelWithFonts },
+    }),
+    env,
+  );
+  assert.equal(okSave.status, 200);
+
+  const liveRes = await onSlugPageRequest({
+    request: new Request('https://modelportfolio.pages.dev/jane-doe/'),
+    env,
+    params: { slug: 'jane-doe' },
+    next: async () => new Response('unused'),
+  });
+  assert.equal(liveRes.status, 200);
+  const html = await liveRes.text();
+  assert.match(html, /family=Pinyon\+Script/);
+  assert.match(html, /family=EB\+Garamond/);
+  assert.match(html, /--font-name-family: &#39;Pinyon Script&#39;/);
+  assert.match(html, /--font-bio-style: italic/);
+  assert.match(html, /--font-bio-weight: 500/);
+});

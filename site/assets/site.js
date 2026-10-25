@@ -298,7 +298,7 @@
         el.inert = i !== index;
         if (near) {
           var img = el.querySelector('img');
-          var shouldPrefetch = i === index || d === 1 || (dx > 0 && d === -1);
+          var shouldPrefetch = i === index || n === 2 || d === 1 || (dx > 0 && d === -1);
           if (img && shouldPrefetch && img.getAttribute('loading') === 'lazy') img.setAttribute('loading', 'eager');
         }
       });

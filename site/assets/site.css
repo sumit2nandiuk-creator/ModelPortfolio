@@ -1039,6 +1039,21 @@ main section {
   font-size: 0.92rem;
 }
 
+/* Media automatic retry states -------------------------------------------- */
+
+img.is-retrying,
+video.is-retrying {
+  opacity: 0.85;
+  transition: opacity 0.3s ease;
+}
+
+img.is-failed,
+video.is-failed {
+  opacity: 0.6;
+  cursor: pointer;
+  filter: grayscale(40%);
+}
+
 /* Contact ------------------------------------------------------------------ */
 
 .contact {

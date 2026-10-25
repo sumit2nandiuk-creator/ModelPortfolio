@@ -805,5 +805,57 @@ test('popup instantly displays already-fetched page images with is-loaded and CS
   assert.doesNotMatch(css, /\.lb-stage\s+\.carousel-slide\.is-loading\s+img\s*\{[\s\S]*?opacity:\s*0;/);
 });
 
+test('when photo finishes loading in popup, spinner is removed and gallery frame on page synchronizes to is-loaded', async () => {
+  const h = await createLightboxHarness({ width: 390, height: 844 });
+
+  // Photo 2 is on the page but has not finished loading yet
+  const galleryBtn = h.galleryButtons[1];
+  const pageImg = galleryBtn.appendChild(new (h.stage.constructor)('img', {
+    attrs: {
+      src: '/media/demo/photo-2.jpg',
+      alt: 'Photo 2',
+    },
+  }));
+  pageImg.src = '/media/demo/photo-2.jpg';
+  pageImg.naturalWidth = 0;
+  pageImg.complete = false;
+
+  await h.boot();
+
+  // Initially before loading, gallery button is is-loading
+  assert.equal(galleryBtn.classList.contains('is-loading'), true);
+  assert.equal(galleryBtn.classList.contains('is-loaded'), false);
+
+  // Click photo 2 to open popup
+  galleryBtn.dispatchEvent(h.makeEvent('click'));
+  assert.equal(h.dialog.open, true);
+
+  const slides = h.stage.querySelectorAll('.carousel-slide');
+  const slide1 = slides[1];
+  assert.ok(slide1, 'popup slide 1 exists');
+  const popupImg = slide1.querySelector('img');
+  assert.ok(popupImg, 'popup img exists');
+
+  // Photo finishes loading in the popup
+  popupImg.naturalWidth = 1440;
+  popupImg.naturalHeight = 1800;
+  popupImg.complete = true;
+  popupImg.dispatchEvent(h.makeEvent('load', { bubbles: false }));
+
+  // Popup slide must have is-loaded and NOT is-loading
+  assert.equal(slide1.classList.contains('is-loaded'), true, 'slide gets is-loaded when image finishes loading');
+  assert.equal(slide1.classList.contains('is-loading'), false, 'slide clears is-loading so spinner is gone');
+
+  // Page gallery button must also synchronize to is-loaded!
+  assert.equal(galleryBtn.classList.contains('is-loaded'), true, 'page gallery frame synchronizes to is-loaded');
+  assert.equal(galleryBtn.classList.contains('is-loading'), false, 'page gallery frame clears is-loading');
+
+  // CSS guarantees: .is-loaded completely removes spinner via display: none !important and content: none !important
+  const css = await fs.readFile(path.join(root, 'site', 'assets', 'site.css'), 'utf8');
+  assert.match(css, /\.gallery-btn\.is-loaded::before[\s\S]*?display:\s*none\s*!important/);
+  assert.match(css, /\.lb-stage\s+\.carousel-slide\.is-loaded::before[\s\S]*?display:\s*none\s*!important/);
+  assert.match(css, /\.gallery-btn\s+img[\s\S]*?opacity:\s*1\s*!important/);
+});
+
 
 

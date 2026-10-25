@@ -191,11 +191,20 @@ function renderHero(model, ctx) {
     </section>`;
 }
 
+function statSpanClass(stat) {
+  const labelLen = String(stat?.label ?? '').trim().length;
+  const valLen = String(stat?.value ?? '').trim().length;
+  if (valLen > 20 || labelLen + valLen > 28) return ' stat--full';
+  if (valLen > 12 || labelLen > 12) return ' stat--span-2';
+  return '';
+}
+
 function renderAbout(model) {
   const bio = model.bio ?? [];
   const stats = model.stats ?? [];
   if (!bio.length && !stats.length) return '';
   const richBio = Array.isArray(model.richText?.bio) ? model.richText.bio : null;
+  const statsCountClass = stats.length === 1 ? ' stats--count-1' : stats.length === 2 ? ' stats--count-2' : '';
   return `
     <section id="about" class="section about" aria-labelledby="about-title">
       <div class="container about-grid">
@@ -211,8 +220,8 @@ function renderAbout(model) {
         ${
           stats.length
             ? `<aside class="about-stats reveal" aria-label="Measurements and details">
-          <dl class="stats">
-            ${stats.map((s) => `<div class="stat"><dt>${esc(s.label)}</dt><dd>${esc(s.value)}</dd></div>`).join('\n            ')}
+          <dl class="stats${statsCountClass}">
+            ${stats.map((s) => `<div class="stat${statSpanClass(s)}"><dt>${esc(s.label)}</dt><dd>${esc(s.value)}</dd></div>`).join('\n            ')}
           </dl>
         </aside>`
             : ''

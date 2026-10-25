@@ -243,6 +243,7 @@
 
   function createCarousel(root, options) {
     options = options || {};
+    var slideGap = Number(options.slideGap) || 0;
     var index = 0;
     var dx = 0;            // live drag offset in px
     var busy = false;      // true while a slide is animating
@@ -257,7 +258,9 @@
     }
 
     function width() {
-      return root.clientWidth || window.innerWidth;
+      var r = root.getBoundingClientRect ? root.getBoundingClientRect() : null;
+      var w = (r && r.width) || root.clientWidth || window.innerWidth || 1;
+      return Math.ceil(w);
     }
 
     function later(ms, fn) {
@@ -282,13 +285,14 @@
       var els = slides();
       var n = els.length;
       var w = width();
+      var stride = w + slideGap;
       els.forEach(function (el, i) {
         var d = (i - index + n) % n;
         if (d > n / 2) d -= n;                              // nearest way round
         if (n === 2 && i !== index) d = dx < 0 ? 1 : -1;    // one neighbour: show it on the side being dragged
         var near = Math.abs(d) <= 1;
         el.style.transition = animate ? 'transform ' + ms + 'ms ' + EASE : 'none';
-        el.style.transform = 'translate3d(' + (d * w + dx) + 'px, 0, 0)';
+        el.style.transform = 'translate3d(' + (d * stride + dx) + 'px, 0, 0)';
         el.style.visibility = near ? 'visible' : 'hidden';
         el.classList.toggle('is-current', i === index);
         el.inert = i !== index;
@@ -498,6 +502,14 @@
   // ---- Photo viewer --------------------------------------------------------
   var dialog = document.getElementById('lightbox');
   var stage = document.getElementById('lb-stage');
+  if (typeof window.ResizeObserver === 'function') {
+    var carouselRo = new window.ResizeObserver(function () {
+      if (hero) hero.relayout();
+      if (viewerCarousel) viewerCarousel.relayout();
+    });
+    if (heroRoot) carouselRo.observe(heroRoot);
+    if (stage) carouselRo.observe(stage);
+  }
   if (dialog && stage && typeof dialog.showModal === 'function') {
     var caption = document.getElementById('lb-caption');
     var closeBtn = dialog.querySelector('.lb-close');
@@ -631,6 +643,7 @@
     }
 
     viewerCarousel = createCarousel(stage, {
+      slideGap: 24,
       canDrag: function () { return zoomScale <= 1.001 && !pinch; },
       onChange: function (i) {
         resetZoom(false);
@@ -656,8 +669,8 @@
       });
       dialog.classList.toggle('is-single', list.length < 2);
       if (hero) hero.pause();
-      viewerCarousel.reset(start);
       dialog.showModal();
+      viewerCarousel.reset(start);
       closeBtn.focus({ preventScroll: true });
     }
 

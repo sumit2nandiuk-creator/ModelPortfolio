@@ -588,3 +588,123 @@ test('redesigned admin groups videos first followed by photos per category/title
   assert.equal(savedModel.photos.some((p) => '_gid' in p), false);
   assert.equal(savedModel.videos[0].category, 'Bridal');
 });
+
+test('admin panel moves measurement attributes up/down and adds newly uploaded photos/videos first', async () => {
+  const h = await createAdminUploadHarness({
+    stats: [
+      { label: 'Height', value: '5′4″' },
+      { label: 'Eyes', value: 'Black' },
+      { label: 'Hair', value: 'Black' },
+    ],
+    cover: [
+      { file: 'cover-old.jpg', alt: 'Old cover' },
+    ],
+    photos: [
+      { file: 'bridal-old.jpg', title: 'Old Bridal Photo', category: 'Bridal' },
+    ],
+    videos: [
+      { file: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/old-bridal.mp4', title: 'Old Bridal Video', category: 'Bridal' },
+    ],
+  });
+  await h.boot();
+
+  // 1. Measurements render compact rows with up/down reorder buttons (top row ↑ disabled, bottom row ↓ disabled)
+  let statRows = h.doc.querySelectorAll('.stat-row');
+  assert.equal(statRows.length, 3);
+  assert.equal(statRows[0].querySelector('[data-dir="-1"]').disabled, true);
+  assert.equal(statRows[2].querySelector('[data-dir="1"]').disabled, true);
+
+  // Move "Hair" (row 2) up to row 1, then move "Height" (row 0) down to row 1
+  statRows[2].querySelector('[data-dir="-1"]').dispatchEvent({ type: 'click', bubbles: true });
+  statRows = h.doc.querySelectorAll('.stat-row');
+  assert.deepEqual(
+    statRows.map((r) => r.querySelector('[data-key="label"]').value),
+    ['Height', 'Hair', 'Eyes'],
+  );
+
+  statRows[0].querySelector('[data-dir="1"]').dispatchEvent({ type: 'click', bubbles: true });
+  statRows = h.doc.querySelectorAll('.stat-row');
+  assert.deepEqual(
+    statRows.map((r) => r.querySelector('[data-key="label"]').value),
+    ['Hair', 'Height', 'Eyes'],
+  );
+
+  // 2. Upload a new cover photo -> inserted FIRST ahead of 'cover-old.jpg'
+  const coverInput = h.doc.querySelector('input[data-upload="cover"]');
+  coverInput.files = [{ name: 'new-hero.jpg', size: 500_000, type: 'image/jpeg' }];
+  coverInput.dispatchEvent({ type: 'change', bubbles: true });
+  await h.flush();
+  h.xhrs[0].status = 201;
+  h.xhrs[0].responseText = JSON.stringify({
+    key: 'sushmita-ghosh/1-new-hero.jpg',
+    url: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/1-new-hero.jpg',
+    kind: 'image',
+  });
+  h.xhrs[0].emit('load');
+  await h.flush();
+  await h.flush();
+
+  // 3. Upload 2 new portfolio photos in one batch -> added FIRST in order ahead of 'bridal-old.jpg'
+  const photoInput = h.doc.querySelector('input[data-upload="photo"]');
+  photoInput.files = [
+    { name: 'fresh-first.jpg', size: 400_000, type: 'image/jpeg' },
+    { name: 'fresh-second.jpg', size: 410_000, type: 'image/jpeg' },
+  ];
+  photoInput.dispatchEvent({ type: 'change', bubbles: true });
+  await h.flush();
+  h.xhrs[1].status = 201;
+  h.xhrs[1].responseText = JSON.stringify({
+    key: 'sushmita-ghosh/2-fresh-first.jpg',
+    url: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/2-fresh-first.jpg',
+    kind: 'image',
+  });
+  h.xhrs[1].emit('load');
+  await h.flush();
+  await h.flush();
+  h.xhrs[2].status = 201;
+  h.xhrs[2].responseText = JSON.stringify({
+    key: 'sushmita-ghosh/3-fresh-second.jpg',
+    url: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/3-fresh-second.jpg',
+    kind: 'image',
+  });
+  h.xhrs[2].emit('load');
+  await h.flush();
+  await h.flush();
+
+  // 4. Upload a new portfolio video -> added FIRST (#1 · Video) ahead of 'old-bridal.mp4'
+  const videoInput = h.doc.querySelector('input[data-upload="video"]');
+  videoInput.files = [{ name: 'new-reel.mp4', size: 2_000_000, type: 'video/mp4' }];
+  videoInput.dispatchEvent({ type: 'change', bubbles: true });
+  await h.flush();
+  h.xhrs[3].status = 201;
+  h.xhrs[3].responseText = JSON.stringify({
+    key: 'sushmita-ghosh/4-new-reel.mp4',
+    url: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/4-new-reel.mp4',
+    kind: 'video',
+  });
+  h.xhrs[3].emit('load');
+  await h.flush();
+  await h.flush();
+
+  // Save and verify persisted order of stats, cover, videos, and photos!
+  h.doc.getElementById('save').dispatchEvent({ type: 'click', bubbles: true });
+  await h.flush();
+  await h.flush();
+
+  assert.equal(h.savedPayloads.length, 1);
+  const saved = h.savedPayloads[0].model;
+  assert.deepEqual(saved.stats.map((s) => s.label), ['Hair', 'Height', 'Eyes']);
+  assert.deepEqual(saved.cover.map((c) => c.file), [
+    'https://modelportfolio.pages.dev/media/sushmita-ghosh/1-new-hero.jpg',
+    'cover-old.jpg',
+  ]);
+  assert.deepEqual(saved.videos.map((v) => v.file), [
+    'https://modelportfolio.pages.dev/media/sushmita-ghosh/4-new-reel.mp4',
+    'https://modelportfolio.pages.dev/media/sushmita-ghosh/old-bridal.mp4',
+  ]);
+  assert.deepEqual(saved.photos.map((p) => p.file), [
+    'https://modelportfolio.pages.dev/media/sushmita-ghosh/2-fresh-first.jpg',
+    'https://modelportfolio.pages.dev/media/sushmita-ghosh/3-fresh-second.jpg',
+    'bridal-old.jpg',
+  ]);
+});

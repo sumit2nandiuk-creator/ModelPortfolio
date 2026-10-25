@@ -399,14 +399,19 @@ test('photos and videos are protected from easy saving', async () => {
   }
 });
 
-test('the Sushmita Ghosh profile has the requested stats and no shoe size', async () => {
+test('the Sushmita Ghosh profile has compact mobile-friendly stats with no shoe size', async () => {
+  const css = await fs.readFile(path.join(siteDir, 'assets', 'site.css'), 'utf8');
+  assert.match(css, /\.stats \{[\s\S]*?grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
+  assert.match(css, /\.stat--full \{[\s\S]*?grid-column: 1 \/ -1;/);
+
   const ws = await tempWorkspace();
   try {
     await build({ siteDir, outDir: ws.outDir });
     const html = await fs.readFile(path.join(ws.outDir, 'sushmita-ghosh', 'index.html'), 'utf8');
-    assert.match(html, /<dt>Height<\/dt><dd>5′4″<\/dd>/);
-    assert.match(html, /<dt>Eyes<\/dt><dd>Black<\/dd>/);
-    assert.match(html, /<dt>Hair<\/dt><dd>Black<\/dd>/);
+    assert.match(html, /<div class="stat"><dt>Height<\/dt><dd>5′4″<\/dd><\/div>/);
+    assert.match(html, /<div class="stat"><dt>Eyes<\/dt><dd>Black<\/dd><\/div>/);
+    assert.match(html, /<div class="stat"><dt>Hair<\/dt><dd>Black<\/dd><\/div>/);
+    assert.match(html, /<div class="stat stat--full"><dt>Languages<\/dt><dd>English · Bengali · Hindi<\/dd><\/div>/);
     assert.doesNotMatch(html, /Shoe/);
   } finally {
     await ws.cleanup();

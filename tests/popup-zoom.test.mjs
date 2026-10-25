@@ -339,6 +339,19 @@ function createLightboxHarness({ width = 390, height = 844, naturalWidth = 1200,
     addEventListener() {},
   };
 
+  const resizeObservers = [];
+  class FakeResizeObserver {
+    constructor(cb) {
+      this.cb = cb;
+      this.targets = new Set();
+      resizeObservers.push(this);
+    }
+    observe(el) { this.targets.add(el); }
+    unobserve(el) { this.targets.delete(el); }
+    disconnect() { this.targets.clear(); }
+  }
+  windowObj.ResizeObserver = FakeResizeObserver;
+
   const FakeDate = function (...args) {
     return new Date(...args);
   };
@@ -348,6 +361,7 @@ function createLightboxHarness({ width = 390, height = 844, naturalWidth = 1200,
     windowObj,
     documentObj,
     FakeDate,
+    resizeObservers,
     dialog,
     lbInner,
     stage,
@@ -388,6 +402,7 @@ function createLightboxHarness({ width = 390, height = 844, naturalWidth = 1200,
         clearInterval: windowObj.clearInterval,
         requestAnimationFrame: windowObj.requestAnimationFrame,
         cancelAnimationFrame: windowObj.cancelAnimationFrame,
+        ResizeObserver: windowObj.ResizeObserver,
       });
       vm.runInContext(code, ctx, { filename: 'site.js' });
     },
@@ -673,5 +688,79 @@ test('videos without a custom poster show their thumbnail on load (skipping blac
   assert.equal(meesho.vid.muted, false, 'restores original unmuted state for user playback');
   assert.match(meesho.vid.getAttribute('poster') || '', /^data:image\/jpeg;base64,/);
 });
+
+test('popup opens dialog before measuring #lb-stage and keeps left/right neighbour slides strictly outside the stage', async () => {
+  const h = await createLightboxHarness({ width: 393, height: 852 });
+
+  // Simulate real browser behavior: while <dialog> is closed (display: none), #lb-stage has 0 width;
+  // showModal() makes it visible at its real fractional rendered width (e.g. 398.67px on 3x DPR).
+  h.stage.clientWidth = 0;
+  h.stage._rect = { left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0 };
+  let stageWidthAtShowModal = 398.67;
+  h.dialog.showModal = function () {
+    this.open = true;
+    h.stage.clientWidth = Math.round(stageWidthAtShowModal);
+    h.stage._rect = {
+      left: 0,
+      top: 0,
+      width: stageWidthAtShowModal,
+      height: 852,
+      right: stageWidthAtShowModal,
+      bottom: 852,
+    };
+  };
+
+  await h.boot();
+
+  // Open the very first photo (index 0), where the left neighbour wraps around to the last DOM slide
+  h.galleryButtons[0].dispatchEvent(h.makeEvent('click'));
+  assert.equal(h.dialog.open, true);
+
+  const slides = h.stage.querySelectorAll('.carousel-slide');
+  assert.ok(slides.length >= 3, 'renders multiple slides in #lb-stage');
+
+  const slideX = (el) => {
+    const m = (el.style.transform || '').match(/translate3d\(([-\d.]+)px,\s*0,\s*0\)/);
+    assert.ok(m, `expected horizontal translate3d on slide, got: ${el.style.transform}`);
+    return Number(m[1]);
+  };
+
+  const currentX = slideX(slides[0]);
+  const rightX = slideX(slides[1]);
+  const leftWrapX = slideX(slides[slides.length - 1]);
+
+  assert.equal(currentX, 0, 'current slide starts flush at x = 0');
+  assert.equal(slides[0].classList.contains('is-current'), true);
+  // Left neighbour slide's right edge (leftWrapX + stageWidth) must be strictly < 0 (with 24px gap)
+  assert.ok(
+    leftWrapX + stageWidthAtShowModal <= -24,
+    `left neighbour right edge (${leftWrapX + stageWidthAtShowModal}) must stay completely outside x >= 0`
+  );
+  // Right neighbour slide's left edge must be strictly > stageWidth (with 24px gap)
+  assert.ok(
+    rightX >= stageWidthAtShowModal + 24,
+    `right neighbour left edge (${rightX}) must stay completely outside x <= ${stageWidthAtShowModal}`
+  );
+
+  // If #lb-stage resizes later (e.g. dynamic mobile toolbar / orientation / split-view), ResizeObserver realigns slides
+  const newStageWidth = 430.33;
+  h.stage.clientWidth = 430;
+  h.stage._rect = { left: 0, top: 0, width: newStageWidth, height: 852, right: newStageWidth, bottom: 852 };
+  for (const ro of h.resizeObservers) {
+    if (ro.targets.has(h.stage)) ro.cb();
+  }
+  const updatedLeftX = slideX(slides[slides.length - 1]);
+  assert.ok(
+    updatedLeftX + newStageWidth <= -24,
+    `after stage resize, left neighbour right edge (${updatedLeftX + newStageWidth}) remains completely off-screen`
+  );
+
+  // Verify critical CSS alignment & iOS swipe invariants in site.css
+  const css = await fs.readFile(path.join(root, 'site', 'assets', 'site.css'), 'utf8');
+  assert.match(css, /\.carousel-slide\.is-current\s*\{\s*z-index:\s*1;/);
+  assert.match(css, /\.lightbox\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset:\s*0;[\s\S]*?max-width:\s*100vw;/);
+  assert.match(css, /\.lb-stage\s*\{[\s\S]*?touch-action:\s*pan-y;/);
+});
+
 
 

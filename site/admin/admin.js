@@ -553,7 +553,7 @@
       renderPicker();
       return removeHostedFiles();
     }).then(function () {
-      setStatus('Saved. The site updates in a minute or two.', 'ok');
+      setStatus('Saved. Changes are live immediately.', 'ok');
       toast('Saved');
       updateDirtyNote();
     }).catch(function (err) {

@@ -1,5 +1,6 @@
-// Tests for the admin Worker. GitHub and R2 are replaced with small fakes, so nothing
-// leaves the machine and no real secrets are needed.
+// Tests for the admin Worker & Cloudflare Pages Functions.
+// R2, static ASSETS, and GitHub are replaced with small fakes, so nothing leaves
+// the machine and no real secrets are needed.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,6 +19,9 @@ import {
 import { handleRequest } from '../worker/src/index.mjs';
 import { onRequest as onApiRequest } from '../functions/api/[[path]].js';
 import { onRequest as onMediaRequest } from '../functions/media/[[path]].js';
+import { onRequest as onSlugPageRequest } from '../functions/[slug]/index.js';
+import { onRequest as onSlugBareRequest } from '../functions/[slug].js';
+import { onRequest as onSeedRequest } from '../functions/_seed/[[path]].js';
 
 const ORIGIN = 'https://admin.example.test';
 const BASE = 'https://media.example.test';
@@ -88,6 +92,7 @@ test('base64 round-trips non-ASCII text and the token comparison is exact', () =
 
 function fakeBucket() {
   const objects = new Map();
+  let writeSeq = 0;
   async function toBytes(value) {
     if (value instanceof Uint8Array) return value;
     if (typeof value === 'string') return new TextEncoder().encode(value);
@@ -100,11 +105,12 @@ function fakeBucket() {
     objects,
     async put(key, value, options = {}) {
       const bytes = await toBytes(value);
+      writeSeq += 1;
       objects.set(key, {
         value,
         bytes,
         options,
-        httpEtag: `"etag-${key}"`,
+        httpEtag: `"etag-${writeSeq}-${key}"`,
       });
     },
     async head(key) {
@@ -115,6 +121,7 @@ function fakeBucket() {
         size: bytes.byteLength,
         httpEtag: entry.httpEtag ?? `"etag-${key}"`,
         httpMetadata: entry.options?.httpMetadata ?? {},
+        customMetadata: entry.options?.customMetadata ?? {},
       };
     },
     async get(key, opts = {}) {
@@ -129,7 +136,20 @@ function fakeBucket() {
         size: bytes.byteLength,
         httpEtag: entry.httpEtag ?? `"etag-${key}"`,
         httpMetadata: entry.options?.httpMetadata ?? {},
+        customMetadata: entry.options?.customMetadata ?? {},
+        async text() {
+          return new TextDecoder().decode(slice);
+        },
       };
+    },
+    async list({ prefix = '' } = {}) {
+      const listObjects = [];
+      for (const [key, entry] of objects.entries()) {
+        if (key.startsWith(prefix)) {
+          listObjects.push({ key, size: entry.bytes?.byteLength ?? 0 });
+        }
+      }
+      return { objects: listObjects, truncated: false };
     },
     async delete(key) {
       objects.delete(key);
@@ -137,10 +157,27 @@ function fakeBucket() {
   };
 }
 
+function fakeAssets(files = {}) {
+  return {
+    async fetch(request) {
+      const url = new URL(typeof request === 'string' ? request : request.url);
+      const entry = files[url.pathname];
+      if (!entry) return new Response('Not found', { status: 404 });
+      if (typeof entry === 'string') {
+        return new Response(entry, { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      }
+      return new Response(JSON.stringify(entry), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      });
+    },
+  };
+}
+
 function fakeEnv(overrides = {}) {
   return {
     ADMIN_TOKEN: TOKEN,
-    GITHUB_TOKEN: 'github-test-token',
+    GITHUB_TOKEN: '',
     REPO: 'owner/site',
     BRANCH: 'main',
     R2_PUBLIC_BASE: BASE,
@@ -150,7 +187,7 @@ function fakeEnv(overrides = {}) {
   };
 }
 
-// A fake GitHub Contents API. `handler(url, init)` returns a Response.
+// A fake GitHub Contents API (used only for optional read-only seed fallback when ASSETS is absent).
 function fakeGithub(handler) {
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
@@ -202,105 +239,283 @@ test('the preflight answers the allowed origin only', async () => {
 });
 
 test('an unconfigured Worker says so instead of failing silently', async () => {
-  const res = await handleRequest(apiRequest('GET', '/api/models'), fakeEnv({ GITHUB_TOKEN: '' }));
+  const res = await handleRequest(apiRequest('GET', '/api/models'), fakeEnv({ MEDIA: null }));
   assert.equal(res.status, 500);
   assert.match((await res.json()).error, /not configured/);
 });
 
-test('listing models returns the profile folders, without templates or hidden folders', async () => {
-  const gh = fakeGithub(() =>
-    json([
-      { name: 'jane-doe', type: 'dir' },
-      { name: '_template', type: 'dir' },
-      { name: '.cache', type: 'dir' },
-      { name: 'README.md', type: 'file' },
-      { name: 'sushmita-ghosh', type: 'dir' },
-    ]),
-  );
-  const res = await handleRequest(apiRequest('GET', '/api/models'), fakeEnv(), { fetch: gh.fetchImpl });
+test('listing models merges R2-saved profiles with build seed profiles without calling GitHub', async () => {
+  const env = fakeEnv({
+    ASSETS: fakeAssets({
+      '/_seed/_index.json': { models: ['sushmita-ghosh', '_template'] },
+    }),
+  });
+  await env.MEDIA.put('_profiles/jane-doe.json', JSON.stringify(validModel()), {
+    customMetadata: { version: 'v-1' },
+  });
+  const gh = fakeGithub(() => json([], 500));
+  const res = await handleRequest(apiRequest('GET', '/api/models'), env, { fetch: gh.fetchImpl });
   assert.equal(res.status, 200);
   assert.deepEqual((await res.json()).models, ['jane-doe', 'sushmita-ghosh']);
-  assert.match(gh.calls[0].url, /repos\/owner\/site\/contents\/models\?ref=main/);
-});
-
-test('reading a profile decodes model.json and returns its version', async () => {
-  const model = validModel();
-  const gh = fakeGithub(() => json({ sha: 'sha-1', content: utf8ToBase64(JSON.stringify(model)) }));
-  const res = await handleRequest(apiRequest('GET', '/api/models/jane-doe'), fakeEnv(), { fetch: gh.fetchImpl });
-  const body = await res.json();
-  assert.equal(res.status, 200);
-  assert.equal(body.sha, 'sha-1');
-  assert.deepEqual(body.model, model);
-});
-
-test('a profile that does not exist returns 404', async () => {
-  const gh = fakeGithub(() => json({ message: 'Not Found' }, 404));
-  const res = await handleRequest(apiRequest('GET', '/api/models/jane-doe'), fakeEnv(), { fetch: gh.fetchImpl });
-  assert.equal(res.status, 404);
-});
-
-test('saving an invalid profile is refused before anything is committed', async () => {
-  const gh = fakeGithub(() => json({}));
-  const res = await handleRequest(
-    apiRequest('PUT', '/api/models/jane-doe', { body: { sha: 'sha-1', model: validModel({ cover: undefined }) } }),
-    fakeEnv(),
-    { fetch: gh.fetchImpl },
-  );
-  assert.equal(res.status, 400);
   assert.equal(gh.calls.length, 0);
 });
 
-test('saving a valid profile commits model.json with the version it was read from', async () => {
-  const gh = fakeGithub((url, init) => {
-    if (init.method === 'PUT') return json({ content: { sha: 'sha-2' } });
-    return json({});
+test('reading a profile reads R2 overrides first and falls back to build seed without GITHUB_TOKEN', async () => {
+  const seedModel = validModel({ slug: 'sushmita-ghosh', name: 'Sushmita Seed' });
+  const env = fakeEnv({
+    ASSETS: fakeAssets({
+      '/_seed/sushmita-ghosh.json': { model: seedModel, sizes: { 'cover.jpg': { width: 800, height: 1200 } } },
+    }),
   });
-  const model = validModel({ name: 'Jane Q. Doe' });
-  const res = await handleRequest(
-    apiRequest('PUT', '/api/models/jane-doe', { body: { sha: 'sha-1', model } }),
-    fakeEnv(),
-    { fetch: gh.fetchImpl },
-  );
-  assert.equal(res.status, 200);
-  assert.equal((await res.json()).sha, 'sha-2');
-  const put = gh.calls[0];
-  assert.equal(put.method, 'PUT');
-  assert.match(put.url, /contents\/models\/jane-doe\/model\.json$/);
-  assert.equal(put.body.sha, 'sha-1');
-  assert.equal(put.body.branch, 'main');
-  assert.equal(put.body.message, 'Update jane-doe profile');
-  assert.equal(JSON.parse(base64ToUtf8(put.body.content)).name, 'Jane Q. Doe');
+
+  // Unedited profile comes from build seed.
+  const seedRes = await handleRequest(apiRequest('GET', '/api/models/sushmita-ghosh'), env);
+  const seedBody = await seedRes.json();
+  assert.equal(seedRes.status, 200);
+  assert.equal(seedBody.sha, 'seed');
+  assert.equal(seedBody.model.name, 'Sushmita Seed');
+
+  // Unknown profile returns 404.
+  const missing = await handleRequest(apiRequest('GET', '/api/models/nobody'), env);
+  assert.equal(missing.status, 404);
 });
 
-test('a new profile is created without a version and reports a clash with an existing folder', async () => {
-  const created = fakeGithub(() => json({ content: { sha: 'sha-new' } }));
+test('saving a profile stores it in R2 with zero GitHub commits (no Cloudflare deployment triggered)', async () => {
+  const seedModel = validModel();
+  const env = fakeEnv({
+    GITHUB_TOKEN: 'present-but-must-never-be-written-to',
+    ASSETS: fakeAssets({
+      '/_seed/_index.json': { models: ['jane-doe'] },
+      '/_seed/jane-doe.json': { model: seedModel, sizes: {} },
+    }),
+  });
+  const gh = fakeGithub(() => {
+    throw new Error('GitHub API must never be called when saving to R2');
+  });
+
+  // Invalid profile is rejected before anything is written to R2.
+  const bad = await handleRequest(
+    apiRequest('PUT', '/api/models/jane-doe', { body: { sha: 'seed', model: validModel({ cover: undefined }) } }),
+    env,
+    { fetch: gh.fetchImpl },
+  );
+  assert.equal(bad.status, 400);
+  assert.equal(env.MEDIA.objects.size, 0);
+
+  // Valid update writes directly to R2 (_profiles/jane-doe.json) and returns a new version token.
+  const updatedModel = validModel({ name: 'Jane Q. Doe' });
   const ok = await handleRequest(
-    apiRequest('PUT', '/api/models/new-person', { body: { model: validModel({ slug: 'new-person' }) } }),
-    fakeEnv(),
-    { fetch: created.fetchImpl },
+    apiRequest('PUT', '/api/models/jane-doe', { body: { sha: 'seed', model: updatedModel } }),
+    env,
+    { fetch: gh.fetchImpl, now: () => 1700000000000, randomId: () => 'abcd1234' },
   );
   assert.equal(ok.status, 200);
-  assert.equal(created.calls[0].body.sha, undefined);
-  assert.equal(created.calls[0].body.message, 'Add new-person profile');
+  const { sha } = await ok.json();
+  assert.equal(sha, 'v-1700000000000-abcd1234');
+  assert.equal(gh.calls.length, 0, 'zero GitHub commits means zero Cloudflare Pages deployments');
 
-  const clash = fakeGithub(() => json({ message: 'sha wasn\'t supplied' }, 422));
-  const conflict = await handleRequest(
-    apiRequest('PUT', '/api/models/new-person', { body: { model: validModel({ slug: 'new-person' }) } }),
-    fakeEnv(),
-    { fetch: clash.fetchImpl },
-  );
-  assert.equal(conflict.status, 409);
+  // Subsequent GET reads the updated R2 profile immediately.
+  const readBack = await handleRequest(apiRequest('GET', '/api/models/jane-doe'), env, { fetch: gh.fetchImpl });
+  const readBody = await readBack.json();
+  assert.equal(readBody.sha, sha);
+  assert.equal(readBody.model.name, 'Jane Q. Doe');
+
+  //_profiles/* cannot be downloaded through public /media/*.
+  const mediaAttempt = await onMediaRequest({
+    request: new Request('https://modelportfolio.pages.dev/media/_profiles/jane-doe.json'),
+    env,
+  });
+  assert.equal(mediaAttempt.status, 404);
 });
 
-test('a stale version is reported as a conflict, not overwritten', async () => {
-  const gh = fakeGithub(() => json({ message: 'is at a different sha' }, 409));
-  const res = await handleRequest(
-    apiRequest('PUT', '/api/models/jane-doe', { body: { sha: 'old', model: validModel() } }),
-    fakeEnv(),
-    { fetch: gh.fetchImpl },
+test('creating a new profile and optimistic concurrency conflict checks work in R2', async () => {
+  const env = fakeEnv({
+    ASSETS: fakeAssets({
+      '/_seed/_index.json': { models: ['existing-seed'] },
+      '/_seed/existing-seed.json': { model: validModel({ slug: 'existing-seed' }), sizes: {} },
+    }),
+  });
+
+  // Creating over an existing seed slug without sha -> 409 clash.
+  const seedClash = await handleRequest(
+    apiRequest('PUT', '/api/models/existing-seed', { body: { model: validModel({ slug: 'existing-seed' }) } }),
+    env,
   );
-  assert.equal(res.status, 409);
-  assert.match((await res.json()).error, /changed since you opened it/);
+  assert.equal(seedClash.status, 409);
+
+  // Creating a brand-new profile without sha succeeds immediately.
+  const created = await handleRequest(
+    apiRequest('PUT', '/api/models/new-person', { body: { model: validModel({ slug: 'new-person', name: 'New Person' }) } }),
+    env,
+    { now: () => 100, randomId: () => 'v1' },
+  );
+  assert.equal(created.status, 200);
+  const { sha: firstSha } = await created.json();
+
+  // Creating again with the same slug without sha -> 409 clash.
+  const r2Clash = await handleRequest(
+    apiRequest('PUT', '/api/models/new-person', { body: { model: validModel({ slug: 'new-person' }) } }),
+    env,
+  );
+  assert.equal(r2Clash.status, 409);
+
+  // Editing with a stale sha -> 409 conflict, not overwritten.
+  const stale = await handleRequest(
+    apiRequest('PUT', '/api/models/new-person', {
+      body: { sha: 'stale-version', model: validModel({ slug: 'new-person', name: 'Wrong' }) },
+    }),
+    env,
+  );
+  assert.equal(stale.status, 409);
+  assert.match((await stale.json()).error, /changed since you opened it/);
+
+  // Editing with the current sha succeeds.
+  const second = await handleRequest(
+    apiRequest('PUT', '/api/models/new-person', {
+      body: { sha: firstSha, model: validModel({ slug: 'new-person', name: 'Updated Person' }) },
+    }),
+    env,
+    { now: () => 200, randomId: () => 'v2' },
+  );
+  assert.equal(second.status, 200);
+});
+
+test('Pages Function /:slug/ renders R2-saved edits and new profiles live immediately', async () => {
+  const env = fakeEnv({
+    ADMIN_ORIGIN: '',
+    ASSETS: fakeAssets({
+      '/404.html': '<!doctype html><title>Not found</title>',
+      '/_seed/sushmita-ghosh.json': {
+        model: validModel({ slug: 'sushmita-ghosh', name: 'Original Name' }),
+        sizes: { 'cover.jpg': { width: 900, height: 1350 } },
+      },
+    }),
+  });
+
+  // 1. Before any R2 edit, /:slug/ falls through via context.next() to static CDN HTML.
+  let fellThrough = false;
+  const untouched = await onSlugPageRequest({
+    request: new Request('https://modelportfolio.pages.dev/sushmita-ghosh/'),
+    env,
+    params: { slug: 'sushmita-ghosh' },
+    next: async () => {
+      fellThrough = true;
+      return new Response('static-cdn-html', { status: 200 });
+    },
+  });
+  assert.equal(fellThrough, true);
+  assert.equal(await untouched.text(), 'static-cdn-html');
+
+  // 2. Save an edit via /api/models/sushmita-ghosh (mixing local repo cover.jpg + hosted photo).
+  const editedModel = validModel({
+    slug: 'sushmita-ghosh',
+    name: 'Sushmita Live Updated',
+    tagline: 'Instant R2 Editorial',
+    cover: { file: 'cover.jpg', alt: 'Sushmita cover' },
+    photos: [
+      {
+        file: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/1-bridal.jpg',
+        title: 'Royal Bridal',
+        category: 'Bridal',
+        width: 1080,
+        height: 1620,
+      },
+    ],
+    videos: [],
+  });
+  const saveRes = await onApiRequest({
+    request: new Request('https://modelportfolio.pages.dev/api/models/sushmita-ghosh', {
+      method: 'PUT',
+      headers: {
+        Origin: 'https://modelportfolio.pages.dev',
+        Authorization: `Bearer ${TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ sha: 'seed', model: editedModel }),
+    }),
+    env,
+  });
+  assert.equal(saveRes.status, 200);
+
+  // 3. /:slug (no trailing slash) redirects 308 -> /:slug/ for R2-stored profiles.
+  const bareRes = await onSlugBareRequest({
+    request: new Request('https://modelportfolio.pages.dev/sushmita-ghosh'),
+    env,
+    params: { slug: 'sushmita-ghosh' },
+    next: async () => new Response('not-used', { status: 404 }),
+  });
+  assert.equal(bareRes.status, 308);
+  assert.equal(bareRes.headers.get('Location'), 'https://modelportfolio.pages.dev/sushmita-ghosh/');
+
+  // 4. /:slug/ immediately renders the updated HTML with both seed dimensions and hosted dimensions!
+  const liveRes = await onSlugPageRequest({
+    request: new Request('https://modelportfolio.pages.dev/sushmita-ghosh/'),
+    env,
+    params: { slug: 'sushmita-ghosh' },
+    next: async () => new Response('stale-static-html', { status: 200 }),
+  });
+  assert.equal(liveRes.status, 200);
+  assert.equal(liveRes.headers.get('Cache-Control'), 'public, max-age=0, must-revalidate');
+  const html = await liveRes.text();
+  assert.match(html, /Sushmita Live Updated/);
+  assert.match(html, /Instant R2 Editorial/);
+  assert.match(html, /src="\/sushmita-ghosh\/media\/cover\.jpg"[^>]*width="900" height="1350"/);
+  assert.match(
+    html,
+    /src="https:\/\/modelportfolio\.pages\.dev\/media\/sushmita-ghosh\/1-bridal\.jpg"[^>]*width="1080" height="1620"/,
+  );
+
+  // 5. Conditional GET with matching ETag returns instant 304 Not Modified.
+  const etag = liveRes.headers.get('ETag');
+  assert.ok(etag);
+  const notModified = await onSlugPageRequest({
+    request: new Request('https://modelportfolio.pages.dev/sushmita-ghosh/', {
+      headers: { 'If-None-Match': etag },
+    }),
+    env,
+    params: { slug: 'sushmita-ghosh' },
+    next: async () => new Response('unused'),
+  });
+  assert.equal(notModified.status, 304);
+
+  // 6. Reserved paths (/admin/) always delegate to static assets via next().
+  let adminDelegated = false;
+  await onSlugPageRequest({
+    request: new Request('https://modelportfolio.pages.dev/admin/'),
+    env,
+    params: { slug: 'admin' },
+    next: async () => {
+      adminDelegated = true;
+      return new Response('admin-ui', { status: 200 });
+    },
+  });
+  assert.equal(adminDelegated, true);
+
+  // 7. Public HTTP requests to /_seed/* are blocked with 404.
+  const seedBlocked = await onSeedRequest({
+    request: new Request('https://modelportfolio.pages.dev/_seed/_index.json'),
+    env,
+  });
+  assert.equal(seedBlocked.status, 404);
+});
+
+test('standalone Worker still supports read-only GitHub fallback when ASSETS is absent', async () => {
+  const model = validModel();
+  const gh = fakeGithub((url) => {
+    if (url.includes('/contents/models?')) {
+      return json([{ name: 'jane-doe', type: 'dir' }, { name: '_template', type: 'dir' }]);
+    }
+    return json({ sha: 'git-sha-1', content: utf8ToBase64(JSON.stringify(model)) });
+  });
+  const env = fakeEnv({ GITHUB_TOKEN: 'gh-read-token' });
+
+  const listRes = await handleRequest(apiRequest('GET', '/api/models'), env, { fetch: gh.fetchImpl });
+  assert.deepEqual((await listRes.json()).models, ['jane-doe']);
+
+  const getRes = await handleRequest(apiRequest('GET', '/api/models/jane-doe'), env, { fetch: gh.fetchImpl });
+  const getBody = await getRes.json();
+  assert.equal(getBody.sha, 'git-sha-1');
+  assert.deepEqual(getBody.model, model);
 });
 
 test('uploading a photo stores it in R2 under the model folder and returns its public URL', async () => {
@@ -349,7 +564,7 @@ test('deleting a file removes it from R2 only when it belongs to that profile', 
   assert.equal(env.MEDIA.objects.has('jane-doe/1-a-cover.jpg'), false);
 });
 
-test('an invalid profile address is rejected before any GitHub call', async () => {
+test('an invalid profile address is rejected before any storage call', async () => {
   const gh = fakeGithub(() => json({}));
   const res = await handleRequest(apiRequest('GET', '/api/models/Bad_Name'), fakeEnv(), { fetch: gh.fetchImpl });
   assert.equal(res.status, 400);
@@ -364,6 +579,7 @@ test('parseMediaPath and parseByteRange validate paths and HTTP byte ranges', ()
     contentType: 'video/mp4',
   });
   assert.equal(parseMediaPath('/media/admin/1-abc-reel.mp4'), null);
+  assert.equal(parseMediaPath('/media/_profiles/jane-doe.json'), null);
   assert.equal(parseMediaPath('/media/jane-doe/../secret.jpg'), null);
   assert.equal(parseMediaPath('/media/jane-doe/script.js'), null);
 

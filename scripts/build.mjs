@@ -94,7 +94,17 @@ export async function build({
   // Tells GitHub Pages not to run Jekyll over the output.
   await fs.writeFile(path.join(outDir, '.nojekyll'), '');
 
-  // 3. Publish each model in its own isolated folder.
+  // 3. Publish each model in its own isolated folder, plus internal _seed metadata
+  // (blocked from public HTTP requests by functions/_seed/[[path]].js and serve.mjs)
+  // so Cloudflare Pages Functions can read initial profiles and repo image dimensions
+  // without needing GitHub API calls or redeployments on admin saves.
+  const seedOut = path.join(outDir, '_seed');
+  await fs.mkdir(seedOut, { recursive: true });
+  await fs.writeFile(
+    path.join(seedOut, '_index.json'),
+    JSON.stringify({ models: models.map((m) => m.data.slug) }),
+  );
+
   for (const { data, dir } of models) {
     const slug = data.slug;
     const modelOut = path.join(outDir, slug);
@@ -102,13 +112,20 @@ export async function build({
     await fs.mkdir(mediaOut, { recursive: true });
 
     const sizes = new Map();
+    const localSizes = {};
     for (const file of referencedMediaFiles(data)) {
       const source = path.join(dir, 'media', file);
       await fs.copyFile(source, path.join(mediaOut, file));
       if (IMAGE_EXTENSIONS.has(path.extname(file).toLowerCase())) {
-        sizes.set(file, imageSize(await fs.readFile(source)));
+        const dim = imageSize(await fs.readFile(source));
+        sizes.set(file, dim);
+        if (dim) localSizes[file] = dim;
       }
     }
+    await fs.writeFile(
+      path.join(seedOut, `${slug}.json`),
+      JSON.stringify({ model: data, sizes: localSizes }),
+    );
     // Hosted files are not copied; their size comes from the entry's optional width/height.
     for (const entry of mediaEntries(data)) {
       if (isHttpUrl(entry.file) && entry.width && entry.height) {

@@ -1,33 +1,49 @@
-// Admin API + private R2 media server for the portfolio sites.
-// Runs either as Cloudflare Pages Functions (/functions/api/* and /functions/media/*)
-// or as a standalone Cloudflare Worker (worker/).
+// Admin API, private R2 media server, and live profile renderer for the portfolio sites.
+// Runs on Cloudflare Pages Functions (/functions/*) or as a standalone Cloudflare Worker (worker/).
 //
+//   GET/HEAD /:slug/                         serve an R2-saved profile immediately (or fall through to static dist/)
 //   GET/HEAD /media/:slug/:file              stream an uploaded photo or video from private R2 (public, cached, HTTP Range)
-//   GET      /api/models                     list profiles (requires Bearer ADMIN_TOKEN)
-//   GET      /api/models/:slug               read one profile and its version (requires Bearer ADMIN_TOKEN)
-//   PUT      /api/models/:slug               save a profile to GitHub (requires Bearer ADMIN_TOKEN)
+//   GET      /api/models                     list profiles from R2 + seed (requires Bearer ADMIN_TOKEN)
+//   GET      /api/models/:slug               read one profile and its version token (requires Bearer ADMIN_TOKEN)
+//   PUT      /api/models/:slug               save a profile directly to R2 — instant live update, zero deployments
 //   POST     /api/models/:slug/media         upload a photo or video to R2 (requires Bearer ADMIN_TOKEN)
 //   DELETE   /api/models/:slug/media         delete an uploaded file from R2 (requires Bearer ADMIN_TOKEN)
 //
-// Secrets (ADMIN_TOKEN, GITHUB_TOKEN) and the private R2 bucket binding (MEDIA) never leave the server.
+// Secrets (ADMIN_TOKEN) and the private R2 bucket binding (MEDIA) never leave the server.
 
+import { coverList, renderModelPage } from '../../scripts/lib/render.mjs';
 import {
+  RESERVED_SLUGS,
   SLUG_PATTERN,
   bearerToken,
   checkUpload,
   constantTimeEqual,
+  isHttpUrl,
   keyFromPublicUrl,
   mediaKeyFor,
   parseByteRange,
   parseMediaPath,
   validateModelShape,
 } from './model.mjs';
-import { getModelFile, HttpError, listModelSlugs, putModelFile } from './github.mjs';
+import { getModelFile, HttpError, listModelSlugs } from './github.mjs';
 
 const DEFAULT_REPO = 'sumit2nandiuk-creator/ModelPortfolio';
 const PLACEHOLDER_R2_BASE = 'https://media.example.com';
+const PROFILE_PREFIX = '_profiles/';
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' };
 const MEDIA_CACHE = 'public, max-age=31536000, immutable';
+const PAGE_CACHE = 'public, max-age=0, must-revalidate';
+
+function profileKeyFor(slug) {
+  return `${PROFILE_PREFIX}${slug}.json`;
+}
+
+function normalizeBasePath(base = '/') {
+  let clean = String(base || '/').trim();
+  if (!clean.startsWith('/')) clean = `/${clean}`;
+  if (!clean.endsWith('/')) clean = `${clean}/`;
+  return clean;
+}
 
 function allowedOrigins(env) {
   return String(env.ADMIN_ORIGIN ?? '')
@@ -94,6 +110,154 @@ function etagMatches(headerValue, etag) {
 async function headObject(bucket, key) {
   if (typeof bucket.head === 'function') return bucket.head(key);
   return bucket.get(key);
+}
+
+async function readObjectText(obj) {
+  if (typeof obj.text === 'function') return obj.text();
+  if (typeof obj.body === 'string') return obj.body;
+  if (obj.body instanceof Uint8Array || obj.body instanceof ArrayBuffer) {
+    return new TextDecoder().decode(obj.body);
+  }
+  return new Response(obj.body).text();
+}
+
+function objectVersion(obj) {
+  return obj?.customMetadata?.version || obj?.httpEtag || 'r2-current';
+}
+
+async function listStoredSlugs(bucket) {
+  if (!bucket || typeof bucket.list !== 'function') return [];
+  const slugs = [];
+  let cursor;
+  do {
+    const page = await bucket.list({ prefix: PROFILE_PREFIX, cursor });
+    for (const item of page?.objects ?? []) {
+      const key = String(item?.key ?? '');
+      if (!key.startsWith(PROFILE_PREFIX) || !key.endsWith('.json')) continue;
+      const slug = key.slice(PROFILE_PREFIX.length, -5);
+      if (SLUG_PATTERN.test(slug)) slugs.push(slug);
+    }
+    cursor = page?.truncated ? page.cursor : undefined;
+  } while (cursor);
+  return slugs;
+}
+
+async function fetchAssetJson(url, env, assetPath) {
+  if (!env?.ASSETS || typeof env.ASSETS.fetch !== 'function') return null;
+  const assetUrl = new URL(assetPath, url.origin);
+  const res = await env.ASSETS.fetch(new Request(assetUrl.toString(), { method: 'GET' }));
+  if (!res || !res.ok) return null;
+  return res.json().catch(() => null);
+}
+
+async function readSeedSlugs(url, ctx) {
+  const fromAssets = await fetchAssetJson(url, ctx.env, '/_seed/_index.json');
+  if (Array.isArray(fromAssets?.models)) {
+    return fromAssets.models.filter((slug) => SLUG_PATTERN.test(slug));
+  }
+  if (ctx.token) {
+    return listModelSlugs({
+      repo: ctx.repo,
+      branch: ctx.branch,
+      token: ctx.token,
+      fetchImpl: ctx.fetchImpl,
+    });
+  }
+  return [];
+}
+
+async function readSeedProfile(url, ctx, slug) {
+  const fromAssets = await fetchAssetJson(url, ctx.env, `/_seed/${encodeURIComponent(slug)}.json`);
+  if (fromAssets && typeof fromAssets.model === 'object' && fromAssets.model) {
+    return { model: fromAssets.model, sizes: fromAssets.sizes ?? {}, sha: 'seed' };
+  }
+  if (ctx.token) {
+    const file = await getModelFile({
+      repo: ctx.repo,
+      branch: ctx.branch,
+      token: ctx.token,
+      fetchImpl: ctx.fetchImpl,
+      slug,
+    });
+    if (file) return { model: file.model, sizes: {}, sha: file.sha };
+  }
+  return null;
+}
+
+function buildSizeMap(model, seedSizes = {}) {
+  const sizes = new Map();
+  for (const [file, dim] of Object.entries(seedSizes || {})) {
+    if (dim?.width && dim?.height) sizes.set(file, { width: dim.width, height: dim.height });
+  }
+  for (const entry of [...coverList(model), ...(model.photos ?? [])]) {
+    if (isHttpUrl(entry?.file) && entry.width && entry.height) {
+      sizes.set(entry.file, { width: entry.width, height: entry.height });
+    }
+  }
+  for (const video of model.videos ?? []) {
+    if (isHttpUrl(video?.poster) && video.posterWidth && video.posterHeight) {
+      sizes.set(video.poster, { width: video.posterWidth, height: video.posterHeight });
+    }
+  }
+  return sizes;
+}
+
+// Cloudflare Pages Function handler for /:slug and /:slug/ so R2-updated or newly
+// created profiles go live immediately without rebuilding or redeploying the site.
+export async function handleModelPageRequest(context, { trailingSlash = true } = {}) {
+  const { request, env, params } = context;
+  const rawSlug = Array.isArray(params?.slug) ? params.slug[0] : params?.slug;
+  let slug = '';
+  try {
+    slug = decodeURIComponent(String(rawSlug ?? ''));
+  } catch {
+    return context.next();
+  }
+  if (!SLUG_PATTERN.test(slug) || RESERVED_SLUGS.has(slug) || !env?.MEDIA) {
+    return context.next();
+  }
+
+  const url = new URL(request.url);
+  const base = normalizeBasePath(env.SITE_BASE_PATH);
+
+  if (!trailingSlash) {
+    if (request.method !== 'GET' && request.method !== 'HEAD') return context.next();
+    const meta = await headObject(env.MEDIA, profileKeyFor(slug));
+    if (!meta) return context.next();
+    return Response.redirect(`${url.origin}${base}${encodeURIComponent(slug)}/${url.search}`, 308);
+  }
+
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    return new Response('Method not allowed.', { status: 405, headers: { Allow: 'GET, HEAD' } });
+  }
+
+  const stored = await env.MEDIA.get(profileKeyFor(slug));
+  if (!stored) return context.next();
+
+  const version = objectVersion(stored);
+  const etag = stored.httpEtag || `"${String(version).replace(/"/g, '')}"`;
+  const headers = {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': PAGE_CACHE,
+    ETag: etag,
+    'X-Content-Type-Options': 'nosniff',
+  };
+
+  if (etagMatches(request.headers.get('If-None-Match'), etag)) {
+    return new Response(null, { status: 304, headers });
+  }
+
+  const model = JSON.parse(await readObjectText(stored));
+  const seed = await fetchAssetJson(url, env, `/_seed/${encodeURIComponent(slug)}.json`);
+  const sizes = buildSizeMap(model, seed?.sizes);
+  const html = renderModelPage(model, {
+    year: new Date().getUTCFullYear(),
+    base,
+    mediaUrl: (file) => (isHttpUrl(file) ? file : `${base}${slug}/media/${encodeURIComponent(file)}`),
+    sizeOf: (file) => sizes.get(file) ?? null,
+  });
+
+  return new Response(request.method === 'HEAD' ? null : html, { status: 200, headers });
 }
 
 // Public read-only media endpoint backed by the private R2 bucket (supports HTTP Range for video streaming).
@@ -216,12 +380,11 @@ export async function handleRequest(request, env, deps = {}) {
     if (!isOriginAllowed(origin, url, allowed)) {
       return fail(cors, 403, 'This website is not allowed to use the admin.');
     }
-    const repo = env.REPO || DEFAULT_REPO;
-    if (!env.ADMIN_TOKEN || !env.GITHUB_TOKEN || !repo || !env.MEDIA) {
+    if (!env.ADMIN_TOKEN || !env.MEDIA) {
       return fail(
         cors,
         500,
-        'The admin is not configured yet. Add ADMIN_TOKEN, GITHUB_TOKEN, and the MEDIA R2 bucket binding in Cloudflare.',
+        'The admin is not configured yet. Add ADMIN_TOKEN and the MEDIA R2 bucket binding in Cloudflare.',
       );
     }
     if (!constantTimeEqual(bearerToken(request), env.ADMIN_TOKEN)) {
@@ -234,9 +397,9 @@ export async function handleRequest(request, env, deps = {}) {
       fetchImpl: deps.fetch ?? fetch,
       now: deps.now ?? (() => Date.now()),
       randomId: deps.randomId ?? (() => crypto.randomUUID().slice(0, 8)),
-      repo,
+      repo: env.REPO || DEFAULT_REPO,
       branch: env.BRANCH || 'main',
-      token: env.GITHUB_TOKEN,
+      token: env.GITHUB_TOKEN || '',
     };
     return await route(request, url, ctx);
   } catch (err) {
@@ -247,13 +410,17 @@ export async function handleRequest(request, env, deps = {}) {
 }
 
 async function route(request, url, ctx) {
-  const { cors, env, repo, branch, token, fetchImpl } = ctx;
+  const { cors, env } = ctx;
   const parts = url.pathname.split('/').filter(Boolean); // ["api", "models", slug?, "media"?]
   if (parts[1] !== 'models') return fail(cors, 404, 'Not found.');
 
   if (parts.length === 2) {
     if (request.method !== 'GET') return fail(cors, 405, 'Method not allowed.');
-    const models = await listModelSlugs({ repo, branch, token, fetchImpl });
+    const [storedSlugs, seedSlugs] = await Promise.all([
+      listStoredSlugs(env.MEDIA),
+      readSeedSlugs(url, ctx),
+    ]);
+    const models = [...new Set([...storedSlugs, ...seedSlugs])].sort();
     return reply(cors, { models });
   }
 
@@ -262,27 +429,66 @@ async function route(request, url, ctx) {
 
   if (parts.length === 3) {
     if (request.method === 'GET') {
-      const file = await getModelFile({ repo, branch, token, fetchImpl, slug });
-      if (!file) return fail(cors, 404, 'That profile does not exist.');
-      return reply(cors, file);
+      const stored = await env.MEDIA.get(profileKeyFor(slug));
+      if (stored) {
+        const model = JSON.parse(await readObjectText(stored));
+        return reply(cors, { model, sha: objectVersion(stored) });
+      }
+      const seed = await readSeedProfile(url, ctx, slug);
+      if (!seed) return fail(cors, 404, 'That profile does not exist.');
+      return reply(cors, { model: seed.model, sha: seed.sha });
     }
+
     if (request.method === 'PUT') {
       const body = await request.json().catch(() => null);
       if (!body || typeof body !== 'object') return fail(cors, 400, 'Send the profile as JSON.');
       const errors = validateModelShape(body.model, slug);
       if (errors.length) return fail(cors, 400, errors[0], { errors });
-      const isNew = !body.sha;
-      const sha = await putModelFile({
-        repo,
-        branch,
-        token,
-        fetchImpl,
-        slug,
-        model: body.model,
-        sha: body.sha,
-        message: isNew ? `Add ${slug} profile` : `Update ${slug} profile`,
+
+      const profileKey = profileKeyFor(slug);
+      const existingStored = await headObject(env.MEDIA, profileKey);
+      if (existingStored) {
+        if (!body.sha) {
+          return fail(cors, 409, 'A profile with this address already exists. Open it from the list instead.');
+        }
+        if (body.sha !== objectVersion(existingStored)) {
+          return fail(
+            cors,
+            409,
+            'This profile changed since you opened it. Reload it, then apply your changes again.',
+          );
+        }
+      } else {
+        const seed = await readSeedProfile(url, ctx, slug);
+        if (seed) {
+          if (!body.sha) {
+            return fail(cors, 409, 'A profile with this address already exists. Open it from the list instead.');
+          }
+          if (body.sha !== seed.sha) {
+            return fail(
+              cors,
+              409,
+              'This profile changed since you opened it. Reload it, then apply your changes again.',
+            );
+          }
+        } else if (body.sha) {
+          return fail(
+            cors,
+            409,
+            'This profile changed since you opened it. Reload it, then apply your changes again.',
+          );
+        }
+      }
+
+      const newVersion = `v-${ctx.now()}-${ctx.randomId()}`;
+      await env.MEDIA.put(profileKey, `${JSON.stringify(body.model, null, 2)}\n`, {
+        httpMetadata: {
+          contentType: 'application/json; charset=utf-8',
+          cacheControl: 'no-store',
+        },
+        customMetadata: { version: newVersion },
       });
-      return reply(cors, { sha });
+      return reply(cors, { sha: newVersion });
     }
     return fail(cors, 405, 'Method not allowed.');
   }

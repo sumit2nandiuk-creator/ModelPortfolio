@@ -1,8 +1,13 @@
 // HTML rendering for a single model's portfolio page and the neutral pages.
+// Pure runtime-agnostic JavaScript (zero Node.js imports) so it runs identically
+// during static builds and inside Cloudflare Pages Functions / Workers.
 // Each call only ever receives ONE model's data, so a page can never contain
 // another model's name, photos or links.
 
-import { coverList } from './validate.mjs';
+export function coverList(model) {
+  if (Array.isArray(model?.cover)) return model.cover;
+  return model?.cover ? [model.cover] : [];
+}
 
 const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 

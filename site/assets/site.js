@@ -481,8 +481,6 @@
   var heroDots = heroSection
     ? Array.prototype.slice.call(heroSection.querySelectorAll('.carousel-dot'))
     : [];
-  var heroPrev = heroSection ? heroSection.querySelector('.carousel-prev') : null;
-  var heroNext = heroSection ? heroSection.querySelector('.carousel-next') : null;
   var hero = null;
   var viewerCarousel = null; // the photo viewer's carousel; set below when the viewer exists
 
@@ -507,8 +505,6 @@
         hero.goTo(Number(dot.getAttribute('data-goto')));
       });
     });
-    if (heroPrev) heroPrev.addEventListener('click', function () { hero.step(-1); });
-    if (heroNext) heroNext.addEventListener('click', function () { hero.step(1); });
     hero.reset(0);
     hero.resume();
   }

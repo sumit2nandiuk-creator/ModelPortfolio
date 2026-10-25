@@ -451,20 +451,61 @@ test('permanent profile deletion removes its R2 profile/media and leaves a tombs
   assert.deepEqual(await listing.json(), { models: ['other-model'], archived: [] });
   const blockedRead = await handleRequest(apiRequest('GET', '/api/models/jane-doe'), env);
   assert.equal(blockedRead.status, 404);
-  const blockedRecreate = await handleRequest(
-    apiRequest('PUT', '/api/models/jane-doe', { body: { model: validModel() } }),
+  const blockedStaleEdit = await handleRequest(
+    apiRequest('PUT', '/api/models/jane-doe', { body: { model: validModel(), sha: 'v-1' } }),
     env,
   );
-  assert.equal(blockedRecreate.status, 410);
+  assert.equal(blockedStaleEdit.status, 410);
 
-  const publicPage = await handleModelPageRequest({
+  const publicPageBeforeRecreation = await handleModelPageRequest({
     request: new Request('https://site.test/jane-doe/'), env, params: { slug: 'jane-doe' }, next: () => new Response('seed page'),
   });
-  assert.equal(publicPage.status, 404);
+  assert.equal(publicPageBeforeRecreation.status, 404);
   const deletedSeedMedia = await handleSeedMediaRequest({
     request: new Request('https://site.test/jane-doe/media/cover.jpg'), env, params: { slug: 'jane-doe' }, next: () => new Response('seed image'),
   });
   assert.equal(deletedSeedMedia.status, 404);
+
+  const recreatedModel = validModel({ slug: 'jane-doe', name: 'Jane Recreated' });
+  const recreated = await handleRequest(
+    apiRequest('PUT', '/api/models/jane-doe', { body: { model: recreatedModel } }),
+    env,
+  );
+  assert.equal(recreated.status, 200);
+  assert.equal(env.MEDIA.objects.has('jane-doe/cover.jpg'), false);
+  assert.equal(env.MEDIA.objects.has('jane-doe/thumb.webp'), false);
+  assert.equal(JSON.parse(await (await env.MEDIA.get('_profiles/jane-doe.json')).text()).name, 'Jane Recreated');
+  assert.equal(JSON.parse(await (await env.MEDIA.get('_profile-state/jane-doe.json')).text()).state, 'recreated');
+  assert.deepEqual((await (await handleRequest(apiRequest('GET', '/api/models'), env)).json()).models, ['jane-doe', 'other-model']);
+  assert.equal((await (await handleRequest(apiRequest('GET', '/api/models/jane-doe'), env)).json()).model.name, 'Jane Recreated');
+
+  const recreatedPage = await handleModelPageRequest({
+    request: new Request('https://site.test/jane-doe/'), env, params: { slug: 'jane-doe' }, next: () => new Response('seed page'),
+  });
+  assert.equal(recreatedPage.status, 200);
+  assert.match(await recreatedPage.text(), /Jane Recreated/);
+  const recreatedSeedMedia = await handleSeedMediaRequest({
+    request: new Request('https://site.test/jane-doe/media/cover.jpg'), env, params: { slug: 'jane-doe' }, next: () => new Response('seed image'),
+  });
+  assert.equal(recreatedSeedMedia.status, 404);
+
+  const archived = await handleRequest(apiRequest('DELETE', '/api/models/jane-doe', { body: { action: 'archive' } }), env);
+  assert.equal(archived.status, 200);
+  assert.equal(JSON.parse(await (await env.MEDIA.get('_profile-state/jane-doe.json')).text()).state, 'recreated-archived');
+  assert.deepEqual((await (await handleRequest(apiRequest('GET', '/api/models'), env)).json()).archived, ['jane-doe']);
+  const hiddenArchivedPage = await handleModelPageRequest({
+    request: new Request('https://site.test/jane-doe/'), env, params: { slug: 'jane-doe' }, next: () => new Response('seed page'),
+  });
+  assert.equal(hiddenArchivedPage.status, 404);
+
+  const restored = await handleRequest(apiRequest('DELETE', '/api/models/jane-doe', { body: { action: 'restore' } }), env);
+  assert.equal(restored.status, 200);
+  assert.equal(JSON.parse(await (await env.MEDIA.get('_profile-state/jane-doe.json')).text()).state, 'recreated');
+  const restoredPage = await handleModelPageRequest({
+    request: new Request('https://site.test/jane-doe/'), env, params: { slug: 'jane-doe' }, next: () => new Response('seed page'),
+  });
+  assert.equal(restoredPage.status, 200);
+  assert.match(await restoredPage.text(), /Jane Recreated/);
 });
 
 test('creating a new profile and optimistic concurrency conflict checks work in R2', async () => {

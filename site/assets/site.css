@@ -507,33 +507,6 @@ video {
   z-index: 0;
 }
 
-/* Large, accessible controls provide an explicit fallback for cover swipes. */
-.carousel-control {
-  position: absolute;
-  top: 50%;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 46px;
-  height: 46px;
-  padding: 0 0 4px;
-  border: 1px solid rgba(255, 253, 249, 0.58);
-  border-radius: 50%;
-  color: var(--white);
-  background: rgba(12, 10, 8, 0.36);
-  font: 400 2.4rem/1 Georgia, serif;
-  cursor: pointer;
-  transform: translateY(-50%);
-  transition: background-color 0.2s ease, border-color 0.2s ease;
-}
-.carousel-control:hover, .carousel-control:focus-visible {
-  border-color: var(--white);
-  background: rgba(12, 10, 8, 0.68);
-}
-.carousel-prev { left: clamp(12px, 3vw, 34px); }
-.carousel-next { right: clamp(12px, 3vw, 34px); }
-
 /* Dots show which cover photo is on screen. They sit just above the button row. */
 .carousel-dots {
   position: absolute;

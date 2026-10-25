@@ -184,12 +184,6 @@ function renderHero(model, ctx) {
     })
     .join('');
 
-  const controls = many
-    ? `
-      <button class="carousel-control carousel-prev" type="button" aria-label="Previous cover photo">‹</button>
-      <button class="carousel-control carousel-next" type="button" aria-label="Next cover photo">›</button>`
-    : '';
-
   const dots = many
     ? `
       <div class="carousel-dots">
@@ -205,7 +199,7 @@ function renderHero(model, ctx) {
   return `
     <section class="hero" aria-labelledby="hero-title">
       <div class="carousel hero-carousel" role="region" aria-roledescription="carousel" aria-label="Cover photos" data-autoplay="${many ? 6000 : 0}">${slides}
-      </div>${controls}
+      </div>
       <span class="hero-shade" aria-hidden="true"></span>
       <h1 id="hero-title" class="sr-only">${esc(model.name)}</h1>${dots}
     </section>`;

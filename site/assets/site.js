@@ -638,6 +638,7 @@
       }
       return;
     }
+    // Keep current low-res visible until new source is decoded — no blink.
     try { el.src = url; } catch (_) {}
     if (typeof el.setAttribute === 'function') {
       el.setAttribute('src', url);
@@ -656,9 +657,6 @@
 
   function loadFullImageAfterThumbnail(img) {
     if (!img || img.tagName !== 'IMG') return;
-    var hero = img.closest && img.closest('.hero-carousel');
-    var heroSlide = hero && img.closest('.carousel-slide');
-    if (hero && (!heroSlide || !heroSlide.classList.contains('is-current'))) return;
     var currentUrl = getMediaSrc(img);
     var mediumUrl = typeof img.getAttribute === 'function' ? img.getAttribute('data-medium-src') : '';
     var fullUrl = typeof img.getAttribute === 'function' ? img.getAttribute('data-full-src') : '';
@@ -669,14 +667,17 @@
     img._loadingFullImage = true;
     img._loadingFullUrl = targetUrl;
     var full = new window.Image();
-    full.onload = function () {
+    // Wait for decode so swap is smooth with no blink; filter blur fades out via CSS.
+    var swapToTarget = function () {
       if (targetUrl === mediumUrl) {
         if (img.getAttribute('data-medium-src') !== mediumUrl) return;
         img.removeAttribute('data-medium-src');
         img._loadingFullImage = false;
         img._loadingFullUrl = '';
         setMediaSrc(img, mediumUrl);
-        loadFullImageAfterThumbnail(img);
+        // Chain to full after medium paints; rAF avoids layout thrash.
+        if (typeof requestFrame === 'function') requestFrame(function () { loadFullImageAfterThumbnail(img); });
+        else loadFullImageAfterThumbnail(img);
         return;
       }
       if (img.getAttribute('data-full-src') !== fullUrl) return;
@@ -684,6 +685,13 @@
       img._loadingFullImage = false;
       img._loadingFullUrl = '';
       setMediaSrc(img, fullUrl);
+    };
+    full.onload = function () {
+      if (full.decode) {
+        full.decode().then(swapToTarget).catch(swapToTarget);
+      } else {
+        swapToTarget();
+      }
     };
     full.onerror = function () {
       var failedMedium = targetUrl === mediumUrl && img.getAttribute('data-medium-src') === mediumUrl;

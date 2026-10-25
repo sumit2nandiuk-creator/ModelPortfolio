@@ -273,17 +273,39 @@ function renderPortfolio(model, ctx) {
     </section>`;
 }
 
+function videoDimensions(video, ctx) {
+  if (video.width && video.height) return { width: video.width, height: video.height };
+  const fromFile = video.file ? ctx.sizeOf(video.file) : null;
+  if (fromFile?.width && fromFile?.height) return fromFile;
+  if (video.posterWidth && video.posterHeight) return { width: video.posterWidth, height: video.posterHeight };
+  const fromPoster = video.poster ? ctx.sizeOf(video.poster) : null;
+  if (fromPoster?.width && fromPoster?.height) return fromPoster;
+  return null;
+}
+
 function renderVideos(model, ctx) {
   const videos = model.videos ?? [];
   if (!videos.length) return '';
 
+  const dims = videos.map((video) => videoDimensions(video, ctx));
+  const allPortrait = dims.length > 0 && dims.every((d) => d && d.height > d.width);
+
   const cards = videos
-    .map((video) => {
+    .map((video, idx) => {
+      const dim = dims[idx];
+      const isPortrait = dim ? dim.height > dim.width : false;
+      const isLandscape = dim ? dim.width >= dim.height : false;
+      const cardClass = `video-card reveal${isPortrait ? ' is-portrait' : isLandscape ? ' is-landscape' : ''}`;
+      const frameStyle = dim ? ` style="aspect-ratio: ${dim.width} / ${dim.height}"` : '';
+      const sizeAttrs = dim ? ` width="${dim.width}" height="${dim.height}"` : '';
       const poster = video.poster ? ` poster="${esc(ctx.mediaUrl(video.poster))}"` : '';
+      const preload = video.poster ? 'metadata' : 'auto';
+      const rawSrc = ctx.mediaUrl(video.file);
+      const videoSrc = !video.poster && !rawSrc.includes('#') ? `${rawSrc}#t=0.1` : rawSrc;
       return `
-          <figure class="video-card reveal">
-            <div class="video-frame">
-              <video controls controlsList="nodownload noremoteplayback" disablePictureInPicture playsinline preload="metadata"${poster} src="${esc(ctx.mediaUrl(video.file))}" aria-label="${esc(video.title)}"></video>
+          <figure class="${cardClass}">
+            <div class="video-frame"${frameStyle}>
+              <video controls controlsList="nodownload noremoteplayback" disablePictureInPicture playsinline preload="${preload}"${poster}${sizeAttrs} src="${esc(videoSrc)}" aria-label="${esc(video.title)}"></video>
             </div>
             <figcaption>
               ${video.category ? `<span class="tag">${esc(video.category)}</span>` : ''}
@@ -301,7 +323,7 @@ function renderVideos(model, ctx) {
           <p class="eyebrow">${renderTextOrRuns(model, 'videosLabel')}</p>
           <h2 id="videos-title" class="section-title">${renderTextOrRuns(model, 'videosHeading')}</h2>
         </header>
-        <div class="video-grid">${cards}
+        <div class="video-grid${allPortrait ? ' is-all-portrait' : ''}">${cards}
         </div>
       </div>
     </section>`;

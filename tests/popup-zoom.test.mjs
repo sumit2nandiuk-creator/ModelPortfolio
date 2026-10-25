@@ -196,6 +196,22 @@ function createLightboxHarness({ width = 390, height = 844, naturalWidth = 1200,
     return btn;
   });
 
+  // Build .video-grid with 2 videos (simulating existing R2 portrait videos without width/height in JSON)
+  const videoGrid = body.appendChild(new ElementNode('div', { className: 'video-grid' }));
+  const videoNodes = ['Bridal', 'Meesho'].map((title) => {
+    const card = videoGrid.appendChild(new ElementNode('figure', { className: 'video-card reveal' }));
+    const frame = card.appendChild(new ElementNode('div', { className: 'video-frame' }));
+    const vid = frame.appendChild(new ElementNode('video', { attrs: { 'aria-label': title } }));
+    vid.videoWidth = 0;
+    vid.videoHeight = 0;
+    vid.paused = true;
+    vid.muted = false;
+    vid.readyState = 0;
+    vid.duration = 32;
+    vid.currentTime = 0;
+    return { card, frame, vid };
+  });
+
   // Build #lightbox dialog matching renderLightbox()
   const dialog = body.appendChild(new ElementNode('dialog', { id: 'lightbox', className: 'lightbox' }));
   dialog.showModal = function () { this.open = true; };
@@ -258,7 +274,29 @@ function createLightboxHarness({ width = 390, height = 844, naturalWidth = 1200,
       return documentRoot.querySelectorAll(sel);
     },
     createElement(tag) {
-      return new ElementNode(tag);
+      const el = new ElementNode(tag);
+      if (String(tag).toLowerCase() === 'canvas') {
+        el.width = 0;
+        el.height = 0;
+        let lastDrawnVideo = null;
+        el.getContext = () => ({
+          drawImage(v) { lastDrawnVideo = v; },
+          getImageData(_x, _y, w, h) {
+            const px = new Uint8ClampedArray(Math.max(4, w * h * 4));
+            // Simulate a fade-from-black frame before 0.3s and a bright frame after 0.3s
+            const luma = lastDrawnVideo && lastDrawnVideo.currentTime < 0.3 ? 2 : 165;
+            for (let i = 0; i < px.length; i += 4) {
+              px[i] = luma;
+              px[i + 1] = luma;
+              px[i + 2] = luma;
+              px[i + 3] = 255;
+            }
+            return { data: px };
+          },
+        });
+        el.toDataURL = () => 'data:image/jpeg;base64,' + 'A'.repeat(200);
+      }
+      return el;
     },
     addEventListener() {},
   };
@@ -280,6 +318,8 @@ function createLightboxHarness({ width = 390, height = 844, naturalWidth = 1200,
     nextBtn,
     caption,
     galleryButtons,
+    videoGrid,
+    videoNodes,
     makeEvent,
     advanceTime(ms) {
       clock += ms;
@@ -488,3 +528,82 @@ test('double-tap on popup photo zooms to 2.5x around tap point and double-tap ag
   slide0.dispatchEvent(h.makeEvent('click', { clientX: 195, clientY: 40 }));
   assert.equal(h.dialog.open, false);
 });
+
+test('existing R2 portrait videos without saved dimensions switch to portrait video players on loadedmetadata', async () => {
+  const h = await createLightboxHarness();
+  await h.boot();
+
+  const [bridal, meesho] = h.videoNodes;
+  assert.equal(h.videoGrid.classList.contains('is-all-portrait'), false);
+
+  bridal.vid.videoWidth = 1080;
+  bridal.vid.videoHeight = 1920;
+  bridal.vid.dispatchEvent(h.makeEvent('loadedmetadata', { bubbles: false }));
+
+  assert.equal(bridal.card.classList.contains('is-portrait'), true);
+  assert.equal(bridal.frame.style.aspectRatio, '1080 / 1920');
+  // Second video has not reported dimensions yet, so grid waits before marking all-portrait
+  assert.equal(h.videoGrid.classList.contains('is-all-portrait'), false);
+
+  meesho.vid.videoWidth = 720;
+  meesho.vid.videoHeight = 1280;
+  meesho.vid.dispatchEvent(h.makeEvent('loadedmetadata', { bubbles: false }));
+
+  assert.equal(meesho.card.classList.contains('is-portrait'), true);
+  assert.equal(meesho.frame.style.aspectRatio, '720 / 1280');
+  assert.equal(h.videoGrid.classList.contains('is-all-portrait'), true);
+});
+
+test('videos without a custom poster show their thumbnail on load (skipping black intro frames and priming iOS Safari)', async () => {
+  const h = await createLightboxHarness();
+  await h.boot();
+
+  const [bridal, meesho] = h.videoNodes;
+
+  // 1. Video 1 ("Bridal") decodes frame data naturally, detects dark intro at 0.15s, steps to 1.0s, and sets poster
+  bridal.vid.videoWidth = 1080;
+  bridal.vid.videoHeight = 1920;
+  bridal.vid.readyState = 1;
+  bridal.vid.dispatchEvent(h.makeEvent('loadedmetadata', { bubbles: false }));
+  assert.ok(bridal.vid.currentTime > 0, 'seeks past 0.00s for initial frame');
+
+  bridal.vid.readyState = 2;
+  bridal.vid.dispatchEvent(h.makeEvent('loadeddata', { bubbles: false }));
+  // Because 0.15s was dark in our mock, it stepped forward to 1.0s to find a bright frame
+  assert.equal(bridal.vid.currentTime, 1);
+
+  bridal.vid.dispatchEvent(h.makeEvent('seeked', { bubbles: false }));
+  assert.match(bridal.vid.getAttribute('poster') || '', /^data:image\/jpeg;base64,/);
+
+  // 2. Video 2 ("Meesho") simulates iOS Safari stopping at HAVE_METADATA (readyState === 1) until play() primes it
+  let primedPlayCalls = 0;
+  let pausedAfterPrime = false;
+  meesho.vid.videoWidth = 720;
+  meesho.vid.videoHeight = 1280;
+  meesho.vid.readyState = 1;
+  meesho.vid.muted = false;
+  meesho.vid.play = () => {
+    primedPlayCalls++;
+    assert.equal(meesho.vid.muted, true, 'silent decoder prime must be muted');
+    meesho.vid.readyState = 2;
+    meesho.vid.currentTime = 0.5;
+    return {
+      then(onFulfilled) {
+        onFulfilled();
+      },
+    };
+  };
+  meesho.vid.pause = () => {
+    pausedAfterPrime = true;
+  };
+
+  meesho.vid.dispatchEvent(h.makeEvent('loadedmetadata', { bubbles: false }));
+  h.advanceTime(300);
+
+  assert.equal(primedPlayCalls, 1, 'primes hardware decoder when stuck at HAVE_METADATA');
+  assert.equal(pausedAfterPrime, true, 'immediately pauses after priming 1 frame');
+  assert.equal(meesho.vid.muted, false, 'restores original unmuted state for user playback');
+  assert.match(meesho.vid.getAttribute('poster') || '', /^data:image\/jpeg;base64,/);
+});
+
+

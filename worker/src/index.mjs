@@ -195,6 +195,9 @@ function buildSizeMap(model, seedSizes = {}) {
     }
   }
   for (const video of model.videos ?? []) {
+    if (isHttpUrl(video?.file) && video.width && video.height) {
+      sizes.set(video.file, { width: video.width, height: video.height });
+    }
     if (isHttpUrl(video?.poster) && video.posterWidth && video.posterHeight) {
       sizes.set(video.poster, { width: video.posterWidth, height: video.posterHeight });
     }

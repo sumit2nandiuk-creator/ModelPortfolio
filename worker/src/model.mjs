@@ -27,6 +27,60 @@ export function extensionOf(name) {
   return dot >= 0 ? String(name).slice(dot).toLowerCase() : '';
 }
 
+export function contentTypeFor(name) {
+  const ext = extensionOf(name);
+  return IMAGE_TYPES[ext] || VIDEO_TYPES[ext] || null;
+}
+
+// Validates a public /media/<slug>/<file> request path and returns { slug, file, key, contentType } or null.
+export function parseMediaPath(pathname) {
+  const parts = String(pathname ?? '').split('/').filter(Boolean);
+  if (parts.length !== 3 || parts[0] !== 'media') return null;
+  let slug;
+  let file;
+  try {
+    slug = decodeURIComponent(parts[1]);
+    file = decodeURIComponent(parts[2]);
+  } catch {
+    return null;
+  }
+  if (!SLUG_PATTERN.test(slug) || RESERVED_SLUGS.has(slug)) return null;
+  if (!file || file.includes('/') || file.includes('\\') || file.includes('..') || file.startsWith('.')) {
+    return null;
+  }
+  const contentType = contentTypeFor(file);
+  if (!contentType) return null;
+  return { slug, file, key: `${slug}/${file}`, contentType };
+}
+
+// Parses a single HTTP Range header ("bytes=a-b", "bytes=a-", "bytes=-n") per RFC 9110 §14.1.2.
+export function parseByteRange(rangeHeader, size) {
+  if (!rangeHeader || typeof rangeHeader !== 'string') return { type: 'none' };
+  const raw = rangeHeader.trim();
+  if (!raw.startsWith('bytes=') || raw.includes(',')) return { type: 'none' };
+  const match = /^bytes=(\d*)-(\d*)$/.exec(raw);
+  if (!match || (!match[1] && !match[2])) return { type: 'none' };
+  if (size <= 0) return { type: 'unsatisfiable' };
+
+  if (!match[1]) {
+    const suffix = Number(match[2]);
+    if (!Number.isSafeInteger(suffix) || suffix <= 0) return { type: 'unsatisfiable' };
+    const length = Math.min(suffix, size);
+    const offset = size - length;
+    return { type: 'range', offset, length, start: offset, end: size - 1 };
+  }
+
+  const start = Number(match[1]);
+  if (!Number.isSafeInteger(start) || start >= size) return { type: 'unsatisfiable' };
+  let end = size - 1;
+  if (match[2]) {
+    const requestedEnd = Number(match[2]);
+    if (!Number.isSafeInteger(requestedEnd) || requestedEnd < start) return { type: 'none' };
+    end = Math.min(requestedEnd, size - 1);
+  }
+  return { type: 'range', offset: start, length: end - start + 1, start, end };
+}
+
 // Decides whether an uploaded file may be stored. Returns { ok, kind, contentType } or { ok: false, error }.
 export function checkUpload({ name, size }) {
   const ext = extensionOf(name);

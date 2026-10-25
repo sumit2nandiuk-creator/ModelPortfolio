@@ -565,7 +565,7 @@ test('redesigned admin groups videos first followed by photos per category/title
   const bridalCards = groupCards[0].querySelectorAll('.admin-media-card');
   assert.equal(bridalCards.length, 2);
   assert.equal(bridalCards[0].classList.contains('video'), true);
-  assert.match(bridalCards[0].textContent, /#1 · Video \(shown first\)/);
+  assert.match(bridalCards[0].textContent, /#1 · Video/);
   assert.equal(bridalCards[1].classList.contains('photo'), true);
   assert.match(bridalCards[1].textContent, /#2 · Photo/);
 
@@ -582,10 +582,10 @@ test('redesigned admin groups videos first followed by photos per category/title
 
   const toggleAllBtn = h.doc.querySelector('[data-action="toggle-all-groups"]');
   assert.ok(toggleAllBtn);
-  assert.equal(toggleAllBtn.textContent, 'Collapse all');
+  assert.equal(toggleAllBtn.getAttribute('aria-label'), 'Collapse all categories');
   toggleAllBtn.dispatchEvent({ type: 'click', bubbles: true });
   assert.equal(groupCards.every((c) => c.querySelector('.group-card-body').hidden), true);
-  assert.equal(toggleAllBtn.textContent, 'Expand all');
+  assert.equal(toggleAllBtn.getAttribute('aria-label'), 'Expand all categories');
 
   toggleAllBtn.dispatchEvent({ type: 'click', bubbles: true });
   assert.equal(groupCards.every((c) => !c.querySelector('.group-card-body').hidden), true);
@@ -612,10 +612,10 @@ test('redesigned admin groups videos first followed by photos per category/title
 
   const toggleAllSectionsBtn = h.doc.querySelector('[data-action="toggle-all-sections"]');
   assert.ok(toggleAllSectionsBtn);
-  assert.equal(toggleAllSectionsBtn.textContent, 'Collapse all sections');
+  assert.equal(toggleAllSectionsBtn.getAttribute('aria-label'), 'Collapse all sections');
   toggleAllSectionsBtn.dispatchEvent({ type: 'click', bubbles: true });
   assert.equal(sectionCards.every((s) => s.querySelector('.section-card-body').hidden), true);
-  assert.equal(toggleAllSectionsBtn.textContent, 'Expand all sections');
+  assert.equal(toggleAllSectionsBtn.getAttribute('aria-label'), 'Expand all sections');
 
   // Clicking "Add row" inside collapsed Measurements auto-expands Measurements
   const addStatBtn = h.doc.querySelector('[data-action="add-stat"]');
@@ -624,7 +624,7 @@ test('redesigned admin groups videos first followed by photos per category/title
 
   // Collapse all (since Measurements is open) -> then Expand all sections restores full visibility
   h.doc.querySelector('[data-action="toggle-all-sections"]').dispatchEvent({ type: 'click', bubbles: true });
-  assert.equal(h.doc.querySelector('[data-action="toggle-all-sections"]').textContent, 'Expand all sections');
+  assert.equal(h.doc.querySelector('[data-action="toggle-all-sections"]').getAttribute('aria-label'), 'Expand all sections');
   h.doc.querySelector('[data-action="toggle-all-sections"]').dispatchEvent({ type: 'click', bubbles: true });
   assert.equal(h.doc.querySelectorAll('.section-card').every((s) => !s.querySelector('.section-card-body').hidden), true);
 

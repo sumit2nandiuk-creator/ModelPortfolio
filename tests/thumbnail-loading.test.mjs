@@ -51,7 +51,9 @@ test('profiles without thumbnails retain their original image and video poster m
 test('admin exposes the Generate Thumbnails action and the site upgrades thumbnail images after full image download', async () => {
   const admin = await fs.readFile(path.join(root, 'site', 'admin', 'index.html'), 'utf8');
   const siteJs = await fs.readFile(path.join(root, 'site', 'assets', 'site.js'), 'utf8');
-  assert.match(admin, /id="generate-thumbnails"[^>]*>Generate Thumbnails<\/button>/);
+  assert.match(admin, /id="generate-thumbnails"[^>]*aria-label="Generate thumbnails"/);
+  assert.match(admin, /id="new-model"[^>]*aria-label="New profile"/);
+  assert.match(admin, /id="view-site"[^>]*aria-label="View site"/);
   assert.match(siteJs, /function loadFullImageAfterThumbnail\(img\)/);
   assert.match(siteJs, /full\.onload = function \(\)[\s\S]*?img\.removeAttribute\('data-full-src'\)[\s\S]*?setMediaSrc\(img, fullUrl\)/);
 });

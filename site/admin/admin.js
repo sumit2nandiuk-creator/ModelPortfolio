@@ -95,6 +95,30 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
+  var ICONS = {
+    add: '<path d="M12 5v14M5 12h14"/>',
+    upload: '<path d="M12 16V4m0 0L7 9m5-5 5 5"/><path d="M5 14v5h14v-5"/>',
+    photo: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9" r="1.5"/><path d="m21 15-5-5L5 20"/>',
+    video: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/>',
+    external: '<path d="M14 4h6v6m0-6-9 9"/><path d="M18 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5"/>',
+    logout: '<path d="M10 17l5-5-5-5m5 5H3"/><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/>',
+    save: '<path d="M5 3h12l4 4v14H3V3z"/><path d="M7 3v6h10V3M7 21v-8h10v8"/>',
+    sparkles: '<path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 15l1 2.5 2.5 1-2.5 1L19 22l-1-2.5-2.5-1 2.5-1 1-2.5z"/>',
+    trash: '<path d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3"/>',
+    up: '<path d="m6 14 6-6 6 6"/>',
+    down: '<path d="m6 10 6 6 6-6"/>',
+    left: '<path d="m14 6-6 6 6 6"/>',
+    right: '<path d="m10 6 6 6-6 6"/>',
+    chevronDown: '<path d="m6 9 6 6 6-6"/>',
+    chevronRight: '<path d="m9 6 6 6-6 6"/>',
+    expand: '<path d="M8 3H5a2 2 0 0 0-2 2v3m13-5h3a2 2 0 0 1 2 2v3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/>',
+    x: '<path d="m18 6-12 12M6 6l12 12"/>',
+  };
+
+  function icon(name) {
+    return '<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICONS[name] || ICONS.add) + '</svg>';
+  }
+
   function isHttp(value) { return /^https?:\/\//i.test(String(value || '')); }
 
   function mediaSrc(file) {
@@ -870,9 +894,9 @@
     var pct = Math.max(0, Math.min(100, Math.round(info.percent || 0)));
     var actionBtn = '';
     if (info.state === 'uploading' && info.canCancel) {
-      actionBtn = '<button type="button" class="btn small ghost" data-action="cancel-upload" data-slot-id="' + esc(slotId) + '">Cancel</button>';
+      actionBtn = '<button type="button" class="btn icon-btn ghost" data-action="cancel-upload" data-slot-id="' + esc(slotId) + '" title="Cancel upload" aria-label="Cancel upload">' + icon('x') + '</button>';
     } else if (info.state === 'error' || info.state === 'done') {
-      actionBtn = '<button type="button" class="btn small ghost" data-action="dismiss-upload" data-slot-id="' + esc(slotId) + '">Dismiss</button>';
+      actionBtn = '<button type="button" class="btn icon-btn ghost" data-action="dismiss-upload" data-slot-id="' + esc(slotId) + '" title="Dismiss" aria-label="Dismiss">' + icon('x') + '</button>';
     }
     var track = info.state === 'error'
       ? ''
@@ -961,6 +985,13 @@
   }
 
   var SECTION_IDS = ['profile', 'measurements', 'contact', 'cover', 'portfolio'];
+  var SECTION_LABELS = {
+    profile: 'Profile & About',
+    measurements: 'Measurements',
+    contact: 'Contact',
+    cover: 'Cover photos',
+    portfolio: 'Portfolio',
+  };
 
   function areAllSectionsCollapsed() {
     return SECTION_IDS.every(function (id) { return Boolean(S.collapsedSections[id]); });
@@ -977,30 +1008,35 @@
       if (bodyEl) bodyEl.hidden = collapsed;
       var toggleBtns = card.querySelectorAll('[data-action="toggle-section"]');
       for (var b = 0; b < toggleBtns.length; b++) {
+        var label = (collapsed ? 'Expand ' : 'Collapse ') + (SECTION_LABELS[sectionId] || sectionId) + ' section';
         toggleBtns[b].setAttribute('aria-expanded', String(!collapsed));
+        toggleBtns[b].setAttribute('aria-label', label);
+        toggleBtns[b].setAttribute('title', label);
       }
       var chev = card.querySelector('.section-chevron');
-      if (chev) chev.textContent = collapsed ? '▸' : '▾';
-      var lbl = card.querySelector('.section-collapse-text');
-      if (lbl) lbl.textContent = collapsed ? 'Expand' : 'Collapse';
+      if (chev) chev.innerHTML = icon(collapsed ? 'chevronRight' : 'chevronDown');
     }
     var toggleAllBtn = root.querySelector('[data-action="toggle-all-sections"]');
     if (toggleAllBtn) {
-      toggleAllBtn.textContent = areAllSectionsCollapsed() ? 'Expand all sections' : 'Collapse all sections';
+      var expandAll = areAllSectionsCollapsed();
+      var allLabel = expandAll ? 'Expand all sections' : 'Collapse all sections';
+      toggleAllBtn.setAttribute('aria-label', allLabel);
+      toggleAllBtn.setAttribute('title', allLabel);
+      toggleAllBtn.innerHTML = icon(expandAll ? 'expand' : 'chevronDown');
     }
   }
 
   function sectionCard(sectionId, title, actionsHtml, bodyHtml, uploadSlotId) {
     var isCollapsed = Boolean(S.collapsedSections[sectionId]);
     var bodyId = 'section-body-' + sectionId;
+    var toggleLabel = (isCollapsed ? 'Expand ' : 'Collapse ') + (SECTION_LABELS[sectionId] || sectionId) + ' section';
     return '<section class="card section-card' + (isCollapsed ? ' is-collapsed' : '') + '" data-section-card="' + esc(sectionId) + '">' +
       '<div class="toolbar section-card-head">' +
         '<div class="section-title-wrap">' +
-          '<button type="button" class="btn small ghost section-collapse-btn" data-action="toggle-section" data-section-id="' + esc(sectionId) + '" aria-expanded="' + String(!isCollapsed) + '" aria-controls="' + esc(bodyId) + '" title="Collapse or expand section">' +
-            '<span class="section-chevron" aria-hidden="true">' + (isCollapsed ? '▸' : '▾') + '</span>' +
-            '<span class="section-collapse-text">' + (isCollapsed ? 'Expand' : 'Collapse') + '</span>' +
+          '<button type="button" class="btn icon-btn ghost section-collapse-btn" data-action="toggle-section" data-section-id="' + esc(sectionId) + '" aria-label="' + esc(toggleLabel) + '" aria-expanded="' + String(!isCollapsed) + '" aria-controls="' + esc(bodyId) + '" title="' + esc(toggleLabel) + '">' +
+            '<span class="section-chevron" aria-hidden="true">' + icon(isCollapsed ? 'chevronRight' : 'chevronDown') + '</span>' +
           '</button>' +
-          '<h2><button type="button" class="section-heading-btn" data-action="toggle-section" data-section-id="' + esc(sectionId) + '" aria-expanded="' + String(!isCollapsed) + '" aria-controls="' + esc(bodyId) + '">' + esc(title) + '</button></h2>' +
+          '<h2><button type="button" class="section-heading-btn" data-action="toggle-section" data-section-id="' + esc(sectionId) + '" aria-label="' + esc(toggleLabel) + '" aria-expanded="' + String(!isCollapsed) + '" aria-controls="' + esc(bodyId) + '">' + esc(title) + '</button></h2>' +
         '</div>' +
         (actionsHtml ? '<div class="toolbar-actions">' + actionsHtml + '</div>' : '') +
       '</div>' +
@@ -1012,20 +1048,21 @@
   }
 
   function moveButtons(list, i, count) {
-    return '<button type="button" class="btn small" data-action="move" data-list="' + list + '" data-i="' + i + '" data-dir="-1"' +
-      (i === 0 ? ' disabled' : '') + '>Move up</button>' +
-      '<button type="button" class="btn small" data-action="move" data-list="' + list + '" data-i="' + i + '" data-dir="1"' +
-      (i === count - 1 ? ' disabled' : '') + '>Move down</button>';
+    return '<button type="button" class="btn icon-btn" data-action="move" data-list="' + list + '" data-i="' + i + '" data-dir="-1"' +
+      (i === 0 ? ' disabled' : '') + ' title="Move up" aria-label="Move up">' + icon('up') + '</button>' +
+      '<button type="button" class="btn icon-btn" data-action="move" data-list="' + list + '" data-i="' + i + '" data-dir="1"' +
+      (i === count - 1 ? ' disabled' : '') + ' title="Move down" aria-label="Move down">' + icon('down') + '</button>';
   }
 
   function removeButton(list, i) {
-    return '<button type="button" class="btn small danger" data-action="remove" data-list="' + list + '" data-i="' + i + '">Remove</button>';
+    return '<button type="button" class="btn icon-btn danger" data-action="remove" data-list="' + list + '" data-i="' + i + '" title="Remove" aria-label="Remove">' + icon('trash') + '</button>';
   }
 
   function uploadButton(label, kind, extra) {
     var uploading = Boolean(S.activeUploadSlot);
-    return '<label class="btn small file-btn' + (uploading ? ' is-uploading' : '') + '">' + esc(label) +
-      '<input type="file" data-upload="' + kind + '"' + (uploading ? ' disabled' : '') + (extra || '') + '></label>';
+    var glyph = kind === 'video' ? 'video' : 'photo';
+    return '<label class="btn icon-btn file-btn' + (uploading ? ' is-uploading' : '') + '" aria-label="' + esc(label) + '" title="' + esc(label) + '">' + icon(glyph) +
+      '<input type="file" aria-label="' + esc(label) + '" data-upload="' + kind + '"' + (uploading ? ' disabled' : '') + (extra || '') + '></label>';
   }
 
   function coverHtml() {
@@ -1048,17 +1085,17 @@
   }
 
   function groupMoveItemButtons(list, globalIndex, posInGroup, countInGroup) {
-    return '<button type="button" class="btn small" data-action="move-in-group" data-list="' + list + '" data-i="' + globalIndex + '" data-dir="-1"' +
-      (posInGroup === 0 ? ' disabled' : '') + ' title="Move earlier in row">← Left</button>' +
-      '<button type="button" class="btn small" data-action="move-in-group" data-list="' + list + '" data-i="' + globalIndex + '" data-dir="1"' +
-      (posInGroup === countInGroup - 1 ? ' disabled' : '') + ' title="Move later in row">Right →</button>';
+    return '<button type="button" class="btn icon-btn" data-action="move-in-group" data-list="' + list + '" data-i="' + globalIndex + '" data-dir="-1"' +
+      (posInGroup === 0 ? ' disabled' : '') + ' title="Move left" aria-label="Move left">' + icon('left') + '</button>' +
+      '<button type="button" class="btn icon-btn" data-action="move-in-group" data-list="' + list + '" data-i="' + globalIndex + '" data-dir="1"' +
+      (posInGroup === countInGroup - 1 ? ' disabled' : '') + ' title="Move right" aria-label="Move right">' + icon('right') + '</button>';
   }
 
   function groupSummaryText(vCount, pCount) {
     var parts = [];
     parts.push(vCount + (vCount === 1 ? ' video' : ' videos'));
     parts.push(pCount + (pCount === 1 ? ' photo' : ' photos'));
-    return parts.join(' · ') + ' (videos shown first)';
+    return parts.join(' · ');
   }
 
   function areAllGroupsCollapsed() {
@@ -1078,16 +1115,21 @@
       if (bodyEl) bodyEl.hidden = collapsed;
       var toggleBtns = card.querySelectorAll('[data-action="toggle-group"]');
       for (var b = 0; b < toggleBtns.length; b++) {
+        var label = (collapsed ? 'Expand ' : 'Collapse ') + 'category';
         toggleBtns[b].setAttribute('aria-expanded', String(!collapsed));
+        toggleBtns[b].setAttribute('aria-label', label);
+        toggleBtns[b].setAttribute('title', label);
       }
       var chev = card.querySelector('.group-chevron');
-      if (chev) chev.textContent = collapsed ? '▸' : '▾';
-      var lbl = card.querySelector('.group-collapse-text');
-      if (lbl) lbl.textContent = collapsed ? 'Expand' : 'Collapse';
+      if (chev) chev.innerHTML = icon(collapsed ? 'chevronRight' : 'chevronDown');
     }
     var toggleAllBtn = root.querySelector('[data-action="toggle-all-groups"]');
     if (toggleAllBtn) {
-      toggleAllBtn.textContent = areAllGroupsCollapsed() ? 'Expand all' : 'Collapse all';
+      var expandAll = areAllGroupsCollapsed();
+      var allLabel = expandAll ? 'Expand all categories' : 'Collapse all categories';
+      toggleAllBtn.setAttribute('aria-label', allLabel);
+      toggleAllBtn.setAttribute('title', allLabel);
+      toggleAllBtn.innerHTML = icon(expandAll ? 'expand' : 'chevronDown');
     }
   }
 
@@ -1141,8 +1183,7 @@
           preview +
           '<div class="admin-media-body">' +
             '<div class="admin-media-badge-row">' +
-              '<span class="media-kind-badge is-video">#' + (vPos + 1) + ' · Video (shown first)</span>' +
-              '<span class="muted small-file">' + esc(v.file ? (isHttp(v.file) ? 'hosted video' : v.file) : '') + '</span>' +
+              '<span class="media-kind-badge is-video">#' + (vPos + 1) + ' · Video</span>' +
             '</div>' +
             '<div class="item-fields">' +
               '<label>Subtitle / Title<input data-list="videos" data-i="' + i + '" data-key="title" data-styled-slot="videoText" style="' + videoStyle + '" value="' + esc(v.title) + '" placeholder="Optional video title"></label>' +
@@ -1186,26 +1227,25 @@
 
       var rowBody = totalItems > 0
         ? '<div class="admin-media-row' + (totalItems < 2 ? ' is-single' : '') + '">' + videoCardsHtml + photoCardsHtml + '</div>'
-        : '<p class="muted group-empty">Empty group — use <b>Add video</b> (shown first) or <b>Add photo</b> above to populate this horizontal row.</p>';
+        : '<p class="muted group-empty">Empty category</p>';
 
       return '<div class="group-card' + (isCollapsed ? ' is-collapsed' : '') + (isAllLandscapeGroup ? ' is-landscape-group' : '') + '" data-group-card="' + esc(grp.id) + '"' + (groupPhotos.length > 0 ? ' data-has-photos="1"' : '') + (isAllLandscapeGroup ? ' data-landscape-group="1"' : '') + '>' +
         '<div class="group-card-head">' +
           '<div class="group-title-wrap">' +
-            '<button type="button" class="btn small ghost group-collapse-btn" data-action="toggle-group" data-group-id="' + esc(grp.id) + '" aria-expanded="' + String(!isCollapsed) + '" aria-controls="group-body-' + esc(grp.id) + '" title="Collapse or expand category">' +
-              '<span class="group-chevron" aria-hidden="true">' + (isCollapsed ? '▸' : '▾') + '</span>' +
-              '<span class="group-collapse-text">' + (isCollapsed ? 'Expand' : 'Collapse') + '</span>' +
+            '<button type="button" class="btn icon-btn ghost group-collapse-btn" data-action="toggle-group" data-group-id="' + esc(grp.id) + '" aria-label="' + (isCollapsed ? 'Expand' : 'Collapse') + ' category" aria-expanded="' + String(!isCollapsed) + '" aria-controls="group-body-' + esc(grp.id) + '" title="' + (isCollapsed ? 'Expand' : 'Collapse') + ' category">' +
+              '<span class="group-chevron" aria-hidden="true">' + icon(isCollapsed ? 'chevronRight' : 'chevronDown') + '</span>' +
             '</button>' +
-            '<label class="group-title-label">Category / Row Title' +
+            '<label class="group-title-label">Category' +
               '<input class="group-title-input" data-group-title="' + gIdx + '" data-styled-slot="aboutLabel" style="' + aboutLabelStyle + '" value="' + esc(groupTitleVal) + '" placeholder="e.g. Bridal, Editorial, Traditional">' +
             '</label>' +
-            '<button type="button" class="group-count-pill" data-action="toggle-group" data-group-id="' + esc(grp.id) + '" aria-expanded="' + String(!isCollapsed) + '" data-group-counts="' + gIdx + '">' + esc(groupSummaryText(groupVideos.length, groupPhotos.length)) + '</button>' +
+            '<button type="button" class="group-count-pill" data-action="toggle-group" data-group-id="' + esc(grp.id) + '" aria-label="Toggle category items" aria-expanded="' + String(!isCollapsed) + '" data-group-counts="' + gIdx + '">' + esc(groupSummaryText(groupVideos.length, groupPhotos.length)) + '</button>' +
           '</div>' +
           '<div class="group-head-actions">' +
             uploadButton('Add video', 'video', ' accept="video/*" multiple data-group-id="' + esc(grp.id) + '"') +
             uploadButton('Add photo', 'photo', ' accept="image/*" multiple data-group-id="' + esc(grp.id) + '"') +
-            '<button type="button" class="btn small" data-action="move-group" data-group-index="' + gIdx + '" data-dir="-1"' + (gIdx === 0 ? ' disabled' : '') + ' title="Move row up">↑ Row up</button>' +
-            '<button type="button" class="btn small" data-action="move-group" data-group-index="' + gIdx + '" data-dir="1"' + (gIdx === groups.length - 1 ? ' disabled' : '') + ' title="Move row down">↓ Row down</button>' +
-            '<button type="button" class="btn small danger" data-action="remove-group" data-group-index="' + gIdx + '">Remove group</button>' +
+            '<button type="button" class="btn icon-btn" data-action="move-group" data-group-index="' + gIdx + '" data-dir="-1"' + (gIdx === 0 ? ' disabled' : '') + ' title="Move category up" aria-label="Move category up">' + icon('up') + '</button>' +
+            '<button type="button" class="btn icon-btn" data-action="move-group" data-group-index="' + gIdx + '" data-dir="1"' + (gIdx === groups.length - 1 ? ' disabled' : '') + ' title="Move category down" aria-label="Move category down">' + icon('down') + '</button>' +
+            '<button type="button" class="btn icon-btn danger" data-action="remove-group" data-group-index="' + gIdx + '" title="Remove category" aria-label="Remove category">' + icon('trash') + '</button>' +
           '</div>' +
         '</div>' +
         uploadSlotHtml('group-' + grp.id) +
@@ -1229,9 +1269,9 @@
         '<input aria-label="Measurement label" placeholder="Label (e.g. Height)" data-list="stats" data-i="' + i + '" data-key="label" data-styled-slot="aboutLabel" style="' + labelStyle + '" value="' + esc(s.label) + '">' +
         '<input aria-label="Measurement value" placeholder="Value (e.g. 5′4″)" data-list="stats" data-i="' + i + '" data-key="value" data-styled-slot="stats" style="' + statStyle + '" value="' + esc(s.value) + '">' +
         '<div class="stat-row-actions">' +
-          '<button type="button" class="btn small stat-icon-btn" data-action="move" data-list="stats" data-i="' + i + '" data-dir="-1"' + (i === 0 ? ' disabled' : '') + ' title="Move up" aria-label="Move measurement up">↑</button>' +
-          '<button type="button" class="btn small stat-icon-btn" data-action="move" data-list="stats" data-i="' + i + '" data-dir="1"' + (i === count - 1 ? ' disabled' : '') + ' title="Move down" aria-label="Move measurement down">↓</button>' +
-          '<button type="button" class="btn small danger stat-icon-btn" data-action="remove" data-list="stats" data-i="' + i + '" title="Remove measurement" aria-label="Remove measurement">✕</button>' +
+          '<button type="button" class="btn icon-btn stat-icon-btn" data-action="move" data-list="stats" data-i="' + i + '" data-dir="-1"' + (i === 0 ? ' disabled' : '') + ' title="Move up" aria-label="Move measurement up">' + icon('up') + '</button>' +
+          '<button type="button" class="btn icon-btn stat-icon-btn" data-action="move" data-list="stats" data-i="' + i + '" data-dir="1"' + (i === count - 1 ? ' disabled' : '') + ' title="Move down" aria-label="Move measurement down">' + icon('down') + '</button>' +
+          '<button type="button" class="btn icon-btn danger stat-icon-btn" data-action="remove" data-list="stats" data-i="' + i + '" title="Remove measurement" aria-label="Remove measurement">' + icon('trash') + '</button>' +
         '</div>' +
       '</div>';
     }).join('');
@@ -1245,10 +1285,7 @@
     var seo = m.seo || {};
     $('editor-body').innerHTML = [
       '<div class="sections-overview-bar">' +
-        '<span class="muted">Sections</span>' +
-        '<button type="button" class="btn small ghost" data-action="toggle-all-sections">' +
-          (areAllSectionsCollapsed() ? 'Expand all sections' : 'Collapse all sections') +
-        '</button>' +
+        '<button type="button" class="btn icon-btn ghost" data-action="toggle-all-sections" aria-label="' + (areAllSectionsCollapsed() ? 'Expand all sections' : 'Collapse all sections') + '" title="' + (areAllSectionsCollapsed() ? 'Expand all sections' : 'Collapse all sections') + '">' + icon(areAllSectionsCollapsed() ? 'expand' : 'chevronDown') + '</button>' +
       '</div>',
 
       sectionCard(
@@ -1299,7 +1336,7 @@
       sectionCard(
         'measurements',
         'Measurements',
-        '<button type="button" class="btn small" data-action="add-stat">Add row</button>',
+        '<button type="button" class="btn icon-btn" data-action="add-stat" title="Add measurement" aria-label="Add measurement">' + icon('add') + '</button>',
         groupFormatBarHtml('stats', 'Measurements font:') + statsHtml()
       ),
 
@@ -1348,7 +1385,7 @@
 
       sectionCard(
         'cover',
-        'Cover photos (hero slideshow)',
+        'Cover photos',
         uploadButton('Add cover photo', 'cover', ' accept="image/*" multiple'),
         '<div class="list">' + coverHtml() + '</div>',
         'cover'
@@ -1356,13 +1393,12 @@
 
       sectionCard(
         'portfolio',
-        'Portfolio groups (videos first, then photos)',
+        'Portfolio',
         ((m._groups && m._groups.length > 1)
-          ? '<button type="button" class="btn small ghost" data-action="toggle-all-groups">' + (areAllGroupsCollapsed() ? 'Expand all' : 'Collapse all') + '</button>'
+          ? '<button type="button" class="btn icon-btn ghost" data-action="toggle-all-groups" aria-label="' + (areAllGroupsCollapsed() ? 'Expand all categories' : 'Collapse all categories') + '" title="' + (areAllGroupsCollapsed() ? 'Expand all categories' : 'Collapse all categories') + '">' + icon(areAllGroupsCollapsed() ? 'expand' : 'chevronDown') + '</button>'
           : '') +
-          '<button type="button" class="btn small primary" data-action="add-group">+ Add category / group</button>',
+          '<button type="button" class="btn icon-btn primary" data-action="add-group" aria-label="Add category" title="Add category">' + icon('add') + '</button>',
         '<div class="stack">' +
-          '<p class="muted" style="margin:0">Each group renders as a horizontal scrollable row on the website: its video(s) appear first on the left, followed by its photos (with 10% of the next item peeking on the right whenever more exist).</p>' +
           composerBoxHtml({
             richKey: 'portfolioLabel',
             slot: 'portfolioLabel',
@@ -2779,7 +2815,7 @@
       toast('All model images already have thumbnails.', 'ok');
       return;
     }
-    if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+    if (btn) { btn.disabled = true; btn.classList.add('is-working'); }
     setBusy(true, 'Generating thumbnails…');
     var failures = [];
     var generated = 0;
@@ -2811,7 +2847,7 @@
         toast(errorMessage, 'error');
       }
     }).finally(function () {
-      if (btn) { btn.disabled = false; btn.textContent = 'Generate Thumbnails'; }
+      if (btn) { btn.disabled = false; btn.classList.remove('is-working'); }
     });
   }
 

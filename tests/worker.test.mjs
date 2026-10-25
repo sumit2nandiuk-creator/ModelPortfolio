@@ -656,10 +656,10 @@ test('without R2_PUBLIC_BASE, uploads return same-app /media/ URLs (canonicalise
   assert.equal(env.MEDIA.objects.size, 0);
 });
 
-test('admin API validates per-section fonts and live /:slug/ renders selected fonts immediately', async () => {
+test('admin API validates email-style text boxes, richText runs, and live /:slug/ renders them immediately', async () => {
   const env = fakeEnv({ ADMIN_ORIGIN: '' });
 
-  // Unsupported font family or style is rejected with 400.
+  // Unsupported font family, colour, or richText run is rejected with 400.
   const badFont = await handleRequest(
     apiRequest('PUT', '/api/models/jane-doe', {
       origin: 'https://admin.example.test',
@@ -669,26 +669,52 @@ test('admin API validates per-section fonts and live /:slug/ renders selected fo
   );
   assert.equal(badFont.status, 400);
 
-  const badStyle = await handleRequest(
+  const badColor = await handleRequest(
     apiRequest('PUT', '/api/models/jane-doe', {
       origin: 'https://admin.example.test',
-      body: { model: validModel({ fonts: { bio: { style: 'oblique-99' } } }) },
+      body: { model: validModel({ fonts: { bio: { color: 'javascript:alert(1)' } } }) },
     }),
     env,
   );
-  assert.equal(badStyle.status, 400);
+  assert.equal(badColor.status, 400);
 
-  // Valid font + style + weight saves to R2 and renders live on /:slug/.
-  const modelWithFonts = validModel({
+  const badRun = await handleRequest(
+    apiRequest('PUT', '/api/models/jane-doe', {
+      origin: 'https://admin.example.test',
+      body: { model: validModel({ richText: { contactHeading: [{ text: 'Hi', size: '999px' }] } }) },
+    }),
+    env,
+  );
+  assert.equal(badRun.status, 400);
+
+  // Valid texts + inline richText + box fonts save to R2 and render live on /:slug/.
+  const modelWithRichText = validModel({
+    bio: ['Editorial & runway model.'],
+    texts: {
+      contactLabel: 'Direct bookings',
+      contactHeading: 'Work with Jane Doe.',
+    },
     fonts: {
-      name: { family: 'pinyon-script', style: 'normal', weight: '400' },
-      bio: { family: 'eb-garamond', style: 'italic', weight: '500' },
+      name: { family: 'pinyon-script', style: 'normal', weight: '400', size: 'lg' },
+      bio: { family: 'eb-garamond', style: 'normal', weight: '400', align: 'center' },
+    },
+    richText: {
+      contactHeading: [
+        { text: 'Work with ' },
+        { text: 'Jane Doe.', bold: true, italic: true, family: 'playfair-display', color: '#c9a77d' },
+      ],
+      bio: [
+        [
+          { text: 'Editorial', underline: true, bold: true },
+          { text: ' & runway model.' },
+        ],
+      ],
     },
   });
   const okSave = await handleRequest(
     apiRequest('PUT', '/api/models/jane-doe', {
       origin: 'https://admin.example.test',
-      body: { model: modelWithFonts },
+      body: { model: modelWithRichText },
     }),
     env,
   );
@@ -704,7 +730,11 @@ test('admin API validates per-section fonts and live /:slug/ renders selected fo
   const html = await liveRes.text();
   assert.match(html, /family=Pinyon\+Script/);
   assert.match(html, /family=EB\+Garamond/);
+  assert.match(html, /family=Playfair\+Display/);
   assert.match(html, /--font-name-family: &#39;Pinyon Script&#39;/);
-  assert.match(html, /--font-bio-style: italic/);
-  assert.match(html, /--font-bio-weight: 500/);
+  assert.match(html, /--font-name-scale: 1\.18/);
+  assert.match(html, /--font-bio-align: center/);
+  assert.match(html, /Direct bookings/);
+  assert.match(html, /Work with <span style="font-family:&#39;Playfair Display&#39;, Georgia, serif;color:#c9a77d"><em><strong>Jane Doe\.<\/strong><\/em><\/span>/);
+  assert.match(html, /<span style="text-decoration:underline"><strong>Editorial<\/strong><\/span> &amp; runway model\./);
 });

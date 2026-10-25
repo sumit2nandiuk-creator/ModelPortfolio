@@ -1,7 +1,7 @@
 // Pure helpers for the admin Worker: validation, upload rules, storage keys and
 // base64 helpers. No Cloudflare or network APIs here, so they are easy to test.
 
-import { validateFonts } from '../../scripts/lib/fonts.mjs';
+import { validateTypography } from '../../scripts/lib/fonts.mjs';
 
 export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -213,7 +213,7 @@ export function validateModelShape(model, slug) {
       }
     }
   }
-  for (const fontError of validateFonts(model.fonts)) {
+  for (const fontError of validateTypography(model)) {
     fail(fontError);
   }
   return errors;

@@ -586,7 +586,7 @@ test('refreshing a page resets scroll restoration and starts at the top', async 
   }
 });
 
-test('per-section font selections load Google Fonts, emit CSS variables, and stay in sync with admin.js', async () => {
+test('email-style text boxes support custom copy, inline rich-text runs, box font settings, and XSS safety', async () => {
   const { FONT_CATALOG, FONT_SLOTS } = await import('../scripts/lib/fonts.mjs');
   const adminJs = await fs.readFile(path.join(siteDir, 'admin', 'admin.js'), 'utf8');
   for (const font of FONT_CATALOG) {
@@ -600,28 +600,53 @@ test('per-section font selections load Google Fonts, emit CSS variables, and sta
   try {
     await fs.mkdir(ws.modelsDir, { recursive: true });
     await writeModel(ws.modelsDir, 'styled-model', 'Styled Model', {
+      bio: ['First paragraph with <tag> & rich text.'],
+      texts: {
+        portfolioLabel: 'Bridal & Editorial',
+        portfolioHeading: 'Selected Works',
+        contactHeading: 'Book Styled Model today.',
+      },
       fonts: {
-        name: { family: 'playfair-display', style: 'normal', weight: '600' },
-        headings: { family: 'bodoni-moda', style: 'italic', weight: '500' },
-        bio: { family: 'lora', style: 'italic', weight: '400' },
-        stats: { family: 'montserrat', style: 'normal', weight: '500' },
+        name: { family: 'playfair-display', style: 'normal', weight: '700', size: 'lg', underline: true, color: '#9a6a3c' },
+        portfolioHeading: { family: 'bodoni-moda', style: 'italic', weight: '600', size: 'xl', align: 'center' },
+        bio: { family: 'lora', style: 'normal', weight: '400', align: 'left' },
+        stats: { family: 'montserrat', style: 'normal', weight: '500', size: 'sm' },
         captions: { family: 'jost', style: 'normal', weight: '400' },
+      },
+      richText: {
+        name: [
+          { text: 'Styled ', bold: true },
+          { text: 'Model', family: 'great-vibes', italic: true, color: '#c9a77d' },
+        ],
+        bio: [
+          [
+            { text: 'First paragraph with ' },
+            { text: '<tag>', bold: true, underline: true, size: 'lg', family: 'cinzel', color: '#9a6a3c' },
+            { text: ' & rich text.' },
+          ],
+        ],
       },
     });
     await build({ modelsDir: ws.modelsDir, siteDir, outDir: ws.outDir });
     const html = await fs.readFile(path.join(ws.outDir, 'styled-model', 'index.html'), 'utf8');
+    // Both box-level fonts and inline-only fonts (Great Vibes, Cinzel) are loaded from Google Fonts.
     assert.match(html, /family=Playfair\+Display/);
     assert.match(html, /family=Bodoni\+Moda/);
-    assert.match(html, /family=Lora/);
-    assert.match(html, /family=Montserrat/);
-    assert.match(html, /family=Jost/);
+    assert.match(html, /family=Great\+Vibes/);
+    assert.match(html, /family=Cinzel/);
+    // Box-level CSS custom properties are emitted.
     assert.match(html, /--font-name-family: &#39;Playfair Display&#39;/);
-    assert.match(html, /--font-name-style: normal/);
-    assert.match(html, /--font-name-weight: 600/);
-    assert.match(html, /--font-headings-style: italic/);
-    assert.match(html, /--font-bio-family: &#39;Lora&#39;/);
-    assert.match(html, /--font-stats-family: &#39;Montserrat&#39;/);
-    assert.match(html, /--font-captions-family: &#39;Jost&#39;/);
+    assert.match(html, /--font-name-scale: 1\.18/);
+    assert.match(html, /--font-name-decoration: underline/);
+    assert.match(html, /--font-name-color: #9a6a3c/);
+    assert.match(html, /--font-portfolio-heading-align: center/);
+    // Custom section copy & inline formatted runs render cleanly and escape HTML tags.
+    assert.match(html, /Bridal &amp; Editorial/);
+    assert.match(html, /Selected Works/);
+    assert.match(html, /Book Styled Model today\./);
+    assert.match(html, /<span class="brand-given"><strong>Styled<\/strong><\/span>/);
+    assert.match(html, /<span class="brand-family"><span style="font-family:&#39;Great Vibes&#39;, cursive;color:#c9a77d"><em>Model<\/em><\/span><\/span>/);
+    assert.match(html, /<strong>&lt;tag&gt;<\/strong>/);
   } finally {
     await ws.cleanup();
   }

@@ -541,6 +541,24 @@ test('uploading a photo stores it in R2 under the model folder and returns its p
   assert.equal(stored.options.httpMetadata.contentType, 'image/jpeg');
 });
 
+test('thumbnail generation can read a stored profile image through the authenticated API proxy only for that model', async () => {
+  const env = fakeEnv();
+  const bytes = new Uint8Array([1, 2, 3, 4]);
+  await env.MEDIA.put('jane-doe/cover.jpg', bytes, { httpMetadata: { contentType: 'image/jpeg' } });
+
+  const source = encodeURIComponent(`${BASE}/jane-doe/cover.jpg?cache=1`);
+  const res = await handleRequest(apiRequest('GET', `/api/models/jane-doe/media?url=${source}`), env);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type'), 'image/jpeg');
+  assert.deepEqual(new Uint8Array(await res.arrayBuffer()), bytes);
+
+  const other = await handleRequest(
+    apiRequest('GET', `/api/models/jane-doe/media?url=${encodeURIComponent(`${BASE}/other/cover.jpg`)}`),
+    env,
+  );
+  assert.equal(other.status, 404);
+});
+
 test('uploading an unsupported file type is refused and nothing is stored', async () => {
   const env = fakeEnv();
   const form = new FormData();

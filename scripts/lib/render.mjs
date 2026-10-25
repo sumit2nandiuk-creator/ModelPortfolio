@@ -27,6 +27,16 @@ function dimensionAttrs(size) {
   return size ? ` width="${size.width}" height="${size.height}"` : '';
 }
 
+function imageSource(entry, ctx) {
+  const full = ctx.mediaUrl(entry.file);
+  const thumb = entry.thumbnail ? ctx.mediaUrl(entry.thumbnail) : '';
+  return { src: thumb || full, full, thumb };
+}
+
+function progressiveAttrs(source) {
+  return source.thumb ? ` data-full-src="${esc(source.full)}"` : '';
+}
+
 function uniqueInOrder(values) {
   return [...new Set(values)];
 }
@@ -164,11 +174,12 @@ function renderHero(model, ctx) {
   // All slideshow images are loaded eagerly so every slide is ready before rotating.
   const slides = covers
     .map((cover, i) => {
-      const src = ctx.mediaUrl(cover.file);
+      const source = imageSource(cover, ctx);
+      const src = source.full;
       const label = many ? `Open cover photo ${i + 1} of ${covers.length}` : 'Open cover photo';
       return `
-        <button class="carousel-slide" type="button" data-src="${esc(src)}" data-alt="${esc(cover.alt)}" data-caption="" aria-label="${esc(label)}">
-          <img class="hero-media" src="${esc(src)}" alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} loading="eager"${i === 0 ? ' fetchpriority="high"' : ''} decoding="async" draggable="false">
+        <button class="carousel-slide" type="button" data-src="${esc(src)}"${source.thumb ? ` data-thumb="${esc(source.thumb)}"` : ''} data-alt="${esc(cover.alt)}" data-caption="" aria-label="${esc(label)}">
+          <img class="hero-media" src="${esc(source.src)}"${progressiveAttrs(source)} alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} loading="eager"${i === 0 ? ' fetchpriority="high"' : ''} decoding="async" draggable="false">
         </button>`;
     })
     .join('');
@@ -358,7 +369,11 @@ function renderPortfolio(model, ctx) {
           const videoStyle = frameDim ? ` style="aspect-ratio: ${frameDim.width} / ${frameDim.height}"` : '';
           const sizeAttrs = frameDim ? ` width="${frameDim.width}" height="${frameDim.height}"` : '';
           const naturalAttrs = nativeDim ? ` data-natural-w="${nativeDim.width}" data-natural-h="${nativeDim.height}"` : '';
-          const poster = video.poster ? ` poster="${esc(ctx.mediaUrl(video.poster))}"` : '';
+          const posterUrl = video.poster ? ctx.mediaUrl(video.poster) : '';
+          const posterThumb = video.posterThumbnail ? ctx.mediaUrl(video.posterThumbnail) : '';
+          const poster = posterUrl
+            ? ` poster="${esc(posterThumb || posterUrl)}"${posterThumb ? ` data-full-poster="${esc(posterUrl)}"` : ''}`
+            : '';
           const preload = 'metadata';
           const rawSrc = ctx.mediaUrl(video.file);
           const videoSrc = !video.poster && !rawSrc.includes('#') ? `${rawSrc}#t=0.1` : rawSrc;
@@ -386,14 +401,15 @@ function renderPortfolio(model, ctx) {
         .map((photo, pIdx) => {
           const i = photoIndex++;
           const pDim = photoDims[pIdx];
-          const src = ctx.mediaUrl(photo.file);
+          const source = imageSource(photo, ctx);
+          const src = source.full;
           const alt = photo.alt || photo.title || group.title;
           const caption = group.title;
           const label = [group.title, photo.title].filter(Boolean).join(' · ');
           return `
               <figure class="media-card media-card--photo gallery-item" data-category="${esc(group.title)}">
-                <button class="gallery-btn" type="button" data-index="${i}" data-src="${esc(src)}" data-alt="${esc(alt)}" data-caption="${esc(caption)}" aria-label="Open photo: ${esc(label)}">
-                  <img src="${esc(src)}" alt="${esc(alt)}"${dimensionAttrs(pDim)} loading="lazy" decoding="async" draggable="false">
+                <button class="gallery-btn" type="button" data-index="${i}" data-src="${esc(src)}"${source.thumb ? ` data-thumb="${esc(source.thumb)}"` : ''} data-alt="${esc(alt)}" data-caption="${esc(caption)}" aria-label="Open photo: ${esc(label)}">
+                  <img src="${esc(source.src)}"${progressiveAttrs(source)} alt="${esc(alt)}"${dimensionAttrs(pDim)} loading="lazy" decoding="async" draggable="false">
                 </button>${
                   photo.year
                     ? `
@@ -601,7 +617,7 @@ export function renderModelPage(model, ctx) {
   // Preload all banner slideshow images first so they are fetched immediately
   const coverPreloads = covers
     .map((c, i) => {
-      const url = ctx.mediaUrl(c.file);
+      const url = c.thumbnail ? ctx.mediaUrl(c.thumbnail) : ctx.mediaUrl(c.file);
       if (!url) return '';
       return `<link rel="preload" as="image" href="${esc(url)}"${i === 0 ? ' fetchpriority="high"' : ''}>`;
     })

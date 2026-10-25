@@ -2664,15 +2664,133 @@
     if (st) st.textContent = 'Preview unavailable';
   }
 
+  // ---- Thumbnail generation --------------------------------------------
+
+  function thumbnailSource(file) {
+    if (isHttp(file)) return file;
+    return new URL('../' + encodeURIComponent(S.slug) + '/media/' + encodeURIComponent(String(file || '')), window.location.href).toString();
+  }
+
+  function thumbnailTargets() {
+    var refs = [];
+    (S.model.cover || []).forEach(function (entry) { if (entry && entry.file) refs.push({ entry: entry, source: entry.file, key: 'thumbnail' }); });
+    (S.model.photos || []).forEach(function (entry) { if (entry && entry.file) refs.push({ entry: entry, source: entry.file, key: 'thumbnail' }); });
+    (S.model.videos || []).forEach(function (entry) {
+      if (entry && entry.poster) refs.push({ entry: entry, source: entry.poster, key: 'posterThumbnail' });
+    });
+    var bySource = {};
+    refs.forEach(function (ref) {
+      var source = String(ref.source);
+      if (!bySource[source]) bySource[source] = { source: source, refs: [], thumbnail: '' };
+      bySource[source].refs.push(ref);
+      if (!bySource[source].thumbnail && ref.entry[ref.key]) bySource[source].thumbnail = ref.entry[ref.key];
+    });
+    return Object.keys(bySource).map(function (key) { return bySource[key]; });
+  }
+
+  function resolveThumbnailSource(source) {
+    var direct = thumbnailSource(source);
+    if (!isHttp(source) || !window.URL || typeof window.URL.createObjectURL !== 'function') {
+      return Promise.resolve({ url: direct, revoke: null });
+    }
+    var path = profilePath(S.slug, '/media?url=' + encodeURIComponent(source));
+    return fetch(API_BASE + path, { headers: { Authorization: 'Bearer ' + S.token } }).then(function (res) {
+      if (!res.ok) return { url: direct, revoke: null };
+      return res.blob().then(function (blob) {
+        var objectUrl = window.URL.createObjectURL(blob);
+        return { url: objectUrl, revoke: function () { window.URL.revokeObjectURL(objectUrl); } };
+      });
+    }).catch(function () { return { url: direct, revoke: null }; });
+  }
+
+  function makeThumbnail(source) {
+    return new Promise(function (resolve, reject) {
+      var image = new window.Image();
+      image.crossOrigin = 'anonymous';
+      image.onload = function () {
+        try {
+          var maxEdge = 360;
+          var scale = Math.min(1, maxEdge / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+          var canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+          canvas.height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+          var ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error('This browser cannot create thumbnails.');
+          ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob(function (blob) {
+            if (!blob) { reject(new Error('Could not encode thumbnail.')); return; }
+            resolve(blob);
+          }, 'image/webp', 0.76);
+        } catch (err) { reject(err); }
+      };
+      image.onerror = function () { reject(new Error('Could not load image: ' + source)); };
+      image.src = source;
+    });
+  }
+
+  function uploadThumbnail(blob, index) {
+    var form = new FormData();
+    var ext = blob.type === 'image/png' ? 'png' : 'webp';
+    form.append('file', blob, 'thumbnail-' + Date.now() + '-' + index + '.' + ext);
+    return api('POST', profilePath(S.slug, '/media'), { form: form }).then(function (data) { return data.url; });
+  }
+
+  function generateThumbnails() {
+    if (!S.model || S.busy) return;
+    if (isDirty() && !window.confirm('Generating thumbnails will also save your current profile changes. Continue?')) return;
+    var btn = $('generate-thumbnails');
+    var groups = thumbnailTargets();
+    var pending = groups.filter(function (group) { return !group.thumbnail; });
+    if (!pending.length) {
+      setStatus('All model images already have thumbnails.', 'ok');
+      toast('All model images already have thumbnails.', 'ok');
+      return;
+    }
+    if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+    setBusy(true, 'Generating thumbnails…');
+    var failures = [];
+    var generated = 0;
+    return pending.reduce(function (chain, group, index) {
+      return chain.then(function () {
+        setStatus('Generating thumbnail ' + (index + 1) + ' of ' + pending.length + '…');
+        return resolveThumbnailSource(group.source).then(function (resolved) {
+          return makeThumbnail(resolved.url).finally(function () { if (resolved.revoke) resolved.revoke(); });
+        })
+          .then(function (blob) { return uploadThumbnail(blob, index + 1); })
+          .then(function (url) {
+            group.refs.forEach(function (ref) { ref.entry[ref.key] = url; });
+            generated += 1;
+          })
+          .catch(function (err) { failures.push(err.message || 'An image could not be processed.'); });
+      });
+    }, Promise.resolve()).then(function () {
+      if (generated) {
+        render();
+        updateDirtyNote();
+        setBusy(false);
+        var message = 'Generated ' + generated + ' thumbnail' + (generated === 1 ? '' : 's') + ' and saved them to R2.';
+        if (failures.length) message += ' ' + failures.length + ' image' + (failures.length === 1 ? ' could' : 's could') + ' not be processed.';
+        return save(message);
+      } else {
+        setBusy(false);
+        var errorMessage = failures.length ? failures[0] : 'No thumbnails were generated.';
+        setStatus(errorMessage, 'error');
+        toast(errorMessage, 'error');
+      }
+    }).finally(function () {
+      if (btn) { btn.disabled = false; btn.textContent = 'Generate Thumbnails'; }
+    });
+  }
+
   // ---- Saving -----------------------------------------------------------
 
-  function save() {
+  function save(successMessage) {
     if (!S.model || S.busy) return;
     hideToast();
     var model = cleanProfile(S.model);
     setBusy(true, 'Saving…');
     var path = profilePath(S.slug);
-    api('PUT', path, { json: { sha: S.sha, model: model } }).then(function (data) {
+    return api('PUT', path, { json: { sha: S.sha, model: model } }).then(function (data) {
       S.sha = data.sha;
       S.saved = JSON.stringify(model);
       S.isNew = false;
@@ -2681,7 +2799,7 @@
       renderPicker();
       return removeHostedFiles();
     }).then(function () {
-      var okMessage = 'Saved. Changes are live immediately.';
+      var okMessage = typeof successMessage === 'string' ? successMessage : 'Saved. Changes are live immediately.';
       setStatus(okMessage, 'ok');
       toast(okMessage, 'ok');
       updateDirtyNote();
@@ -2741,6 +2859,7 @@
 
   $('model-picker').addEventListener('change', function (e) { openProfile(e.target.value); });
   $('new-model').addEventListener('click', startNewProfile);
+  if ($('generate-thumbnails')) $('generate-thumbnails').addEventListener('click', generateThumbnails);
   $('sign-out').addEventListener('click', function () {
     if (confirmLeave()) signOut();
   });

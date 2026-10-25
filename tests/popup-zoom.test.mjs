@@ -805,6 +805,18 @@ test('popup instantly displays already-fetched page images with is-loaded and CS
   assert.doesNotMatch(css, /\.lb-stage\s+\.carousel-slide\.is-loading\s+img\s*\{[\s\S]*?opacity:\s*0;/);
 });
 
+test('popup opens the thumbnail first and keeps the full-size URL queued for upgrade', async () => {
+  const h = await createLightboxHarness();
+  const button = h.galleryButtons[0];
+  button.setAttribute('data-thumb', '/media/demo/photo-thumb.webp');
+  await h.boot();
+
+  button.dispatchEvent(h.makeEvent('click'));
+  const popupImg = h.stage.querySelectorAll('.carousel-slide')[0].querySelector('img');
+  assert.equal(popupImg.getAttribute('src'), '/media/demo/photo-thumb.webp');
+  assert.equal(popupImg.getAttribute('data-full-src'), button.getAttribute('data-src'));
+});
+
 test('when photo finishes loading in popup, spinner is removed and gallery frame on page synchronizes to is-loaded', async () => {
   const h = await createLightboxHarness({ width: 390, height: 844 });
 

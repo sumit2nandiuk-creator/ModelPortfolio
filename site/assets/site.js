@@ -301,9 +301,21 @@
       stopAutoplay();
     }
 
+    function abortDrag() {
+      if (!drag) return;
+      cancelScheduled();
+      drag = null;
+      if (dx !== 0) {
+        dx = 0;
+        layout(false, 0);
+      }
+      restartAutoplay();
+    }
+
     root.addEventListener('pointerdown', function (e) {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       suppressUntil = 0;
+      if (options.canDrag && !options.canDrag()) return;
       if (busy || slides().length < 2) return;
       drag = { id: e.pointerId, x: e.clientX, y: e.clientY, t: Date.now(), axis: null };
       stopAutoplay();
@@ -375,6 +387,7 @@
         notify();
       },
       cancel: cancel,
+      abortDrag: abortDrag,
       pause: stopAutoplay,
       resume: restartAutoplay,
     };
@@ -429,6 +442,106 @@
     var nextBtn = dialog.querySelector('.lb-next');
     var items = [];
 
+    // Touch zoom state for the active popup photo (pinch-to-zoom, 1-finger pan while zoomed,
+    // and double-tap to zoom in / reset). When zoomScale === 1, single-finger horizontal
+    // swipe stays on the carousel untouched.
+    var MAX_ZOOM = 4;
+    var DOUBLE_TAP_ZOOM = 2.5;
+    var ZOOM_MS = 220;
+    var zoomScale = 1;
+    var zoomX = 0;
+    var zoomY = 0;
+    var pinch = null;
+    var pan = null;
+    var tapCandidate = null;
+    var lastTap = null;
+    var suppressCloseUntil = 0;
+    var zoomAnimTimer = null;
+
+    function currentImg() {
+      var idx = viewerCarousel ? viewerCarousel.current() : 0;
+      var els = stage.querySelectorAll('.carousel-slide');
+      return els[idx] ? els[idx].querySelector('img') : null;
+    }
+
+    function stageMetrics(img) {
+      var rect = stage.getBoundingClientRect();
+      var w = rect.width || stage.clientWidth || window.innerWidth || 1;
+      var h = rect.height || stage.clientHeight || window.innerHeight || 1;
+      var baseW = w;
+      var baseH = h;
+      if (img && img.naturalWidth > 0 && img.naturalHeight > 0) {
+        var fit = Math.min(w / img.naturalWidth, h / img.naturalHeight);
+        baseW = img.naturalWidth * fit;
+        baseH = img.naturalHeight * fit;
+      }
+      return {
+        left: rect.left,
+        top: rect.top,
+        width: w,
+        height: h,
+        cx: rect.left + w / 2,
+        cy: rect.top + h / 2,
+        baseW: baseW,
+        baseH: baseH,
+      };
+    }
+
+    function clampPan(img, scale, tx, ty) {
+      if (scale <= 1) return { x: 0, y: 0 };
+      var m = stageMetrics(img);
+      var maxX = Math.max(0, (m.baseW * scale - m.width) / 2);
+      var maxY = Math.max(0, (m.baseH * scale - m.height) / 2);
+      return {
+        x: Math.min(maxX, Math.max(-maxX, tx)),
+        y: Math.min(maxY, Math.max(-maxY, ty)),
+      };
+    }
+
+    function applyZoom(animate) {
+      var img = currentImg();
+      var zoomed = zoomScale > 1.001;
+      stage.classList.toggle('is-zoomed', zoomed);
+      dialog.classList.toggle('is-zoomed', zoomed);
+      if (!img) return;
+      clearTimeout(zoomAnimTimer);
+      var useAnim = Boolean(animate && !reducedMotion);
+      img.style.transition = useAnim ? 'transform ' + ZOOM_MS + 'ms ' + EASE : 'none';
+      img.style.transform = zoomed
+        ? 'translate3d(' + zoomX.toFixed(2) + 'px, ' + zoomY.toFixed(2) + 'px, 0) scale(' + zoomScale.toFixed(4) + ')'
+        : '';
+      if (useAnim) {
+        zoomAnimTimer = setTimeout(function () {
+          if (img) img.style.transition = 'none';
+        }, ZOOM_MS);
+      }
+    }
+
+    function resetZoom(animate) {
+      clearTimeout(zoomAnimTimer);
+      zoomScale = 1;
+      zoomX = 0;
+      zoomY = 0;
+      pinch = null;
+      pan = null;
+      tapCandidate = null;
+      stage.classList.remove('is-zoomed');
+      dialog.classList.remove('is-zoomed');
+      var allImgs = stage.querySelectorAll('.carousel-slide img');
+      for (var i = 0; i < allImgs.length; i++) {
+        allImgs[i].style.transition = animate && !reducedMotion ? 'transform ' + ZOOM_MS + 'ms ' + EASE : 'none';
+        allImgs[i].style.transform = '';
+      }
+    }
+
+    function touchDistance(t0, t1) {
+      return Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY);
+    }
+
+    function touchMidpoint(t0, t1) {
+      return { x: (t0.clientX + t1.clientX) / 2, y: (t0.clientY + t1.clientY) / 2 };
+    }
+
     function readItem(btn) {
       return {
         src: btn.getAttribute('data-src'),
@@ -455,7 +568,9 @@
     }
 
     viewerCarousel = createCarousel(stage, {
+      canDrag: function () { return zoomScale <= 1.001 && !pinch; },
       onChange: function (i) {
+        resetZoom(false);
         loadAround(i);
         showCaption(i);
       },
@@ -463,6 +578,8 @@
 
     function open(list, start) {
       items = list;
+      lastTap = null;
+      resetZoom(false);
       stage.textContent = '';
       list.forEach(function (item) {
         var figure = document.createElement('figure');
@@ -507,42 +624,244 @@
       });
     }
 
-    prevBtn.addEventListener('click', function () { viewerCarousel.step(-1); });
-    nextBtn.addEventListener('click', function () { viewerCarousel.step(1); });
+    prevBtn.addEventListener('click', function () { resetZoom(false); viewerCarousel.step(-1); });
+    nextBtn.addEventListener('click', function () { resetZoom(false); viewerCarousel.step(1); });
     closeBtn.addEventListener('click', function () { dialog.close(); });
 
     dialog.addEventListener('keydown', function (e) {
-      if (e.key === 'ArrowLeft') { e.preventDefault(); viewerCarousel.step(-1); }
-      else if (e.key === 'ArrowRight') { e.preventDefault(); viewerCarousel.step(1); }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); resetZoom(false); viewerCarousel.step(-1); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); resetZoom(false); viewerCarousel.step(1); }
     });
 
-    // The part of the screen the photo actually covers (the photo is letterboxed to fit).
+    // The part of the screen the photo actually covers (including zoom & pan when zoomed).
     function photoBox(img) {
-      var box = img.getBoundingClientRect();
-      if (!img.naturalWidth || !img.naturalHeight || !box.width || !box.height) return null;
-      var scale = Math.min(box.width / img.naturalWidth, box.height / img.naturalHeight);
-      var w = img.naturalWidth * scale;
-      var h = img.naturalHeight * scale;
-      var left = box.left + (box.width - w) / 2;
-      var top = box.top + (box.height - h) / 2;
-      return { left: left, top: top, right: left + w, bottom: top + h };
+      if (!img) return null;
+      var box = stage.getBoundingClientRect();
+      var w = box.width || stage.clientWidth;
+      var h = box.height || stage.clientHeight;
+      if (!img.naturalWidth || !img.naturalHeight || !w || !h) return null;
+      var fit = Math.min(w / img.naturalWidth, h / img.naturalHeight);
+      var drawW = img.naturalWidth * fit * zoomScale;
+      var drawH = img.naturalHeight * fit * zoomScale;
+      var cx = box.left + w / 2 + zoomX;
+      var cy = box.top + h / 2 + zoomY;
+      return { left: cx - drawW / 2, top: cy - drawH / 2, right: cx + drawW / 2, bottom: cy + drawH / 2 };
     }
+
+    function startPinchFromTouches(touches) {
+      var img = currentImg();
+      if (!img || touches.length < 2) return;
+      var m = stageMetrics(img);
+      var d = Math.max(1, touchDistance(touches[0], touches[1]));
+      var mid = touchMidpoint(touches[0], touches[1]);
+      pinch = {
+        startDist: d,
+        startScale: zoomScale,
+        startTx: zoomX,
+        startTy: zoomY,
+        midX: mid.x,
+        midY: mid.y,
+        cx: m.cx,
+        cy: m.cy,
+      };
+    }
+
+    stage.addEventListener('touchstart', function (e) {
+      if (!dialog.open) return;
+      if (e.touches.length >= 2) {
+        if (viewerCarousel) viewerCarousel.abortDrag();
+        pan = null;
+        tapCandidate = null;
+        lastTap = null;
+        suppressCloseUntil = Date.now() + 450;
+        startPinchFromTouches(e.touches);
+        return;
+      }
+      if (e.touches.length === 1) {
+        var t = e.touches[0];
+        tapCandidate = { x: t.clientX, y: t.clientY, time: Date.now(), moved: false };
+        if (zoomScale > 1.001) {
+          pan = { startX: t.clientX, startY: t.clientY, startTx: zoomX, startTy: zoomY, moved: false };
+        }
+      }
+    }, { passive: true });
+
+    stage.addEventListener('touchmove', function (e) {
+      if (!dialog.open) return;
+      if (e.touches.length >= 2) {
+        if (e.cancelable) e.preventDefault();
+        if (!pinch) startPinchFromTouches(e.touches);
+        var img = currentImg();
+        if (!img || !pinch) return;
+        var d = Math.max(1, touchDistance(e.touches[0], e.touches[1]));
+        var mid = touchMidpoint(e.touches[0], e.touches[1]);
+        var rawScale = pinch.startScale * (d / pinch.startDist);
+        var nextScale = Math.min(MAX_ZOOM * 1.15, Math.max(0.85, rawScale));
+        var ratio = nextScale / pinch.startScale;
+        var nextTx = (mid.x - pinch.cx) - ratio * (pinch.midX - pinch.cx - pinch.startTx);
+        var nextTy = (mid.y - pinch.cy) - ratio * (pinch.midY - pinch.cy - pinch.startTy);
+        var clamped = nextScale > 1 ? clampPan(img, nextScale, nextTx, nextTy) : { x: 0, y: 0 };
+        zoomScale = nextScale;
+        zoomX = clamped.x;
+        zoomY = clamped.y;
+        suppressCloseUntil = Date.now() + 450;
+        applyZoom(false);
+        return;
+      }
+      if (e.touches.length === 1) {
+        var t = e.touches[0];
+        if (tapCandidate && (Math.abs(t.clientX - tapCandidate.x) > 10 || Math.abs(t.clientY - tapCandidate.y) > 10)) {
+          tapCandidate.moved = true;
+        }
+        if (pan && zoomScale > 1.001) {
+          if (e.cancelable) e.preventDefault();
+          var dxPan = t.clientX - pan.startX;
+          var dyPan = t.clientY - pan.startY;
+          if (Math.abs(dxPan) > 3 || Math.abs(dyPan) > 3) {
+            pan.moved = true;
+            suppressCloseUntil = Date.now() + 400;
+          }
+          var panned = clampPan(currentImg(), zoomScale, pan.startTx + dxPan, pan.startTy + dyPan);
+          zoomX = panned.x;
+          zoomY = panned.y;
+          applyZoom(false);
+        }
+      }
+    }, { passive: false });
+
+    function onTouchEnd(e) {
+      if (!dialog.open) return;
+      if (e.touches.length >= 2) {
+        startPinchFromTouches(e.touches);
+        return;
+      }
+      if (e.touches.length === 1 && pinch) {
+        pinch = null;
+        suppressCloseUntil = Date.now() + 450;
+        if (zoomScale < 1.02) {
+          resetZoom(true);
+        } else {
+          if (zoomScale > MAX_ZOOM) {
+            zoomScale = MAX_ZOOM;
+            var cp = clampPan(currentImg(), zoomScale, zoomX, zoomY);
+            zoomX = cp.x;
+            zoomY = cp.y;
+            applyZoom(true);
+          }
+          var rem = e.touches[0];
+          pan = { startX: rem.clientX, startY: rem.clientY, startTx: zoomX, startTy: zoomY, moved: true };
+        }
+        return;
+      }
+      if (e.touches.length === 0) {
+        var endedPinch = Boolean(pinch);
+        var endedPan = Boolean(pan && pan.moved);
+        pinch = null;
+        pan = null;
+
+        if (zoomScale < 1.02) {
+          if (zoomScale !== 1 || zoomX !== 0 || zoomY !== 0) resetZoom(true);
+        } else if (zoomScale > MAX_ZOOM) {
+          zoomScale = MAX_ZOOM;
+          var settled = clampPan(currentImg(), zoomScale, zoomX, zoomY);
+          zoomX = settled.x;
+          zoomY = settled.y;
+          applyZoom(true);
+        }
+
+        if (endedPinch || endedPan) {
+          tapCandidate = null;
+          lastTap = null;
+          suppressCloseUntil = Date.now() + 400;
+          return;
+        }
+
+        var now = Date.now();
+        if (tapCandidate && !tapCandidate.moved && now - tapCandidate.time < 320) {
+          var imgTap = currentImg();
+          var boxTap = photoBox(imgTap);
+          var onPhoto = !boxTap || (
+            tapCandidate.x >= boxTap.left &&
+            tapCandidate.x <= boxTap.right &&
+            tapCandidate.y >= boxTap.top &&
+            tapCandidate.y <= boxTap.bottom
+          );
+          if (onPhoto) {
+            if (lastTap && now - lastTap.time < 320 && Math.hypot(tapCandidate.x - lastTap.x, tapCandidate.y - lastTap.y) < 36) {
+              if (e.cancelable) e.preventDefault();
+              if (viewerCarousel) viewerCarousel.abortDrag();
+              lastTap = null;
+              tapCandidate = null;
+              suppressCloseUntil = now + 450;
+              if (zoomScale > 1.05) {
+                resetZoom(true);
+              } else {
+                var mTap = stageMetrics(imgTap);
+                zoomScale = DOUBLE_TAP_ZOOM;
+                var rawTx = -(zoomScale - 1) * (e.changedTouches[0].clientX - mTap.cx);
+                var rawTy = -(zoomScale - 1) * (e.changedTouches[0].clientY - mTap.cy);
+                var clampedTap = clampPan(imgTap, zoomScale, rawTx, rawTy);
+                zoomX = clampedTap.x;
+                zoomY = clampedTap.y;
+                applyZoom(true);
+              }
+              return;
+            }
+            lastTap = { time: now, x: tapCandidate.x, y: tapCandidate.y };
+          } else {
+            lastTap = null;
+          }
+        }
+        tapCandidate = null;
+      }
+    }
+
+    stage.addEventListener('touchend', onTouchEnd);
+    stage.addEventListener('touchcancel', function () {
+      pinch = null;
+      pan = null;
+      tapCandidate = null;
+      if (zoomScale < 1.02 || zoomScale > MAX_ZOOM) {
+        if (zoomScale < 1.02) resetZoom(true);
+        else {
+          zoomScale = MAX_ZOOM;
+          var c = clampPan(currentImg(), zoomScale, zoomX, zoomY);
+          zoomX = c.x;
+          zoomY = c.y;
+          applyZoom(true);
+        }
+      }
+    });
+
+    // Prevent iOS Safari from zooming the outer dialog controls during a pinch gesture.
+    stage.addEventListener('gesturestart', function (e) { e.preventDefault(); }, { passive: false });
+    stage.addEventListener('gesturechange', function (e) { e.preventDefault(); }, { passive: false });
+
+    window.addEventListener('orientationchange', function () {
+      if (dialog.open && zoomScale > 1.001) resetZoom(false);
+    });
 
     // A click on the dark area around the photo closes the viewer.
     function outsidePhoto(e) {
-      var slide = e.target.closest ? e.target.closest('.carousel-slide') : null;
-      var img = slide && slide.querySelector('img');
+      var img = currentImg();
       var r = img && photoBox(img);
       if (!r) return false;
       return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
     }
     dialog.addEventListener('click', function (e) {
+      if (Date.now() < suppressCloseUntil) return;
+      if (e.target.closest && e.target.closest('.lb-btn')) return;
+      if (zoomScale > 1.001) {
+        if (outsidePhoto(e)) dialog.close();
+        return;
+      }
       if (e.target === dialog || e.target === stage || e.target.classList.contains('lb-inner') || outsidePhoto(e)) {
         dialog.close();
       }
     });
 
     dialog.addEventListener('close', function () {
+      resetZoom(false);
       viewerCarousel.cancel();
       stage.textContent = '';
       if (hero) hero.resume();

@@ -78,6 +78,9 @@
     saved: '',
     pendingDeletes: [],
     savedSelections: {}, // richKey -> { startPara, startOffset, endPara, endOffset, collapsed }
+    uploads: {},         // slotId -> { state, title, detail, percent, indeterminate, canCancel }
+    activeUploadSlot: '',
+    abortUpload: null,
     busy: false,
   };
 
@@ -417,10 +420,14 @@
   }
 
   function signOut() {
+    if (S.abortUpload) S.abortUpload();
     S.token = '';
     sessionStorage.removeItem('admin.token');
     S.model = null;
     S.slug = '';
+    S.uploads = {};
+    S.activeUploadSlot = '';
+    paintSavebarProgress();
     showScreen('login');
   }
 
@@ -451,6 +458,9 @@
       S.saved = snapshot();
       S.pendingDeletes = [];
       S.savedSelections = {};
+      S.uploads = {};
+      S.activeUploadSlot = '';
+      paintSavebarProgress();
       renderPicker();
       setStatus('');
       render();
@@ -480,6 +490,9 @@
     S.saved = '';
     S.pendingDeletes = [];
     S.savedSelections = {};
+    S.uploads = {};
+    S.activeUploadSlot = '';
+    paintSavebarProgress();
     renderPicker();
     setStatus('New profile. Add at least one cover photo, then save.');
     render();
@@ -703,8 +716,115 @@
       '<input data-field="' + esc(path) + '" value="' + esc(value) + '"' + styleAttr + (extra || '') + '></label>';
   }
 
-  function listCard(title, addControl, body) {
-    return '<section class="card"><div class="toolbar"><h2>' + esc(title) + '</h2>' + addControl + '</div>' + body + '</section>';
+  function formatBytes(bytes) {
+    var n = Number(bytes) || 0;
+    if (n >= 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';
+    if (n >= 1024) return Math.round(n / 1024) + ' KB';
+    return n + ' B';
+  }
+
+  function renderUploadPanelHtml(slotId, info) {
+    if (!info) return '';
+    var cls = 'upload-panel' +
+      (info.state === 'done' ? ' is-done' : '') +
+      (info.state === 'error' ? ' is-error' : '');
+    var pct = Math.max(0, Math.min(100, Math.round(info.percent || 0)));
+    var actionBtn = '';
+    if (info.state === 'uploading' && info.canCancel) {
+      actionBtn = '<button type="button" class="btn small ghost" data-action="cancel-upload" data-slot-id="' + esc(slotId) + '">Cancel</button>';
+    } else if (info.state === 'error' || info.state === 'done') {
+      actionBtn = '<button type="button" class="btn small ghost" data-action="dismiss-upload" data-slot-id="' + esc(slotId) + '">Dismiss</button>';
+    }
+    var track = info.state === 'error'
+      ? ''
+      : '<div class="upload-track' + (info.indeterminate ? ' is-indeterminate' : '') + '" role="progressbar"' +
+          ' aria-valuemin="0" aria-valuemax="100"' +
+          (info.indeterminate ? '' : ' aria-valuenow="' + pct + '"') + '>' +
+          '<div class="upload-fill" style="width:' + (info.indeterminate ? 38 : pct) + '%"></div>' +
+        '</div>';
+    return '<div class="' + cls + '" role="status" aria-live="polite">' +
+      '<div class="upload-head">' +
+        '<span class="upload-title">' + esc(info.title || '') + '</span>' +
+        '<span class="upload-meta"><span>' + esc(info.detail || '') + '</span>' + actionBtn + '</span>' +
+      '</div>' +
+      track +
+    '</div>';
+  }
+
+  function uploadSlotHtml(slotId) {
+    return '<div class="upload-slot" data-upload-slot="' + esc(slotId) + '">' +
+      renderUploadPanelHtml(slotId, S.uploads[slotId]) +
+    '</div>';
+  }
+
+  function paintUploadSlot(slotId) {
+    var root = $('editor-body');
+    if (root) {
+      var slotEl = root.querySelector('[data-upload-slot="' + slotId + '"]');
+      if (slotEl) slotEl.innerHTML = renderUploadPanelHtml(slotId, S.uploads[slotId]);
+    }
+    paintSavebarProgress();
+  }
+
+  function paintSavebarProgress() {
+    var bar = $('savebar-progress');
+    if (!bar) return;
+    var active = S.activeUploadSlot && S.uploads[S.activeUploadSlot];
+    if (!active || active.state !== 'uploading') {
+      bar.hidden = true;
+      bar.innerHTML = '';
+      return;
+    }
+    var pct = Math.max(0, Math.min(100, Math.round(active.percent || 0)));
+    bar.hidden = false;
+    bar.innerHTML =
+      '<div class="savebar-progress-head">' +
+        '<span>' + esc(active.title || 'Uploading…') + '</span>' +
+        '<span>' + esc(active.detail || '') + '</span>' +
+      '</div>' +
+      '<div class="upload-track' + (active.indeterminate ? ' is-indeterminate' : '') + '" role="progressbar"' +
+        ' aria-valuemin="0" aria-valuemax="100"' +
+        (active.indeterminate ? '' : ' aria-valuenow="' + pct + '"') + '>' +
+        '<div class="upload-fill" style="width:' + (active.indeterminate ? 38 : pct) + '%"></div>' +
+      '</div>';
+  }
+
+  function thumbBoxHtml(mediaHtml, loadingLabel) {
+    return '<div class="thumb-box is-loading">' +
+      mediaHtml +
+      '<div class="thumb-loader">' +
+        '<span data-thumb-status>' + esc(loadingLabel || 'Loading…') + '</span>' +
+        '<div class="thumb-loader-bar"></div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function syncMediaLoadStates() {
+    var root = $('editor-body');
+    if (!root) return;
+    var boxes = root.querySelectorAll('.thumb-box');
+    for (var i = 0; i < boxes.length; i++) {
+      var box = boxes[i];
+      var img = box.querySelector('img');
+      if (img && img.complete) {
+        box.classList.remove('is-loading');
+        if (img.naturalWidth === 0) {
+          box.classList.add('is-error');
+          var st = box.querySelector('[data-thumb-status]');
+          if (st) st.textContent = 'Preview unavailable';
+        }
+      }
+      var vid = box.querySelector('video');
+      if (vid && vid.readyState >= 1) {
+        box.classList.remove('is-loading');
+      }
+    }
+  }
+
+  function listCard(title, addControl, body, uploadSlotId) {
+    return '<section class="card"><div class="toolbar"><h2>' + esc(title) + '</h2>' + addControl + '</div>' +
+      (uploadSlotId ? uploadSlotHtml(uploadSlotId) : '') +
+      body + '</section>';
   }
 
   function moveButtons(list, i, count) {
@@ -719,14 +839,15 @@
   }
 
   function uploadButton(label, kind, extra) {
-    return '<label class="btn small file-btn">' + esc(label) +
-      '<input type="file" data-upload="' + kind + '"' + (extra || '') + '></label>';
+    var uploading = Boolean(S.activeUploadSlot);
+    return '<label class="btn small file-btn' + (uploading ? ' is-uploading' : '') + '">' + esc(label) +
+      '<input type="file" data-upload="' + kind + '"' + (uploading ? ' disabled' : '') + (extra || '') + '></label>';
   }
 
   function coverHtml() {
     return S.model.cover.map(function (c, i) {
       return '<div class="item">' +
-        '<img class="thumb" alt="" src="' + esc(mediaSrc(c.file)) + '" loading="lazy">' +
+        thumbBoxHtml('<img class="thumb" alt="" src="' + esc(mediaSrc(c.file)) + '" loading="lazy">', 'Loading photo…') +
         '<div><div class="item-fields">' +
         '<label class="full">Alt text (describe the photo for screen readers)' +
         '<input data-list="cover" data-i="' + i + '" data-key="alt" value="' + esc(c.alt) + '"></label>' +
@@ -739,7 +860,7 @@
     var captionStyle = esc(boxInlineCss('captions'));
     return S.model.photos.map(function (p, i) {
       return '<div class="item">' +
-        '<img class="thumb" alt="" src="' + esc(mediaSrc(p.file)) + '" loading="lazy">' +
+        thumbBoxHtml('<img class="thumb" alt="" src="' + esc(mediaSrc(p.file)) + '" loading="lazy">', 'Loading photo…') +
         '<div><div class="item-fields">' +
         '<label>Title<input data-list="photos" data-i="' + i + '" data-key="title" value="' + esc(p.title) + '"></label>' +
         '<label>Category (filter &amp; caption)<input data-list="photos" data-i="' + i + '" data-key="category" data-styled-slot="captions" style="' + captionStyle + '" value="' + esc(p.category) + '"></label>' +
@@ -754,16 +875,19 @@
     var videoStyle = esc(boxInlineCss('videoText'));
     var captionStyle = esc(boxInlineCss('captions'));
     return S.model.videos.map(function (v, i) {
-      var poster = v.poster
-        ? '<img class="thumb wide" alt="" src="' + esc(mediaSrc(v.poster)) + '" loading="lazy">'
-        : '<div class="thumb wide" aria-hidden="true"></div>';
-      return '<div class="item video">' + poster +
+      var preview = v.poster
+        ? thumbBoxHtml('<img class="thumb wide" alt="" src="' + esc(mediaSrc(v.poster)) + '" loading="lazy">', 'Loading poster…')
+        : (v.file
+          ? thumbBoxHtml('<video class="thumb wide" preload="metadata" muted playsinline src="' + esc(mediaSrc(v.file)) + '#t=0.001"></video>', 'Loading video…')
+          : '<div class="thumb-box"><div class="thumb wide" aria-hidden="true"></div></div>');
+      return '<div class="item video">' + preview +
         '<div><div class="item-fields">' +
         '<label>Title<input data-list="videos" data-i="' + i + '" data-key="title" data-styled-slot="videoText" style="' + videoStyle + '" value="' + esc(v.title) + '"></label>' +
         '<label>Category<input data-list="videos" data-i="' + i + '" data-key="category" data-styled-slot="captions" style="' + captionStyle + '" value="' + esc(v.category) + '"></label>' +
         '<label class="full">Description<input data-list="videos" data-i="' + i + '" data-key="description" data-styled-slot="videoText" style="' + videoStyle + '" value="' + esc(v.description) + '"></label>' +
         '</div><p class="muted">Video: ' + esc(v.file ? (isHttp(v.file) ? 'hosted' : v.file) : '') + '</p>' +
-        '<div class="item-actions">' + uploadButton(v.poster ? 'Replace poster image' : 'Add poster image', 'poster', ' data-i="' + i + '"') +
+        uploadSlotHtml('poster-' + i) +
+        '<div class="item-actions">' + uploadButton(v.poster ? 'Replace poster image' : 'Add poster image', 'poster', ' accept="image/*" data-i="' + i + '"') +
         moveButtons('videos', i, S.model.videos.length) + removeButton('videos', i) + '</div></div></div>';
     }).join('') || '<p class="muted">No videos yet.</p>';
   }
@@ -866,7 +990,7 @@
       field('Website (full link)', 'contact.website', contact.website || '', '', 'contact'),
       '</div></div></section>',
 
-      listCard('Cover photos (hero slideshow)', uploadButton('Add cover photo', 'cover', ' accept="image/*"'), '<div class="list">' + coverHtml() + '</div>'),
+      listCard('Cover photos (hero slideshow)', uploadButton('Add cover photo', 'cover', ' accept="image/*" multiple'), '<div class="list">' + coverHtml() + '</div>', 'cover'),
 
       listCard(
         'Portfolio photos',
@@ -896,12 +1020,13 @@
           '</div>' +
           groupFormatBarHtml('captions', 'Captions & filters font:') +
           '<div class="list">' + photosHtml() + '</div>' +
-        '</div>'
+        '</div>',
+        'photo'
       ),
 
       listCard(
         'Videos',
-        uploadButton('Add video', 'video', ' accept="video/mp4,video/webm,video/x-m4v"'),
+        uploadButton('Add video', 'video', ' accept="video/*" multiple'),
         '<div class="stack">' +
           '<div class="grid">' +
             composerBoxHtml({
@@ -927,9 +1052,11 @@
           '</div>' +
           groupFormatBarHtml('videoText', 'Video titles & descriptions font:') +
           '<div class="list">' + videosHtml() + '</div>' +
-        '</div>'
+        '</div>',
+        'video'
       ),
     ].join('');
+    syncMediaLoadStates();
     updateDirtyNote();
   }
 
@@ -1429,6 +1556,18 @@
     var btn = e.target.closest('[data-action]');
     if (!btn || btn.disabled) return;
     var action = btn.getAttribute('data-action');
+    if (action === 'cancel-upload') {
+      if (S.abortUpload) S.abortUpload();
+      return;
+    }
+    if (action === 'dismiss-upload') {
+      var dismissSlot = btn.getAttribute('data-slot-id');
+      if (dismissSlot && S.uploads[dismissSlot]) {
+        delete S.uploads[dismissSlot];
+        paintUploadSlot(dismissSlot);
+      }
+      return;
+    }
     var list = btn.getAttribute('data-list');
     var i = Number(btn.getAttribute('data-i'));
     if (action === 'remove') {
@@ -1448,6 +1587,85 @@
 
   // ---- Uploads ----------------------------------------------------------
 
+  var ALLOWED_IMAGE_EXT = { '.jpg': 1, '.jpeg': 1, '.png': 1, '.webp': 1, '.avif': 1, '.gif': 1 };
+  var ALLOWED_VIDEO_EXT = { '.mp4': 1, '.webm': 1, '.m4v': 1, '.mov': 1 };
+  var MIME_TO_EXT = {
+    'image/jpeg': '.jpg',
+    'image/jpg': '.jpg',
+    'image/png': '.png',
+    'image/webp': '.webp',
+    'image/avif': '.avif',
+    'image/gif': '.gif',
+    'video/mp4': '.mp4',
+    'video/webm': '.webm',
+    'video/x-m4v': '.m4v',
+    'video/m4v': '.m4v',
+    'video/quicktime': '.mov',
+  };
+
+  function extOfName(name) {
+    var s = String(name || '');
+    var dot = s.lastIndexOf('.');
+    return dot >= 0 ? s.slice(dot).toLowerCase() : '';
+  }
+
+  function prepareUploadFile(file, expectVideo) {
+    var rawName = String((file && file.name) || '').trim();
+    var ext = extOfName(rawName);
+    var mime = String((file && file.type) || '').split(';')[0].trim().toLowerCase();
+    var uploadName = rawName || (expectVideo ? 'video' : 'photo');
+
+    if (!ALLOWED_IMAGE_EXT[ext] && !ALLOWED_VIDEO_EXT[ext]) {
+      var mapped = MIME_TO_EXT[mime] || '';
+      if (mapped) {
+        ext = mapped;
+        uploadName = (rawName || (expectVideo ? 'video' : 'photo')) + mapped;
+      }
+    }
+
+    if (!file || typeof file.size !== 'number' || file.size <= 0) {
+      return {
+        ok: false,
+        displayName: uploadName,
+        error: 'Could not read "' + uploadName + '" (0 bytes). Make sure it is downloaded on your phone and try again.',
+      };
+    }
+
+    if (expectVideo) {
+      if (!ALLOWED_VIDEO_EXT[ext]) {
+        return {
+          ok: false,
+          displayName: uploadName,
+          error: '"' + uploadName + '" is not a supported video format. Use MP4, MOV, WebM or M4V.',
+        };
+      }
+      if (file.size > MAX_VIDEO) {
+        return {
+          ok: false,
+          displayName: uploadName,
+          error: '"' + uploadName + '" is ' + formatBytes(file.size) + ' — videos must be 95 MB or smaller.',
+        };
+      }
+    } else {
+      if (!ALLOWED_IMAGE_EXT[ext]) {
+        return {
+          ok: false,
+          displayName: uploadName,
+          error: '"' + uploadName + '" is not a supported image format. Use JPG, PNG, WebP, AVIF or GIF.',
+        };
+      }
+      if (file.size > MAX_IMAGE) {
+        return {
+          ok: false,
+          displayName: uploadName,
+          error: '"' + uploadName + '" is ' + formatBytes(file.size) + ' — images must be 25 MB or smaller.',
+        };
+      }
+    }
+
+    return { ok: true, uploadName: uploadName, displayName: rawName || uploadName };
+  }
+
   function imageSize(file) {
     if (typeof createImageBitmap !== 'function') return Promise.resolve(null);
     return createImageBitmap(file).then(function (bmp) {
@@ -1457,14 +1675,100 @@
     }, function () { return null; });
   }
 
-  function titleFrom(file) {
-    return file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim();
+  function titleFrom(nameOrFile, fallback) {
+    var name = typeof nameOrFile === 'string' ? nameOrFile : String((nameOrFile && nameOrFile.name) || '');
+    var cleaned = name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim();
+    return cleaned || fallback || 'Untitled';
   }
 
-  function uploadFile(file) {
+  function uploadFile(file, uploadName, hooks) {
+    hooks = hooks || {};
     var form = new FormData();
-    form.append('file', file);
-    return api('POST', profilePath(S.slug, '/media'), { form: form });
+    form.append('file', file, uploadName || file.name || 'upload');
+    var url = API_BASE + profilePath(S.slug, '/media');
+
+    if (typeof XMLHttpRequest !== 'function') {
+      return api('POST', profilePath(S.slug, '/media'), { form: form });
+    }
+
+    return new Promise(function (resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', url, true);
+      xhr.setRequestHeader('Authorization', 'Bearer ' + S.token);
+
+      if (hooks.registerAbort) {
+        hooks.registerAbort(function () {
+          try { xhr.abort(); } catch (_) {}
+        });
+      }
+
+      if (xhr.upload) {
+        xhr.upload.addEventListener('progress', function (e) {
+          if (hooks.onProgress) {
+            hooks.onProgress(e.loaded || 0, e.lengthComputable ? e.total : (file.size || 0), e.lengthComputable);
+          }
+        });
+        xhr.upload.addEventListener('load', function () {
+          if (hooks.onSent) hooks.onSent();
+        });
+      }
+
+      xhr.addEventListener('load', function () {
+        var data = {};
+        try { data = JSON.parse(xhr.responseText || '{}'); } catch (_) {}
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(data);
+          return;
+        }
+        var contentType = (xhr.getResponseHeader && xhr.getResponseHeader('content-type')) || '';
+        var fallback = xhr.status === 404 && contentType.indexOf('application/json') === -1
+          ? 'Admin API not found at /api. Deploy on Cloudflare Pages or set apiBase in admin/config.js.'
+          : (xhr.status === 413
+            ? 'The file is too large for the server limit (95 MB maximum).'
+            : 'The upload failed (' + xhr.status + ').');
+        var err = new Error(data.error || fallback);
+        err.status = xhr.status;
+        reject(err);
+      });
+
+      xhr.addEventListener('error', function () {
+        reject(new Error('Upload interrupted. Check your internet connection and try again.'));
+      });
+
+      xhr.addEventListener('abort', function () {
+        var abortErr = new Error('Upload cancelled.');
+        abortErr.aborted = true;
+        reject(abortErr);
+      });
+
+      xhr.send(form);
+    });
+  }
+
+  var uploadDoneTimers = {};
+  function scheduleUploadAutoClear(slotId) {
+    clearTimeout(uploadDoneTimers[slotId]);
+    uploadDoneTimers[slotId] = setTimeout(function () {
+      if (S.uploads[slotId] && S.uploads[slotId].state === 'done') {
+        delete S.uploads[slotId];
+        paintUploadSlot(slotId);
+      }
+    }, 5000);
+  }
+
+  function showUploadError(slotId, title, message) {
+    clearTimeout(uploadDoneTimers[slotId]);
+    S.uploads[slotId] = {
+      state: 'error',
+      title: title || 'Upload failed',
+      detail: message,
+      percent: 0,
+      indeterminate: false,
+      canCancel: false,
+    };
+    paintUploadSlot(slotId);
+    setStatus(message, 'error');
+    toast(message);
   }
 
   function onChange(e) {
@@ -1475,46 +1779,186 @@
     }
     var kind = input.getAttribute('data-upload');
     if (!kind || !input.files || !input.files.length) return;
+    if (S.activeUploadSlot) {
+      toast('Please wait for the current upload to finish.');
+      return;
+    }
+    // Keep the File list alive until upload completes so mobile browsers do not
+    // revoke temporary gallery file handles before FormData/XHR reads them.
     var files = Array.prototype.slice.call(input.files);
-    input.value = '';
     var index = Number(input.getAttribute('data-i'));
-    if (kind === 'poster') return uploadPoster(files[0], index);
-    files.reduce(function (chain, file) {
-      return chain.then(function () { return addMedia(kind, file); });
-    }, Promise.resolve());
+    var doneReset = function () {
+      try { input.value = ''; } catch (_) {}
+    };
+
+    if (kind === 'poster') {
+      uploadPoster(files[0], index).then(doneReset, doneReset);
+      return;
+    }
+
+    var cancelled = false;
+    files.reduce(function (chain, file, idx) {
+      return chain.then(function () {
+        if (cancelled) return;
+        return addMedia(kind, file, idx, files.length).then(function (res) {
+          if (res && res.aborted) cancelled = true;
+        });
+      });
+    }, Promise.resolve()).then(doneReset, doneReset);
   }
 
-  function addMedia(kind, file) {
+  function addMedia(kind, file, fileIndex, totalFiles) {
     var isVideo = kind === 'video';
-    var limit = isVideo ? MAX_VIDEO : MAX_IMAGE;
-    if (file.size > limit) {
-      toast(file.name + ' is too large (' + (isVideo ? '95' : '25') + ' MB maximum).');
-      return Promise.resolve();
+    var slotId = kind;
+    var prep = prepareUploadFile(file, isVideo);
+    if (!prep.ok) {
+      showUploadError(slotId, 'Cannot add ' + prep.displayName, prep.error);
+      return Promise.resolve({ ok: false });
     }
-    setBusy(true, 'Uploading ' + file.name + '…');
-    return Promise.all([uploadFile(file), isVideo ? Promise.resolve(null) : imageSize(file)]).then(function (results) {
+
+    clearTimeout(uploadDoneTimers[slotId]);
+    var batchPrefix = totalFiles > 1 ? ' (' + (fileIndex + 1) + ' of ' + totalFiles + ')' : '';
+    var titleText = 'Uploading ' + (isVideo ? 'video' : (kind === 'cover' ? 'cover photo' : 'photo')) + batchPrefix + ': ' + prep.displayName;
+
+    S.activeUploadSlot = slotId;
+    S.uploads[slotId] = {
+      state: 'uploading',
+      title: titleText,
+      detail: 'Preparing ' + formatBytes(file.size) + '…',
+      percent: 0,
+      indeterminate: true,
+      canCancel: true,
+    };
+    setBusy(true, titleText + '…');
+    paintUploadSlot(slotId);
+
+    var hooks = {
+      registerAbort: function (fn) { S.abortUpload = fn; },
+      onProgress: function (loaded, total, computable) {
+        if (!S.uploads[slotId] || S.uploads[slotId].state !== 'uploading') return;
+        if (computable && total > 0) {
+          var pct = Math.min(95, Math.max(1, Math.round((loaded / total) * 95)));
+          S.uploads[slotId].percent = pct;
+          S.uploads[slotId].indeterminate = false;
+          S.uploads[slotId].detail = pct + '% · ' + formatBytes(loaded) + ' / ' + formatBytes(total);
+        } else {
+          S.uploads[slotId].indeterminate = true;
+          S.uploads[slotId].detail = formatBytes(loaded) + ' sent…';
+        }
+        paintUploadSlot(slotId);
+      },
+      onSent: function () {
+        if (!S.uploads[slotId] || S.uploads[slotId].state !== 'uploading') return;
+        S.uploads[slotId].percent = 97;
+        S.uploads[slotId].indeterminate = false;
+        S.uploads[slotId].detail = '97% · Saving to cloud…';
+        S.uploads[slotId].canCancel = false;
+        paintUploadSlot(slotId);
+      },
+    };
+
+    var fallbackTitle = isVideo ? 'Video ' + (S.model.videos.length + 1) : (kind === 'cover' ? 'Cover photo' : 'Photo ' + (S.model.photos.length + 1));
+
+    return Promise.all([
+      uploadFile(file, prep.uploadName, hooks),
+      isVideo ? Promise.resolve(null) : imageSize(file),
+    ]).then(function (results) {
       var uploaded = results[0];
       var size = results[1];
       if (kind === 'cover') {
-        S.model.cover.push(withSize({ file: uploaded.url, alt: titleFrom(file) }, size));
+        S.model.cover.push(withSize({ file: uploaded.url, alt: titleFrom(prep.uploadName, fallbackTitle) }, size));
       } else if (kind === 'photo') {
-        S.model.photos.push(withSize({ file: uploaded.url, title: titleFrom(file), category: 'Portfolio', year: '', alt: '' }, size));
+        S.model.photos.push(withSize({ file: uploaded.url, title: titleFrom(prep.uploadName, fallbackTitle), category: 'Portfolio', year: '', alt: '' }, size));
       } else if (kind === 'video') {
-        S.model.videos.push({ file: uploaded.url, title: titleFrom(file), category: '', description: '' });
+        S.model.videos.push({ file: uploaded.url, title: titleFrom(prep.uploadName, fallbackTitle), category: '', description: '' });
       }
-      setStatus('Uploaded ' + file.name + '. Save to publish it.', 'ok');
+      S.abortUpload = null;
+      var isLast = !(totalFiles > 1 && fileIndex + 1 < totalFiles);
+      if (isLast) {
+        S.activeUploadSlot = '';
+        S.uploads[slotId] = {
+          state: 'done',
+          title: (totalFiles > 1 ? 'Uploaded ' + totalFiles + ' files' : 'Uploaded ' + prep.displayName),
+          detail: '100% · Save changes to publish',
+          percent: 100,
+          indeterminate: false,
+          canCancel: false,
+        };
+        scheduleUploadAutoClear(slotId);
+      }
+      setStatus('Uploaded ' + prep.displayName + '. Save to publish it.', 'ok');
       render();
+      paintSavebarProgress();
+      return { ok: true };
     }).catch(function (err) {
-      setStatus(err.message, 'error');
-    }).then(function () { setBusy(false); });
+      S.abortUpload = null;
+      S.activeUploadSlot = '';
+      if (err && err.aborted) {
+        delete S.uploads[slotId];
+        paintUploadSlot(slotId);
+        setStatus('Upload cancelled.');
+        toast('Upload cancelled');
+        render();
+        return { aborted: true };
+      }
+      showUploadError(slotId, 'Upload failed: ' + prep.displayName, (err && err.message) || 'Upload failed.');
+      render();
+      return { ok: false };
+    }).then(function (outcome) {
+      if (!S.activeUploadSlot) setBusy(false);
+      return outcome;
+    });
   }
 
   function uploadPoster(file, index) {
     var video = S.model.videos[index];
     if (!video) return Promise.resolve();
-    if (file.size > MAX_IMAGE) { toast('The poster image must be 25 MB or smaller.'); return Promise.resolve(); }
+    var slotId = 'poster-' + index;
+    var prep = prepareUploadFile(file, false);
+    if (!prep.ok) {
+      showUploadError(slotId, 'Cannot add poster', prep.error);
+      return Promise.resolve();
+    }
+
+    clearTimeout(uploadDoneTimers[slotId]);
+    S.activeUploadSlot = slotId;
+    S.uploads[slotId] = {
+      state: 'uploading',
+      title: 'Uploading poster: ' + prep.displayName,
+      detail: 'Preparing ' + formatBytes(file.size) + '…',
+      percent: 0,
+      indeterminate: true,
+      canCancel: true,
+    };
     setBusy(true, 'Uploading poster…');
-    return Promise.all([uploadFile(file), imageSize(file)]).then(function (results) {
+    paintUploadSlot(slotId);
+
+    var hooks = {
+      registerAbort: function (fn) { S.abortUpload = fn; },
+      onProgress: function (loaded, total, computable) {
+        if (!S.uploads[slotId] || S.uploads[slotId].state !== 'uploading') return;
+        if (computable && total > 0) {
+          var pct = Math.min(95, Math.max(1, Math.round((loaded / total) * 95)));
+          S.uploads[slotId].percent = pct;
+          S.uploads[slotId].indeterminate = false;
+          S.uploads[slotId].detail = pct + '% · ' + formatBytes(loaded) + ' / ' + formatBytes(total);
+        } else {
+          S.uploads[slotId].indeterminate = true;
+          S.uploads[slotId].detail = formatBytes(loaded) + ' sent…';
+        }
+        paintUploadSlot(slotId);
+      },
+      onSent: function () {
+        if (!S.uploads[slotId] || S.uploads[slotId].state !== 'uploading') return;
+        S.uploads[slotId].percent = 97;
+        S.uploads[slotId].indeterminate = false;
+        S.uploads[slotId].detail = '97% · Saving to cloud…';
+        S.uploads[slotId].canCancel = false;
+        paintUploadSlot(slotId);
+      },
+    };
+
+    return Promise.all([uploadFile(file, prep.uploadName, hooks), imageSize(file)]).then(function (results) {
       var uploaded = results[0];
       var size = results[1];
       if (video.poster && isHttp(video.poster) && S.pendingDeletes.indexOf(video.poster) === -1) {
@@ -1522,16 +1966,61 @@
       }
       video.poster = uploaded.url;
       if (size) { video.posterWidth = size.width; video.posterHeight = size.height; }
+      S.abortUpload = null;
+      S.activeUploadSlot = '';
+      S.uploads[slotId] = {
+        state: 'done',
+        title: 'Poster uploaded',
+        detail: '100% · Save changes to publish',
+        percent: 100,
+        indeterminate: false,
+        canCancel: false,
+      };
+      scheduleUploadAutoClear(slotId);
       setStatus('Poster uploaded. Save to publish it.', 'ok');
       render();
+      paintSavebarProgress();
     }).catch(function (err) {
-      setStatus(err.message, 'error');
-    }).then(function () { setBusy(false); });
+      S.abortUpload = null;
+      S.activeUploadSlot = '';
+      if (err && err.aborted) {
+        delete S.uploads[slotId];
+        paintUploadSlot(slotId);
+        setStatus('Upload cancelled.');
+        toast('Upload cancelled');
+        render();
+        return;
+      }
+      showUploadError(slotId, 'Poster upload failed', (err && err.message) || 'Poster upload failed.');
+      render();
+    }).then(function () {
+      if (!S.activeUploadSlot) setBusy(false);
+    });
   }
 
   function withSize(entry, size) {
     if (size) { entry.width = size.width; entry.height = size.height; }
     return entry;
+  }
+
+  function onMediaReady(e) {
+    var t = e.target;
+    if (!t || (t.tagName !== 'IMG' && t.tagName !== 'VIDEO')) return;
+    var box = t.closest ? t.closest('.thumb-box') : null;
+    if (!box) return;
+    box.classList.remove('is-loading');
+    box.classList.remove('is-error');
+  }
+
+  function onMediaError(e) {
+    var t = e.target;
+    if (!t || (t.tagName !== 'IMG' && t.tagName !== 'VIDEO')) return;
+    var box = t.closest ? t.closest('.thumb-box') : null;
+    if (!box) return;
+    box.classList.remove('is-loading');
+    box.classList.add('is-error');
+    var st = box.querySelector('[data-thumb-status]');
+    if (st) st.textContent = 'Preview unavailable';
   }
 
   // ---- Saving -----------------------------------------------------------
@@ -1621,6 +2110,10 @@
   body.addEventListener('paste', onPaste);
   body.addEventListener('keyup', captureSelection);
   body.addEventListener('mouseup', captureSelection);
+  body.addEventListener('load', onMediaReady, true);
+  body.addEventListener('loadedmetadata', onMediaReady, true);
+  body.addEventListener('loadeddata', onMediaReady, true);
+  body.addEventListener('error', onMediaError, true);
   document.addEventListener('selectionchange', captureSelection);
 
   window.addEventListener('beforeunload', function (e) {

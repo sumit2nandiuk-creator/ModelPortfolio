@@ -16,7 +16,21 @@ export const IMAGE_TYPES = {
   '.webp': 'image/webp', '.avif': 'image/avif', '.gif': 'image/gif',
 };
 export const VIDEO_TYPES = {
-  '.mp4': 'video/mp4', '.webm': 'video/webm', '.m4v': 'video/x-m4v',
+  '.mp4': 'video/mp4', '.webm': 'video/webm', '.m4v': 'video/x-m4v', '.mov': 'video/quicktime',
+};
+
+const MIME_EXTENSIONS = {
+  'image/jpeg': '.jpg',
+  'image/jpg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'image/avif': '.avif',
+  'image/gif': '.gif',
+  'video/mp4': '.mp4',
+  'video/webm': '.webm',
+  'video/x-m4v': '.m4v',
+  'video/m4v': '.m4v',
+  'video/quicktime': '.mov',
 };
 
 export const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
@@ -83,18 +97,27 @@ export function parseByteRange(rangeHeader, size) {
   return { type: 'range', offset: start, length: end - start + 1, start, end };
 }
 
-// Decides whether an uploaded file may be stored. Returns { ok, kind, contentType } or { ok: false, error }.
-export function checkUpload({ name, size }) {
-  const ext = extensionOf(name);
+// Decides whether an uploaded file may be stored. Returns { ok, kind, contentType, normalizedName } or { ok: false, error }.
+export function checkUpload({ name, size, type }) {
+  let ext = extensionOf(name);
+  let normalizedName = String(name ?? '');
+  if (!IMAGE_TYPES[ext] && !VIDEO_TYPES[ext]) {
+    const cleanMime = String(type ?? '').split(';')[0].trim().toLowerCase();
+    const fallbackExt = MIME_EXTENSIONS[cleanMime] || '';
+    if (fallbackExt) {
+      ext = fallbackExt;
+      normalizedName = `${normalizedName || 'media'}${fallbackExt}`;
+    }
+  }
   if (IMAGE_TYPES[ext]) {
     if (size > MAX_IMAGE_BYTES) return { ok: false, error: 'Images must be 25 MB or smaller.' };
-    return { ok: true, kind: 'image', contentType: IMAGE_TYPES[ext] };
+    return { ok: true, kind: 'image', contentType: IMAGE_TYPES[ext], normalizedName };
   }
   if (VIDEO_TYPES[ext]) {
     if (size > MAX_VIDEO_BYTES) return { ok: false, error: 'Videos must be 95 MB or smaller.' };
-    return { ok: true, kind: 'video', contentType: VIDEO_TYPES[ext] };
+    return { ok: true, kind: 'video', contentType: VIDEO_TYPES[ext], normalizedName };
   }
-  return { ok: false, error: 'Unsupported file type. Use JPG, PNG, WebP, AVIF, MP4, WebM or M4V.' };
+  return { ok: false, error: 'Unsupported file type. Use JPG, PNG, WebP, AVIF, GIF, MP4, MOV, WebM or M4V.' };
 }
 
 // A storage key that starts with the model slug, so one model's uploads never mix with another's.

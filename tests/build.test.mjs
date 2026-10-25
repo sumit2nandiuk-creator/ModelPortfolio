@@ -673,3 +673,11 @@ test('sections use balanced vertical padding without extra bottom gaps after sta
   assert.match(css, /\.gallery \{[\s\S]*?margin-bottom: calc\(-1 \* clamp\(16px, 2vw, 28px\)\);/);
   assert.match(css, /@media \(max-width: 560px\) \{[\s\S]*?\.gallery \{\s*display: grid;\s*gap: 20px;\s*margin-bottom: 0;\s*\}/);
 });
+
+test('popup stage preserves pan-y swipe when unzoomed and switches to touch-action: none when zoomed', async () => {
+  const css = await fs.readFile(path.join(siteDir, 'assets', 'site.css'), 'utf8');
+  assert.match(css, /\.lb-stage \{[\s\S]*?touch-action: pan-y;[\s\S]*?\}/);
+  assert.match(css, /\.lb-stage\.is-zoomed \{\s*touch-action: none;\s*\}/);
+  assert.match(css, /\.lb-stage \.carousel-slide img \{[\s\S]*?transform-origin: 50% 50%;[\s\S]*?\}/);
+});
+

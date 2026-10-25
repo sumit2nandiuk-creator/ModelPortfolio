@@ -687,7 +687,7 @@ test('email-style text boxes support custom copy, inline rich-text runs, box fon
     assert.match(html, /--font-portfolio-heading-align: center/);
     // Custom section copy & inline formatted runs render cleanly and escape HTML tags.
     assert.match(html, /Bridal &amp; Editorial/);
-    assert.match(html, /Selected Works/);
+    assert.doesNotMatch(html, /<h2 id="portfolio-title"/);
     assert.match(html, /Book Styled Model today\./);
     assert.match(html, /<span class="brand-given"><strong>Styled<\/strong><\/span>/);
     assert.match(html, /<span class="brand-family"><span style="font-family:&#39;Great Vibes&#39;, cursive;color:#c9a77d"><em>Model<\/em><\/span><\/span>/);

@@ -936,33 +936,139 @@
     });
   }
 
-  // ---- Video frame sizing & thumbnails -------------------------------------
+  // ---- Row & video frame sizing + thumbnails -------------------------------
   var UNIFORM_FRAME = { w: 2, h: 3 };
+  var mediaRows = Array.prototype.slice.call(document.querySelectorAll('[data-media-row]'));
   var videoEls = Array.prototype.slice.call(document.querySelectorAll('.video-frame video'));
   var hasPortfolioPhotos = document.querySelectorAll('.gallery-btn').length > 0;
 
-  function rowHasPhotos(videoEl) {
-    var row = videoEl && videoEl.closest ? videoEl.closest('[data-media-row]') : null;
-    if (!row) return false;
-    if (row.getAttribute && row.getAttribute('data-has-photos') === '1') return true;
-    return Boolean(row.querySelector('.gallery-btn'));
+  function setRowFrameRatio(row, ratioText) {
+    if (!row || !row.style) return;
+    if (typeof row.style.setProperty === 'function') {
+      if (ratioText) row.style.setProperty('--row-frame-ratio', ratioText);
+      else if (typeof row.style.removeProperty === 'function') row.style.removeProperty('--row-frame-ratio');
+    } else {
+      row.style['--row-frame-ratio'] = ratioText || '';
+    }
   }
 
-  function targetFrameDimsForVideo(videoEl) {
-    // 1. Whenever photos exist beside the video in the same category row, match the uniform 2:3 photo frame.
-    if (rowHasPhotos(videoEl)) return UNIFORM_FRAME;
+  function readImgDims(img) {
+    if (!img) return null;
+    if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+      return { w: img.naturalWidth, h: img.naturalHeight };
+    }
+    var aw = Number(img.getAttribute && img.getAttribute('width'));
+    var ah = Number(img.getAttribute && img.getAttribute('height'));
+    if (aw > 0 && ah > 0) return { w: aw, h: ah };
+    return null;
+  }
 
-    // 2. Category has no photos beside the video: keep landscape videos in their natural landscape ratio!
-    var vw = videoEl.videoWidth;
-    var vh = videoEl.videoHeight;
-    if (vw > 0 && vh > 0) {
-      if (vw >= vh) return { w: vw, h: vh };
-      return hasPortfolioPhotos ? UNIFORM_FRAME : { w: vw, h: vh };
+  function readVideoNativeDims(v) {
+    if (!v) return null;
+    if (v.videoWidth > 0 && v.videoHeight > 0) {
+      return { w: v.videoWidth, h: v.videoHeight };
+    }
+    var nw = Number(v.getAttribute && v.getAttribute('data-natural-w'));
+    var nh = Number(v.getAttribute && v.getAttribute('data-natural-h'));
+    if (nw > 0 && nh > 0) return { w: nw, h: nh };
+    return null;
+  }
+
+  function landscapeFrameForDims(dims) {
+    if (!dims.length) return { w: 3, h: 2 };
+    if (dims.length === 1) return { w: dims[0].w, h: dims[0].h };
+    var ratios = dims.map(function (d) { return d.w / d.h; }).sort(function (a, b) { return a - b; });
+    if (ratios[ratios.length - 1] - ratios[0] <= 0.02) {
+      return { w: dims[0].w, h: dims[0].h };
+    }
+    var mid = Math.floor(ratios.length / 2);
+    var median = ratios.length % 2 === 1 ? ratios[mid] : (ratios[mid - 1] + ratios[mid]) / 2;
+    var clamped = Math.min(2.2, Math.max(1.25, median));
+    return { w: Math.round(clamped * 1000), h: 1000 };
+  }
+
+  function inspectMediaRow(row) {
+    if (!row) {
+      return { vids: [], btns: [], hasPhotos: false, allLandscape: false, rowLandscapeFrame: null };
+    }
+    var vids = Array.prototype.slice.call(row.querySelectorAll('.video-frame video'));
+    var btns = Array.prototype.slice.call(row.querySelectorAll('.gallery-btn'));
+    var hasPhotos = btns.length > 0 || (row.getAttribute && row.getAttribute('data-has-photos') === '1');
+    var knownDims = [];
+    vids.forEach(function (v) {
+      var d = readVideoNativeDims(v);
+      if (d) knownDims.push(d);
+    });
+    btns.forEach(function (btn) {
+      var img = btn.querySelector ? btn.querySelector('img') : null;
+      var d = readImgDims(img);
+      if (d) knownDims.push(d);
+    });
+    var totalCount = vids.length + Math.max(btns.length, (!btns.length && hasPhotos) ? 1 : 0);
+    var allLandscape =
+      totalCount > 0 &&
+      knownDims.length === totalCount &&
+      knownDims.every(function (d) { return d.w > d.h; });
+    var rowLandscapeFrame = (allLandscape && hasPhotos) ? landscapeFrameForDims(knownDims) : null;
+    return {
+      vids: vids,
+      btns: btns,
+      hasPhotos: hasPhotos,
+      allLandscape: allLandscape,
+      rowLandscapeFrame: rowLandscapeFrame,
+    };
+  }
+
+  function targetFrameDimsForVideo(videoEl, rowInfo) {
+    var row = videoEl && videoEl.closest ? videoEl.closest('[data-media-row]') : null;
+    var info = rowInfo || inspectMediaRow(row);
+    var nativeDims = readVideoNativeDims(videoEl);
+
+    if (info.allLandscape) {
+      return info.hasPhotos ? info.rowLandscapeFrame : nativeDims;
+    }
+    if (info.hasPhotos) {
+      return UNIFORM_FRAME;
+    }
+    if (nativeDims) {
+      if (nativeDims.w > nativeDims.h) return nativeDims;
+      return hasPortfolioPhotos ? UNIFORM_FRAME : nativeDims;
     }
     return null;
   }
 
+  function syncMediaRowFraming(row) {
+    if (!row) return;
+    var info = inspectMediaRow(row);
+    row.classList.toggle('is-landscape-row', info.allLandscape);
+    if (info.rowLandscapeFrame) {
+      setRowFrameRatio(row, info.rowLandscapeFrame.w + ' / ' + info.rowLandscapeFrame.h);
+    } else {
+      setRowFrameRatio(row, '');
+    }
+    info.vids.forEach(function (videoEl) {
+      var frameDims = targetFrameDimsForVideo(videoEl, info);
+      if (!frameDims) return;
+      var card = videoEl.closest ? videoEl.closest('.video-card') : null;
+      var portrait = frameDims.h > frameDims.w;
+      videoEl.style.aspectRatio = frameDims.w + ' / ' + frameDims.h;
+      if (card) {
+        card.classList.toggle('is-portrait', portrait);
+        card.classList.toggle('is-landscape', !portrait);
+      }
+      if (typeof videoEl._onFrameRatioSync === 'function') {
+        videoEl._onFrameRatioSync(frameDims.w / frameDims.h);
+      }
+    });
+    syncMediaRowNav(row);
+  }
+
   function syncVideoOrientation(videoEl) {
+    var row = videoEl && videoEl.closest ? videoEl.closest('[data-media-row]') : null;
+    if (row) {
+      syncMediaRowFraming(row);
+      return;
+    }
     var frameDims = targetFrameDimsForVideo(videoEl);
     if (!frameDims) return;
     var card = videoEl.closest ? videoEl.closest('.video-card') : null;
@@ -974,6 +1080,14 @@
     }
     syncAllMediaRows();
   }
+
+  mediaRows.forEach(function (row) {
+    var imgs = Array.prototype.slice.call(row.querySelectorAll('.gallery-btn img'));
+    imgs.forEach(function (img) {
+      img.addEventListener('load', function () { syncMediaRowFraming(row); });
+    });
+    syncMediaRowFraming(row);
+  });
 
   function frameBrightnessState(ctx2d, w, h) {
     var data = ctx2d.getImageData(0, 0, w, h).data;
@@ -1001,6 +1115,7 @@
 
     var userInteracted = false;
     var posterCaptured = false;
+    var capturedRatio = 0;
     var checkedDarkFrame = false;
     var primingPlay = false;
     var hasPlayedForUser = false;
@@ -1064,11 +1179,23 @@
         if (dataUrl && dataUrl.indexOf('data:image/') === 0 && dataUrl.length > 128) {
           v.setAttribute('poster', dataUrl);
           posterCaptured = true;
+          capturedRatio = targetRatio;
         }
       } catch (_) {
         // Cross-origin videos without CORS cannot read canvas pixels; #t=0.1 still shows the frame.
       }
     }
+
+    v._onFrameRatioSync = function (nextRatio) {
+      if (!posterCaptured || userInteracted || !capturedRatio || !nextRatio) return;
+      if (Math.abs(capturedRatio - nextRatio) <= 0.04) return;
+      var curPoster = v.getAttribute('poster') || '';
+      if (curPoster.indexOf('data:image/') !== 0) return;
+      v.removeAttribute('poster');
+      posterCaptured = false;
+      capturedRatio = 0;
+      tryCapturePoster();
+    };
 
     function seekToInitialFrame() {
       if (userInteracted || posterCaptured || !v.paused) return;

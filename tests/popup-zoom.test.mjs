@@ -200,9 +200,13 @@ function createLightboxHarness({ width = 390, height = 844, naturalWidth = 1200,
   const meeshoGroup = portfolioGroups.appendChild(new ElementNode('section', { className: 'media-group', attrs: { 'data-group': 'Meesho' } }));
   const meeshoRow = meeshoGroup.appendChild(new ElementNode('div', { className: 'media-row is-single', attrs: { 'data-media-row': '' } }));
 
+  const filmGroup = portfolioGroups.appendChild(new ElementNode('section', { className: 'media-group', attrs: { 'data-group': 'Short Film' } }));
+  const filmRow = filmGroup.appendChild(new ElementNode('div', { className: 'media-row', attrs: { 'data-media-row': '', 'data-has-photos': '1' } }));
+
   const videoNodes = [
     { title: 'Bridal', row: bridalRow },
     { title: 'Meesho', row: meeshoRow },
+    { title: 'Short Film', row: filmRow },
   ].map(({ title, row }) => {
     const card = row.appendChild(new ElementNode('figure', { className: 'media-card media-card--video video-card', attrs: { 'data-category': title } }));
     const frame = card.appendChild(new ElementNode('div', { className: 'video-frame' }));
@@ -228,6 +232,22 @@ function createLightboxHarness({ width = 390, height = 844, naturalWidth = 1200,
       },
     }));
     return btn;
+  });
+
+  const filmPhotos = [0, 1].map((i) => {
+    const fig = filmRow.appendChild(new ElementNode('figure', { className: 'media-card media-card--photo gallery-item', attrs: { 'data-category': 'Short Film' } }));
+    const btn = fig.appendChild(new ElementNode('button', {
+      className: 'gallery-btn',
+      attrs: {
+        'data-src': `/media/demo/film-${i + 1}.jpg`,
+        'data-alt': `Film ${i + 1}`,
+        'data-caption': 'Short Film',
+      },
+    }));
+    const img = btn.appendChild(new ElementNode('img'));
+    img.naturalWidth = 0;
+    img.naturalHeight = 0;
+    return img;
   });
 
   // Build #lightbox dialog matching renderLightbox()
@@ -336,6 +356,8 @@ function createLightboxHarness({ width = 390, height = 844, naturalWidth = 1200,
     nextBtn,
     caption,
     galleryButtons,
+    filmRow,
+    filmPhotos,
     videoNodes,
     bridalGroup,
     meeshoGroup,
@@ -550,12 +572,12 @@ test('double-tap on popup photo zooms to 2.5x around tap point and double-tap ag
   assert.equal(h.dialog.open, false);
 });
 
-test('videos beside photos match uniform 2:3 frame while landscape videos in photo-less categories stay landscape', async () => {
+test('all-landscape categories stay landscape while portrait/mixed categories use uniform 2:3 frames', async () => {
   const h = await createLightboxHarness();
   await h.boot();
 
-  const [bridal, serial] = h.videoNodes;
-  // Bridal has photos beside it -> immediately gets uniform 2 / 3 frame
+  const [bridal, serial, film] = h.videoNodes;
+  // Bridal has portrait photos beside it -> gets uniform 2 / 3 frame
   assert.equal(bridal.card.classList.contains('is-portrait'), true);
   assert.equal(bridal.vid.style.aspectRatio, '2 / 3');
 
@@ -575,6 +597,22 @@ test('videos beside photos match uniform 2:3 frame while landscape videos in pho
   assert.equal(serial.vid.style.aspectRatio, '1280 / 720');
   assert.equal(serial.card.classList.contains('is-landscape'), true);
   assert.equal(serial.card.classList.contains('is-portrait'), false);
+
+  // Short Film: once its video (1920x1080) and photos (1600x1067) all report landscape dimensions,
+  // neither the video nor the photos are resized to portrait!
+  film.vid.videoWidth = 1920;
+  film.vid.videoHeight = 1080;
+  film.vid.dispatchEvent(h.makeEvent('loadedmetadata', { bubbles: false }));
+  for (const img of h.filmPhotos) {
+    img.naturalWidth = 1600;
+    img.naturalHeight = 1067;
+    img.dispatchEvent(h.makeEvent('load', { bubbles: false }));
+  }
+  assert.equal(h.filmRow.classList.contains('is-landscape-row'), true);
+  assert.equal(h.filmRow.style['--row-frame-ratio'], '1500 / 1000');
+  assert.equal(film.vid.style.aspectRatio, '1500 / 1000');
+  assert.equal(film.card.classList.contains('is-landscape'), true);
+  assert.equal(film.card.classList.contains('is-portrait'), false);
 
   // Filtering to "Bridal" hides the second group row while keeping "Bridal" visible
   h.filterBridal.dispatchEvent(h.makeEvent('click'));

@@ -231,7 +231,29 @@ function videoDimensions(video, ctx) {
   return null;
 }
 
+function photoDimensions(photo, ctx) {
+  if (photo?.width && photo?.height) return { width: photo.width, height: photo.height };
+  const fromFile = photo?.file ? ctx.sizeOf(photo.file) : null;
+  if (fromFile?.width && fromFile?.height) return fromFile;
+  return null;
+}
+
 const UNIFORM_PHOTO_FRAME = { width: 2, height: 3 };
+
+// Computes a uniform landscape frame when every item in a category is landscape (width > height).
+// Preserves exact aspect ratio when all items share the same ratio, or uses the clamped median ratio.
+export function landscapeFrameForDims(dims) {
+  if (!dims.length) return { width: 3, height: 2 };
+  if (dims.length === 1) return { width: dims[0].width, height: dims[0].height };
+  const ratios = dims.map((d) => d.width / d.height).sort((a, b) => a - b);
+  if (ratios[ratios.length - 1] - ratios[0] <= 0.02) {
+    return { width: dims[0].width, height: dims[0].height };
+  }
+  const mid = Math.floor(ratios.length / 2);
+  const median = ratios.length % 2 === 1 ? ratios[mid] : (ratios[mid - 1] + ratios[mid]) / 2;
+  const clamped = Math.min(2.2, Math.max(1.25, median));
+  return { width: Math.round(clamped * 1000), height: 1000 };
+}
 
 // Groups a model's videos and photos by title/category (case-insensitively),
 // preserving explicit `model.groups` order first and placing all videos before
@@ -291,18 +313,31 @@ function renderPortfolio(model, ctx) {
     .map((group) => {
       const totalItems = group.videos.length + group.photos.length;
       const groupHasPhotos = group.photos.length > 0;
+      const videoDims = group.videos.map((v) => videoDimensions(v, ctx));
+      const photoDims = group.photos.map((p) => photoDimensions(p, ctx));
+      const allDims = [...videoDims, ...photoDims];
+      const knownDims = allDims.filter(Boolean);
+      const isAllLandscapeGroup =
+        allDims.length > 0 &&
+        knownDims.length === allDims.length &&
+        knownDims.every((d) => d.width > d.height);
+      const hasKnownNonLandscape = knownDims.some((d) => d.width <= d.height);
+      const rowLandscapeFrame = isAllLandscapeGroup && groupHasPhotos ? landscapeFrameForDims(knownDims) : null;
 
       const videoCards = group.videos
-        .map((video) => {
-          const nativeDim = videoDimensions(video, ctx);
+        .map((video, vIdx) => {
+          const nativeDim = videoDims[vIdx];
           let frameDim = null;
-          if (groupHasPhotos) {
-            // Match the uniform 2:3 photo frame whenever photos exist beside the video in this category.
-            frameDim = UNIFORM_PHOTO_FRAME;
-          } else if (nativeDim && nativeDim.width >= nativeDim.height) {
-            // Preserve natural aspect ratio for landscape videos in categories with no photos beside them.
+          if (isAllLandscapeGroup) {
+            // Every item in this category is landscape: never resize to portrait.
+            // Match the uniform landscape row frame when photos sit beside the video; keep native ratio otherwise.
+            frameDim = groupHasPhotos ? rowLandscapeFrame : nativeDim;
+          } else if (groupHasPhotos) {
+            // Confirmed portrait/mixed category (or fallback while unknown items load via CSS --row-frame-ratio).
+            if (hasKnownNonLandscape) frameDim = UNIFORM_PHOTO_FRAME;
+          } else if (nativeDim && nativeDim.width > nativeDim.height) {
             frameDim = nativeDim;
-          } else if (nativeDim && nativeDim.height > nativeDim.width) {
+          } else if (nativeDim && nativeDim.height >= nativeDim.width) {
             frameDim = hasAnyPhotos ? UNIFORM_PHOTO_FRAME : nativeDim;
           }
           const isPortrait = frameDim ? frameDim.height > frameDim.width : false;
@@ -310,6 +345,7 @@ function renderPortfolio(model, ctx) {
           const cardClass = `media-card media-card--video video-card${isPortrait ? ' is-portrait' : isLandscape ? ' is-landscape' : ''}`;
           const videoStyle = frameDim ? ` style="aspect-ratio: ${frameDim.width} / ${frameDim.height}"` : '';
           const sizeAttrs = frameDim ? ` width="${frameDim.width}" height="${frameDim.height}"` : '';
+          const naturalAttrs = nativeDim ? ` data-natural-w="${nativeDim.width}" data-natural-h="${nativeDim.height}"` : '';
           const poster = video.poster ? ` poster="${esc(ctx.mediaUrl(video.poster))}"` : '';
           const preload = video.poster ? 'metadata' : 'auto';
           const rawSrc = ctx.mediaUrl(video.file);
@@ -320,7 +356,7 @@ function renderPortfolio(model, ctx) {
           return `
               <figure class="${cardClass}" data-category="${esc(group.title)}">
                 <div class="video-frame">
-                  <video controls controlsList="nodownload noremoteplayback" disablePictureInPicture playsinline preload="${preload}"${poster}${sizeAttrs}${videoStyle} src="${esc(videoSrc)}" aria-label="${esc(vTitle || group.title)}"></video>
+                  <video controls controlsList="nodownload noremoteplayback" disablePictureInPicture playsinline preload="${preload}"${poster}${sizeAttrs}${naturalAttrs}${videoStyle} src="${esc(videoSrc)}" aria-label="${esc(vTitle || group.title)}"></video>
                 </div>${
                   hasCaption
                     ? `
@@ -335,16 +371,18 @@ function renderPortfolio(model, ctx) {
         .join('');
 
       const photoCards = group.photos
-        .map((photo) => {
+        .map((photo, pIdx) => {
           const i = photoIndex++;
+          const pDim = photoDims[pIdx];
           const src = ctx.mediaUrl(photo.file);
           const alt = photo.alt || photo.title || group.title;
           const caption = group.title;
           const label = [group.title, photo.title].filter(Boolean).join(' · ');
+          const loadingAttr = pDim ? ' loading="lazy"' : '';
           return `
               <figure class="media-card media-card--photo gallery-item" data-category="${esc(group.title)}">
                 <button class="gallery-btn" type="button" data-index="${i}" data-src="${esc(src)}" data-alt="${esc(alt)}" data-caption="${esc(caption)}" aria-label="Open photo: ${esc(label)}">
-                  <img src="${esc(src)}" alt="${esc(alt)}"${dimensionAttrs(ctx.sizeOf(photo.file))} loading="lazy" decoding="async" draggable="false">
+                  <img src="${esc(src)}" alt="${esc(alt)}"${dimensionAttrs(pDim)}${loadingAttr} decoding="async" draggable="false">
                 </button>${
                   photo.year
                     ? `
@@ -366,12 +404,15 @@ function renderPortfolio(model, ctx) {
               </div>`
           : '';
 
+      const rowClass = `media-row${totalItems < 2 ? ' is-single' : ''}${isAllLandscapeGroup ? ' is-landscape-row' : ''}`;
+      const rowStyle = rowLandscapeFrame ? ` style="--row-frame-ratio: ${rowLandscapeFrame.width} / ${rowLandscapeFrame.height}"` : '';
+
       return `
           <section class="media-group reveal" data-group="${esc(group.title)}" aria-label="${esc(group.title)}">
             <div class="media-group-head">
               <h3 class="media-group-title">${esc(group.title)}</h3>${navButtons}
             </div>
-            <div class="media-row${totalItems < 2 ? ' is-single' : ''}" data-media-row${groupHasPhotos ? ' data-has-photos="1"' : ''}>${videoCards}${photoCards}
+            <div class="${rowClass}" data-media-row${groupHasPhotos ? ' data-has-photos="1"' : ''}${rowStyle}>${videoCards}${photoCards}
             </div>
           </section>`;
     })

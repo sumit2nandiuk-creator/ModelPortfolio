@@ -4,6 +4,8 @@
 // Each call only ever receives ONE model's data, so a page can never contain
 // another model's name, photos or links.
 
+import { fontStyleVarsFor, googleFontsHrefFor } from './fonts.mjs';
+
 export function coverList(model) {
   if (Array.isArray(model?.cover)) return model.cover;
   return model?.cover ? [model.cover] : [];
@@ -43,7 +45,17 @@ function sectionsFor(model) {
 }
 
 // Shared <head> pieces for every generated page.
-function documentShell({ title, description = '', body, bodyClass = '', extraHead = '', robots = 'index,follow', base = '/' }) {
+function documentShell({
+  title,
+  description = '',
+  body,
+  bodyClass = '',
+  bodyStyle = '',
+  fontsHref = googleFontsHrefFor(),
+  extraHead = '',
+  robots = 'index,follow',
+  base = '/',
+}) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -56,12 +68,12 @@ function documentShell({ title, description = '', body, bodyClass = '', extraHea
   <link rel="preload" href="${esc(base)}assets/fonts/cormorant-garamond-latin-400-italic.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+  <link rel="stylesheet" href="${esc(fontsHref)}">
   <script>if('scrollRestoration' in history)history.scrollRestoration='manual';if(location.hash)history.replaceState(null,'',location.pathname+location.search);</script>
   <link rel="stylesheet" href="${esc(base)}assets/site.css">
   ${extraHead}
 </head>
-<body class="${esc(bodyClass)}">
+<body class="${esc(bodyClass)}"${bodyStyle ? ` style="${esc(bodyStyle)}"` : ''}>
 ${body}
 </body>
 </html>
@@ -396,6 +408,8 @@ export function renderModelPage(model, ctx) {
     robots: model.seo?.noindex === true ? 'noindex,nofollow' : 'index,follow,noimageindex',
     base: ctx.base,
     bodyClass: 'model-page',
+    bodyStyle: fontStyleVarsFor(model.fonts),
+    fontsHref: googleFontsHrefFor(model.fonts),
     extraHead: `<meta property="og:title" content="${esc(title)}">
   <meta property="og:description" content="${esc(description)}">
   <meta property="og:type" content="profile">

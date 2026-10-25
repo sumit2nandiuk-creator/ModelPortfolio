@@ -13,6 +13,53 @@
   var MAX_IMAGE = 25 * 1024 * 1024;
   var MAX_VIDEO = 95 * 1024 * 1024;
 
+  // Kept in step with scripts/lib/fonts.mjs so every selection validates cleanly on save.
+  var FONT_CATALOG = [
+    { id: 'cormorant-garamond', label: 'Cormorant Garamond', category: 'Editorial & Luxury Serif', stack: "'Cormorant Garamond', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif", google: 'Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,600;1,700' },
+    { id: 'playfair-display', label: 'Playfair Display', category: 'Editorial & Luxury Serif', stack: "'Playfair Display', Georgia, serif", google: 'Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700' },
+    { id: 'bodoni-moda', label: 'Bodoni Moda', category: 'Editorial & Luxury Serif', stack: "'Bodoni Moda', 'Didot', Georgia, serif", google: 'Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,500;0,6..96,600;0,6..96,700;1,6..96,400;1,6..96,500;1,6..96,600;1,6..96,700' },
+    { id: 'eb-garamond', label: 'EB Garamond', category: 'Editorial & Luxury Serif', stack: "'EB Garamond', Garamond, Georgia, serif", google: 'EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700' },
+    { id: 'lora', label: 'Lora', category: 'Editorial & Luxury Serif', stack: "'Lora', Georgia, serif", google: 'Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700' },
+    { id: 'libre-baskerville', label: 'Libre Baskerville', category: 'Editorial & Luxury Serif', stack: "'Libre Baskerville', Baskerville, Georgia, serif", google: 'Libre+Baskerville:ital,wght@0,400;0,700;1,400' },
+    { id: 'instrument-serif', label: 'Instrument Serif', category: 'Editorial & Luxury Serif', stack: "'Instrument Serif', Georgia, serif", google: 'Instrument+Serif:ital@0;1' },
+    { id: 'cinzel', label: 'Cinzel', category: 'Editorial & Luxury Serif', stack: "'Cinzel', 'Trajan Pro', Georgia, serif", google: 'Cinzel:wght@400;500;600;700' },
+    { id: 'inter', label: 'Inter', category: 'Modern & Studio Sans', stack: "'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif", google: 'Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;1,14..32,300;1,14..32,400;1,14..32,500;1,14..32,600;1,14..32,700' },
+    { id: 'jost', label: 'Jost', category: 'Modern & Studio Sans', stack: "'Jost', 'Futura', system-ui, sans-serif", google: 'Jost:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,600;1,700' },
+    { id: 'montserrat', label: 'Montserrat', category: 'Modern & Studio Sans', stack: "'Montserrat', 'Helvetica Neue', Arial, sans-serif", google: 'Montserrat:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,600;1,700' },
+    { id: 'plus-jakarta-sans', label: 'Plus Jakarta Sans', category: 'Modern & Studio Sans', stack: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif", google: 'Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,600;1,700' },
+    { id: 'dm-sans', label: 'DM Sans', category: 'Modern & Studio Sans', stack: "'DM Sans', system-ui, -apple-system, sans-serif", google: 'DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,300;1,9..40,400;1,9..40,500;1,9..40,600;1,9..40,700' },
+    { id: 'syne', label: 'Syne', category: 'Modern & Studio Sans', stack: "'Syne', system-ui, sans-serif", google: 'Syne:wght@400;500;600;700' },
+    { id: 'pinyon-script', label: 'Pinyon Script', category: 'Couture & Signature Script', stack: "'Pinyon Script', cursive", google: 'Pinyon+Script' },
+    { id: 'great-vibes', label: 'Great Vibes', category: 'Couture & Signature Script', stack: "'Great Vibes', cursive", google: 'Great+Vibes' },
+  ];
+
+  var FONT_SLOTS = [
+    { key: 'name', label: 'Name (header)', hint: 'Top-left brand name lockup', defaultFamily: 'cormorant-garamond', defaultStyle: 'italic', defaultWeight: '500' },
+    { key: 'headings', label: 'Headings', hint: 'Section titles (Portfolio, Videos, Contact) and video titles', defaultFamily: 'cormorant-garamond', defaultStyle: 'normal', defaultWeight: '500' },
+    { key: 'bio', label: 'About (biography)', hint: 'Paragraphs in the About section', defaultFamily: 'inter', defaultStyle: 'normal', defaultWeight: '400' },
+    { key: 'stats', label: 'Measurements', hint: 'Labels and values in the Measurements box', defaultFamily: 'cormorant-garamond', defaultStyle: 'normal', defaultWeight: '400' },
+    { key: 'captions', label: 'Contact & captions', hint: 'Email & phone cards, category tags, captions and navigation', defaultFamily: 'inter', defaultStyle: 'normal', defaultWeight: '400' },
+  ];
+
+  var WEIGHT_LABELS = { '300': 'Light (300)', '400': 'Regular (400)', '500': 'Medium (500)', '600': 'Semi-bold (600)', '700': 'Bold (700)' };
+
+  function fontById(id) {
+    for (var i = 0; i < FONT_CATALOG.length; i++) {
+      if (FONT_CATALOG[i].id === id) return FONT_CATALOG[i];
+    }
+    return null;
+  }
+
+  function ensurePreviewFonts() {
+    if (typeof document === 'undefined' || $('admin-preview-fonts')) return;
+    var link = document.createElement('link');
+    link.id = 'admin-preview-fonts';
+    link.rel = 'stylesheet';
+    link.href = 'https://fonts.googleapis.com/css2?' +
+      FONT_CATALOG.map(function (f) { return 'family=' + f.google; }).join('&') + '&display=swap';
+    document.head.appendChild(link);
+  }
+
   var S = {
     token: sessionStorage.getItem('admin.token') || '',
     models: [],
@@ -80,7 +127,7 @@
   // ---- Data helpers ------------------------------------------------------
 
   function blankProfile(slug, name) {
-    return { slug: slug, name: name, bio: [], stats: [], cover: [], photos: [], videos: [], contact: {} };
+    return { slug: slug, name: name, bio: [], stats: [], fonts: {}, cover: [], photos: [], videos: [], contact: {} };
   }
 
   // Makes sure every list exists, so the forms never meet missing data.
@@ -92,6 +139,7 @@
     m.bio = Array.isArray(m.bio) ? m.bio : [];
     m.stats = Array.isArray(m.stats) ? m.stats : [];
     m.contact = m.contact || {};
+    m.fonts = (m.fonts && typeof m.fonts === 'object' && !Array.isArray(m.fonts)) ? m.fonts : {};
     return m;
   }
 
@@ -129,6 +177,18 @@
 
     var contact = cleanEntry(m.contact || {}, Object.keys(m.contact || {}));
     setOrDelete(out, 'contact', Object.keys(contact).length ? contact : null);
+
+    var fonts = {};
+    if (m.fonts && typeof m.fonts === 'object') {
+      FONT_SLOTS.forEach(function (slot) {
+        var raw = m.fonts[slot.key];
+        if (!raw || typeof raw !== 'object') return;
+        var cleaned = cleanEntry(raw, ['family', 'style', 'weight']);
+        if (cleaned.weight !== undefined) cleaned.weight = String(cleaned.weight);
+        if (Object.keys(cleaned).length) fonts[slot.key] = cleaned;
+      });
+    }
+    setOrDelete(out, 'fonts', Object.keys(fonts).length ? fonts : null);
     return out;
   }
 
@@ -353,7 +413,123 @@
     }).join('') || '<p class="muted">No measurements yet.</p>';
   }
 
+  function hasCustomFonts(m) {
+    if (!m || !m.fonts) return false;
+    return FONT_SLOTS.some(function (slot) {
+      var spec = m.fonts[slot.key];
+      return spec && (spec.family || spec.style || spec.weight);
+    });
+  }
+
+  function resolvedFontFor(slot, m) {
+    var spec = (m && m.fonts && m.fonts[slot.key]) || {};
+    var entry = fontById(spec.family || slot.defaultFamily) || FONT_CATALOG[0];
+    return {
+      stack: entry.stack,
+      style: spec.style || slot.defaultStyle,
+      weight: String(spec.weight || slot.defaultWeight),
+    };
+  }
+
+  function previewSampleFor(slotKey, m) {
+    if (slotKey === 'name') return trimmed(m.name) || 'Model Name';
+    if (slotKey === 'headings') return 'Portfolio · Let’s create something beautiful together.';
+    if (slotKey === 'bio') {
+      var first = (m.bio && m.bio.length && trimmed(m.bio[0])) || '';
+      if (first.length > 130) return first.slice(0, 127) + '…';
+      return first || 'Expressive presence across editorial, bridal and commercial campaigns.';
+    }
+    if (slotKey === 'stats') {
+      var s = m.stats && m.stats[0];
+      var lbl = (s && trimmed(s.label)) ? trimmed(s.label).toUpperCase() : 'HEIGHT';
+      var val = (s && trimmed(s.value)) || '5′4″';
+      return lbl + ' — ' + val;
+    }
+    var c = m.contact || {};
+    return 'BRIDAL · ' + (trimmed(c.email) || trimmed(c.phone) || 'bookings@example.com');
+  }
+
+  function familyOptionsHtml(selectedId, defaultId) {
+    var defaultFont = fontById(defaultId);
+    var html = '<option value="">Default (' + esc(defaultFont ? defaultFont.label : defaultId) + ')</option>';
+    var categories = [];
+    FONT_CATALOG.forEach(function (f) {
+      if (categories.indexOf(f.category) === -1) categories.push(f.category);
+    });
+    categories.forEach(function (cat) {
+      html += '<optgroup label="' + esc(cat) + '">';
+      FONT_CATALOG.filter(function (f) { return f.category === cat; }).forEach(function (f) {
+        html += '<option value="' + esc(f.id) + '"' + (f.id === selectedId ? ' selected' : '') + '>' + esc(f.label) + '</option>';
+      });
+      html += '</optgroup>';
+    });
+    return html;
+  }
+
+  function styleOptionsHtml(selectedStyle, defaultStyle) {
+    var defLabel = defaultStyle === 'italic' ? 'Italic' : 'Regular';
+    return '<option value="">Default (' + defLabel + ')</option>' +
+      '<option value="normal"' + (selectedStyle === 'normal' ? ' selected' : '') + '>Regular</option>' +
+      '<option value="italic"' + (selectedStyle === 'italic' ? ' selected' : '') + '>Italic</option>';
+  }
+
+  function weightOptionsHtml(selectedWeight, defaultWeight) {
+    var sel = selectedWeight ? String(selectedWeight) : '';
+    var html = '<option value="">Default (' + esc(WEIGHT_LABELS[defaultWeight] || defaultWeight) + ')</option>';
+    ['300', '400', '500', '600', '700'].forEach(function (w) {
+      html += '<option value="' + w + '"' + (sel === w ? ' selected' : '') + '>' + esc(WEIGHT_LABELS[w]) + '</option>';
+    });
+    return html;
+  }
+
+  function fontsHtml() {
+    var m = S.model;
+    var fonts = m.fonts || {};
+    return '<div class="font-list">' + FONT_SLOTS.map(function (slot) {
+      var spec = fonts[slot.key] || {};
+      var resolved = resolvedFontFor(slot, m);
+      var previewStyle = 'font-family:' + resolved.stack + ';font-style:' + resolved.style + ';font-weight:' + resolved.weight;
+      return '<div class="font-row">' +
+        '<div class="font-row-head">' +
+          '<span class="font-row-title">' + esc(slot.label) + '</span>' +
+          '<span class="font-row-hint">' + esc(slot.hint) + '</span>' +
+        '</div>' +
+        '<div class="font-controls">' +
+          '<label>Font family<select data-font-slot="' + slot.key + '" data-font-prop="family">' +
+            familyOptionsHtml(spec.family || '', slot.defaultFamily) +
+          '</select></label>' +
+          '<label>Style<select data-font-slot="' + slot.key + '" data-font-prop="style">' +
+            styleOptionsHtml(spec.style || '', slot.defaultStyle) +
+          '</select></label>' +
+          '<label>Weight<select data-font-slot="' + slot.key + '" data-font-prop="weight">' +
+            weightOptionsHtml(spec.weight || '', slot.defaultWeight) +
+          '</select></label>' +
+        '</div>' +
+        '<div class="font-preview font-preview--' + slot.key + '" data-font-preview="' + slot.key + '" style="' + esc(previewStyle) + '">' +
+          esc(previewSampleFor(slot.key, m)) +
+        '</div>' +
+      '</div>';
+    }).join('') + '</div>';
+  }
+
+  function refreshFontPreviews() {
+    if (!S.model) return;
+    var root = $('editor-body');
+    FONT_SLOTS.forEach(function (slot) {
+      var el = root.querySelector('[data-font-preview="' + slot.key + '"]');
+      if (!el) return;
+      var resolved = resolvedFontFor(slot, S.model);
+      el.style.fontFamily = resolved.stack;
+      el.style.fontStyle = resolved.style;
+      el.style.fontWeight = resolved.weight;
+      el.textContent = previewSampleFor(slot.key, S.model);
+    });
+    var resetBtn = root.querySelector('[data-action="reset-fonts"]');
+    if (resetBtn) resetBtn.disabled = !hasCustomFonts(S.model);
+  }
+
   function render() {
+    ensurePreviewFonts();
     var m = S.model;
     var contact = m.contact || {};
     var bio = m.bio.join('\n\n');
@@ -367,6 +543,12 @@
       '<label class="full" style="display:flex;gap:8px;align-items:center">' +
         '<input type="checkbox" data-field="seo.noindex"' + (seo.noindex ? ' checked' : '') + ' style="width:auto"> Hide this page from search engines</label>',
       '</div></section>',
+
+      listCard(
+        'Typography',
+        '<button type="button" class="btn small" data-action="reset-fonts"' + (hasCustomFonts(m) ? '' : ' disabled') + '>Reset to defaults</button>',
+        fontsHtml()
+      ),
 
       listCard('Measurements', '<button type="button" class="btn small" data-action="add-stat">Add row</button>', statsHtml()),
 
@@ -400,9 +582,29 @@
     target[parts[parts.length - 1]] = value;
   }
 
+  function updateFontControl(t) {
+    var slotKey = t.getAttribute('data-font-slot');
+    var prop = t.getAttribute('data-font-prop');
+    if (!slotKey || !prop || !S.model) return false;
+    if (!S.model.fonts || typeof S.model.fonts !== 'object') S.model.fonts = {};
+    if (!S.model.fonts[slotKey] || typeof S.model.fonts[slotKey] !== 'object') {
+      S.model.fonts[slotKey] = {};
+    }
+    if (t.value) S.model.fonts[slotKey][prop] = t.value;
+    else delete S.model.fonts[slotKey][prop];
+    if (!Object.keys(S.model.fonts[slotKey]).length) delete S.model.fonts[slotKey];
+    refreshFontPreviews();
+    updateDirtyNote();
+    return true;
+  }
+
   function onInput(e) {
     var t = e.target;
     if (!S.model) return;
+    if (t.hasAttribute('data-font-slot')) {
+      updateFontControl(t);
+      return;
+    }
     if (t.hasAttribute('data-bio')) {
       S.model.bio = t.value.split(/\n\s*\n/).map(trimmed).filter(Boolean);
     } else if (t.hasAttribute('data-field')) {
@@ -415,6 +617,7 @@
     } else {
       return;
     }
+    refreshFontPreviews();
     updateDirtyNote();
   }
 
@@ -450,6 +653,9 @@
     } else if (action === 'add-stat') {
       S.model.stats.push({ label: '', value: '' });
       render();
+    } else if (action === 'reset-fonts') {
+      S.model.fonts = {};
+      render();
     }
   }
 
@@ -476,6 +682,10 @@
 
   function onChange(e) {
     var input = e.target;
+    if (input.hasAttribute('data-font-slot')) {
+      updateFontControl(input);
+      return;
+    }
     var kind = input.getAttribute('data-upload');
     if (!kind || !input.files || !input.files.length) return;
     var files = Array.prototype.slice.call(input.files);

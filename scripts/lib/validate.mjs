@@ -4,6 +4,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
+import { validateFonts } from './fonts.mjs';
 import { coverList } from './render.mjs';
 
 export { coverList };
@@ -211,6 +212,10 @@ export async function validateModel(model, { folder, dir }) {
         }
       }
     }
+  }
+
+  for (const fontError of validateFonts(model.fonts)) {
+    fail(fontError);
   }
 
   return errors;

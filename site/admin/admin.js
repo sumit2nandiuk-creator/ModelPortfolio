@@ -440,6 +440,12 @@
 
     singleKeys.forEach(function (key) {
       var defaultText = key === 'name' ? out.name : DEFAULT_TEXTS[key];
+      if (key === 'portfolioHeading') {
+        var rawHeading = m.texts && m.texts[key];
+        if (rawHeading !== undefined && (!trimmed(rawHeading) || /^categories$/i.test(trimmed(rawHeading)))) {
+          return;
+        }
+      }
       var plain = key === 'name'
         ? out.name
         : (trimmed(m.texts && m.texts[key]) || defaultText);
@@ -801,9 +807,13 @@
         return r.length && trimmed(runsToPlain(r)) === trimmed(p) ? r : [{ text: p }];
       });
     }
+    var customVal = m.texts && m.texts[richKey];
+    if (richKey === 'portfolioHeading' && customVal && /^categories$/i.test(trimmed(customVal))) {
+      customVal = '';
+    }
     var plain = richKey === 'name'
       ? (m.name || '')
-      : ((m.texts && m.texts[richKey]) || DEFAULT_TEXTS[richKey] || '');
+      : (customVal !== undefined ? customVal : (DEFAULT_TEXTS[richKey] || ''));
     var rSingle = normaliseRuns(m.richText && m.richText[richKey]);
     if (rSingle.length && trimmed(runsToPlain(rSingle)) === trimmed(plain)) {
       return [rSingle];

@@ -427,13 +427,25 @@ function renderPortfolio(model, ctx) {
     })
     .join('\n');
 
+  const labelHtml = renderTextOrRuns(model, 'portfolioLabel');
+  const customHeading = model.texts?.portfolioHeading;
+  const richHeading = model.richText?.portfolioHeading;
+  const hasCustomHeading = (Array.isArray(richHeading) && richHeading.length) || (typeof customHeading === 'string');
+  const rawHeading = (Array.isArray(richHeading) && richHeading.length)
+    ? renderRuns(richHeading)
+    : (typeof customHeading === 'string' && customHeading.trim() ? esc(customHeading.trim()) : (hasCustomHeading ? '' : esc(DEFAULT_TEXTS.portfolioHeading)));
+  const isCategories = /^categories$/i.test(rawHeading.replace(/<[^>]*>/g, '').trim());
+  const showHeading = Boolean(rawHeading) && !isCategories;
+
+  const headerHtml = labelHtml || showHeading
+    ? `\n        <header class="section-head reveal">
+          ${labelHtml ? `<p id="portfolio-label" class="eyebrow">${labelHtml}</p>` : ''}${showHeading ? `\n          <h2 id="portfolio-title" class="section-title">${rawHeading}</h2>` : ''}
+        </header>`
+    : '';
+
   return `
-    <section id="portfolio" class="section section-alt" aria-labelledby="portfolio-title">
-      <div class="container">
-        <header class="section-head reveal">
-          <p class="eyebrow">${renderTextOrRuns(model, 'portfolioLabel')}</p>
-          <h2 id="portfolio-title" class="section-title">${renderTextOrRuns(model, 'portfolioHeading')}</h2>
-        </header>
+    <section id="portfolio" class="section section-alt" aria-labelledby="${showHeading ? 'portfolio-title' : 'portfolio-label'}">
+      <div class="container">${headerHtml}
         ${filters}
         <div class="portfolio-groups">${groupSections}
         </div>

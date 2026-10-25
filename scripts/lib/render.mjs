@@ -73,6 +73,8 @@ function documentShell({
   <link rel="preload" href="${esc(base)}assets/fonts/cormorant-garamond-latin-400-italic.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="dns-prefetch" href="https://fonts.googleapis.com">
+  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
   <link rel="stylesheet" href="${esc(fontsHref)}">
   <script>if('scrollRestoration' in history)history.scrollRestoration='manual';if(location.hash)history.replaceState(null,'',location.pathname+location.search);</script>
   <link rel="stylesheet" href="${esc(base)}assets/site.css">
@@ -165,7 +167,7 @@ function renderHero(model, ctx) {
       const label = many ? `Open cover photo ${i + 1} of ${covers.length}` : 'Open cover photo';
       return `
         <button class="carousel-slide" type="button" data-src="${esc(src)}" data-alt="${esc(cover.alt)}" data-caption="" aria-label="${esc(label)}">
-          <img class="hero-media" src="${esc(src)}" alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} ${i === 0 ? 'fetchpriority="high"' : 'loading="lazy"'} decoding="async" draggable="false">
+          <img class="hero-media" src="${esc(src)}" alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} ${i === 0 ? 'loading="eager" fetchpriority="high"' : 'loading="lazy"'} decoding="async" draggable="false">
         </button>`;
     })
     .join('');
@@ -356,7 +358,7 @@ function renderPortfolio(model, ctx) {
           const sizeAttrs = frameDim ? ` width="${frameDim.width}" height="${frameDim.height}"` : '';
           const naturalAttrs = nativeDim ? ` data-natural-w="${nativeDim.width}" data-natural-h="${nativeDim.height}"` : '';
           const poster = video.poster ? ` poster="${esc(ctx.mediaUrl(video.poster))}"` : '';
-          const preload = video.poster ? 'metadata' : 'auto';
+          const preload = 'metadata';
           const rawSrc = ctx.mediaUrl(video.file);
           const videoSrc = !video.poster && !rawSrc.includes('#') ? `${rawSrc}#t=0.1` : rawSrc;
           const vTitle = String(video.title ?? '').trim();
@@ -387,11 +389,10 @@ function renderPortfolio(model, ctx) {
           const alt = photo.alt || photo.title || group.title;
           const caption = group.title;
           const label = [group.title, photo.title].filter(Boolean).join(' · ');
-          const loadingAttr = pDim ? ' loading="lazy"' : '';
           return `
               <figure class="media-card media-card--photo gallery-item" data-category="${esc(group.title)}">
                 <button class="gallery-btn" type="button" data-index="${i}" data-src="${esc(src)}" data-alt="${esc(alt)}" data-caption="${esc(caption)}" aria-label="Open photo: ${esc(label)}">
-                  <img src="${esc(src)}" alt="${esc(alt)}"${dimensionAttrs(pDim)}${loadingAttr} decoding="async" draggable="false">
+                  <img src="${esc(src)}" alt="${esc(alt)}"${dimensionAttrs(pDim)} loading="lazy" decoding="async" draggable="false">
                 </button>${
                   photo.year
                     ? `
@@ -573,7 +574,49 @@ export function renderModelPage(model, ctx) {
   // The tagline is optional. When it is set, it follows the name in the page title.
   const title = model.tagline ? `${model.name} · ${model.tagline}` : model.name;
   const description = model.seo?.description || model.tagline || '';
-  const cover = ctx.mediaUrl(coverList(model)[0].file);
+  const covers = coverList(model);
+  const firstCover = covers[0];
+  const cover = firstCover ? ctx.mediaUrl(firstCover.file) : '';
+
+  const remoteOrigins = new Set();
+  const registerRemoteOrigin = (rawUrl) => {
+    if (!rawUrl || typeof rawUrl !== 'string') return;
+    if (rawUrl.startsWith('https://') || rawUrl.startsWith('http://')) {
+      try {
+        remoteOrigins.add(new URL(rawUrl).origin);
+      } catch (_) {}
+    }
+  };
+  if (cover) registerRemoteOrigin(cover);
+  for (const p of model.photos ?? []) {
+    if (p.file) registerRemoteOrigin(ctx.mediaUrl(p.file));
+  }
+  for (const v of model.videos ?? []) {
+    if (v.file) registerRemoteOrigin(ctx.mediaUrl(v.file));
+    if (v.poster) registerRemoteOrigin(ctx.mediaUrl(v.poster));
+  }
+
+  const preconnectTags = [...remoteOrigins]
+    .map(
+      (origin) =>
+        `<link rel="preconnect" href="${esc(origin)}" crossorigin>\n  <link rel="dns-prefetch" href="${esc(origin)}">`,
+    )
+    .join('\n  ');
+
+  const lcpPreload = cover
+    ? `<link rel="preload" as="image" href="${esc(cover)}" fetchpriority="high">`
+    : '';
+
+  const extraHead = [
+    `<meta property="og:title" content="${esc(title)}">`,
+    `<meta property="og:description" content="${esc(description)}">`,
+    `<meta property="og:type" content="profile">`,
+    cover ? `<meta property="og:image" content="${esc(cover)}">` : '',
+    preconnectTags,
+    lcpPreload,
+  ]
+    .filter(Boolean)
+    .join('\n  ');
 
   const available = sectionsFor(model);
   const body = `<div id="top" class="top-anchor" aria-hidden="true"></div>
@@ -597,10 +640,7 @@ export function renderModelPage(model, ctx) {
     bodyClass: 'model-page',
     bodyStyle: fontStyleVarsFor(model.fonts),
     fontsHref: googleFontsHrefFor(model.fonts, model.richText),
-    extraHead: `<meta property="og:title" content="${esc(title)}">
-  <meta property="og:description" content="${esc(description)}">
-  <meta property="og:type" content="profile">
-  <meta property="og:image" content="${esc(cover)}">`,
+    extraHead,
     body,
   });
 }

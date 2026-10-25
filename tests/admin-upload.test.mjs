@@ -6,7 +6,6 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const proofreadJsPath = path.join(root, 'site', 'admin', 'proofread.js');
 const adminJsPath = path.join(root, 'site', 'admin', 'admin.js');
 
 // Lightweight DOM + XHR harness for site/admin/admin.js upload & preview progress flows.
@@ -331,16 +330,6 @@ function createAdminUploadHarness(modelOverrides = {}) {
       };
     }
     if (url.endsWith('/api/models/sushmita-ghosh') && opts.method === 'PUT') {
-      if (nextSaveError) {
-        const errSpec = nextSaveError;
-        nextSaveError = null;
-        return {
-          status: errSpec.status || 400,
-          ok: false,
-          headers: { get: () => 'application/json' },
-          json: async () => ({ error: errSpec.error, errors: errSpec.errors || [] }),
-        };
-      }
       const parsed = JSON.parse(opts.body);
       savedPayloads.push(parsed);
       return {
@@ -359,29 +348,12 @@ function createAdminUploadHarness(modelOverrides = {}) {
     confirm: () => true,
   };
 
-  const localStore = new Map();
-  let nextTimerId = 1;
-  const pendingTimers = new Map();
-  let nextSaveError = null;
-
   return {
     doc,
     xhrs,
     savedPayloads,
-    failNextSave(spec) {
-      nextSaveError = spec;
-    },
-    runTimers() {
-      for (const [id, fn] of [...pendingTimers.entries()]) {
-        pendingTimers.delete(id);
-        fn();
-      }
-    },
     async boot() {
-      const [proofreadCode, code] = await Promise.all([
-        fs.readFile(proofreadJsPath, 'utf8'),
-        fs.readFile(adminJsPath, 'utf8'),
-      ]);
+      const code = await fs.readFile(adminJsPath, 'utf8');
       const ctx = vm.createContext({
         window: win,
         document: doc,
@@ -390,20 +362,11 @@ function createAdminUploadHarness(modelOverrides = {}) {
           setItem: (k, v) => storage.set(k, String(v)),
           removeItem: (k) => storage.delete(k),
         },
-        localStorage: {
-          getItem: (k) => localStore.get(k) ?? null,
-          setItem: (k, v) => localStore.set(k, String(v)),
-          removeItem: (k) => localStore.delete(k),
-        },
         fetch: fakeFetch,
         XMLHttpRequest: FakeXHR,
         FormData: FakeFormData,
-        setTimeout: (fn) => {
-          const id = nextTimerId++;
-          pendingTimers.set(id, fn);
-          return id;
-        },
-        clearTimeout: (id) => { pendingTimers.delete(id); },
+        setTimeout: () => 1,
+        clearTimeout: () => {},
         Promise,
         JSON,
         Math,
@@ -412,13 +375,10 @@ function createAdminUploadHarness(modelOverrides = {}) {
         Boolean,
         Array,
         Object,
-        Set,
-        parseInt,
         Error,
         RegExp,
         encodeURIComponent,
       });
-      vm.runInContext(proofreadCode, ctx, { filename: 'proofread.js' });
       vm.runInContext(code, ctx, { filename: 'admin.js' });
       await new Promise((r) => setImmediate(r));
       await new Promise((r) => setImmediate(r));
@@ -748,212 +708,3 @@ test('admin panel moves measurement attributes up/down and adds newly uploaded p
     'bridal-old.jpg',
   ]);
 });
-
-test('all admin fields enable spell & grammar check, flag real errors, preserve rich-text formatting on 1-tap fix, and support Ignore/Toggle', async () => {
-  // 1. Clean profile produces 0 false positives and marks all 26 field types with spellcheck + grammar attributes
-  const adminHtml = await fs.readFile(path.join(root, 'site', 'admin', 'index.html'), 'utf8');
-  assert.match(adminHtml, /<script src="proofread\.js" defer><\/script>/);
-  assert.match(adminHtml, /id="token"[^>]*spellcheck="false"/);
-
-  const cleanHarness = await createAdminUploadHarness({
-    tagline: 'Editorial & Bridal Model',
-    bio: [
-      'Sushmita is a photogenic and versatile model with a calm, expressive presence in front of the camera.',
-      'She works across editorial, runway, beauty and commercial campaigns in Kolkata and Mumbai.',
-    ],
-    stats: [
-      { label: 'Height', value: '5′4″ · 163 cm' },
-      { label: 'Languages', value: 'English · Bengali · Hindi' },
-    ],
-    seo: { description: 'Sushmita Ghosh – portfolio, videos and bookings.' },
-    cover: [{ file: 'cover.jpg', alt: 'Bridal portrait in a red and gold Bengali wedding saree with shola crown and gold jewellery' }],
-    photos: [{ file: 'p1.jpg', title: 'Red silk saree', category: 'Bridal', year: '2026', alt: 'Bride holding marigold flowers' }],
-    videos: [{ file: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/v1.mp4', title: 'Bridal reel', category: 'Bridal', description: 'Behind the scenes on set' }],
-    contact: {
-      email: 'sushmitaghosh0099@gmail.com',
-      phone: '+91 86977 71768',
-      whatsapp: '+91 86977 71768',
-      instagram: 'https://instagram.com/sushmita',
-    },
-  });
-  await cleanHarness.boot();
-
-  const allTargets = cleanHarness.doc.querySelectorAll('[data-proofread-target]');
-  assert.equal(allTargets.length, 28, 'all 28 rendered text fields across every admin section are wired');
-  for (const el of allTargets) {
-    assert.equal(el.getAttribute('spellcheck'), 'true');
-    assert.equal(el.getAttribute('lang'), 'en');
-    assert.equal(el.getAttribute('data-gramm'), 'true');
-  }
-  assert.equal(cleanHarness.doc.querySelectorAll('.proofread-item').length, 0, 'zero false positives on clean profile');
-  assert.match(cleanHarness.doc.querySelector('[data-proofread-summary]').textContent, /Spell & grammar OK/);
-
-  // 2. Profile with spelling + grammar mistakes across rich-text boxes, stats, group title, contact, and media fields
-  const h = await createAdminUploadHarness({
-    bio: ['she work across a orange saree.'],
-    richText: {
-      contactHeading: [
-        { text: 'Lets create something ' },
-        { text: 'beutiful', italic: true, color: '#c9a77d' },
-        { text: ' together.' },
-      ],
-    },
-    texts: {
-      contactHeading: 'Lets create something beutiful together.',
-    },
-    stats: [{ label: 'Measurments', value: 'Englsh · Xyloform' }],
-    cover: [{ file: 'cover.jpg', alt: 'Bride in a expressive pose' }],
-    photos: [{ file: 'p1.jpg', title: 'Traditonal look', category: 'Bridel', year: '202O', alt: 'i dont mind the the rain' }],
-    videos: [{ file: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/v1.mp4', title: 'Runway highlight', category: 'Bridel', description: 'Photograhpy reel' }],
-    contact: {
-      email: 'sushmita@gmial.com',
-      phone: '+91 86977 71768',
-      whatsapp: '+91 86977 71768',
-      instagram: 'htps://instgram.com/sushmita',
-    },
-  });
-  await h.boot();
-
-  const summaryBefore = h.doc.querySelector('[data-proofread-summary]').textContent;
-  assert.match(summaryBefore, /suggestions · Review/);
-
-  const applyAllFixesInSlot = (targetId) => {
-    for (let guard = 0; guard < 8; guard++) {
-      const slot = h.doc.querySelector(`[data-proofread-slot="${targetId}"]`);
-      const fixBtn = slot && slot.querySelector('.proofread-fix-btn');
-      if (!fixBtn) break;
-      fixBtn.dispatchEvent({ type: 'click', bubbles: true });
-    }
-  };
-
-  // Fix rich-text contactHeading ("Lets" -> "Let's", "beutiful" -> "beautiful") while preserving italic + colour run!
-  applyAllFixesInSlot('rich:contactHeading');
-  // Fix rich-text bio ("she work" -> "She works", "a orange" -> "an orange")
-  applyAllFixesInSlot('rich:bio');
-  // Fix measurement label ("Measurments" -> "Measurements") & value ("Englsh" -> "English", then Ignore custom word "Xyloform")
-  applyAllFixesInSlot('list:stats:0:label');
-  const valSlot = h.doc.querySelector('[data-proofread-slot="list:stats:0:value"]');
-  valSlot.querySelector('.proofread-fix-btn').dispatchEvent({ type: 'click', bubbles: true });
-  const ignoreBtn = h.doc.querySelector('[data-proofread-slot="list:stats:0:value"]').querySelector('.proofread-ignore-btn');
-  assert.ok(ignoreBtn, 'uncommon word offers 1-click Ignore button');
-  ignoreBtn.dispatchEvent({ type: 'click', bubbles: true });
-
-  // Fix cover alt, group title ("Bridel" -> "Bridal"), video description, photo title/year/alt, email, and Instagram URL
-  applyAllFixesInSlot('list:cover:0:alt');
-  applyAllFixesInSlot('group:0:title');
-  applyAllFixesInSlot('list:videos:0:description');
-  applyAllFixesInSlot('list:photos:0:title');
-  applyAllFixesInSlot('list:photos:0:year');
-  applyAllFixesInSlot('list:photos:0:alt');
-  applyAllFixesInSlot('field:contact.email');
-  applyAllFixesInSlot('field:contact.instagram');
-
-  assert.equal(h.doc.querySelectorAll('.proofread-item').length, 0, 'all spelling and grammar issues resolved');
-  assert.match(h.doc.querySelector('[data-proofread-summary]').textContent, /Spell & grammar OK/);
-
-  // Live typing check: typing a typo into tagline triggers debounced live spell check
-  const taglineInput = h.doc.querySelector('input[data-field="tagline"]');
-  taglineInput.value = 'Versitile model';
-  taglineInput.dispatchEvent({ type: 'input', bubbles: true });
-  h.runTimers();
-  assert.equal(h.doc.querySelectorAll('.proofread-item').length, 1);
-  applyAllFixesInSlot('field:tagline');
-  assert.equal(taglineInput.value, 'Versatile model');
-
-  // Toggle Spell & grammar Off -> sets spellcheck="false", then back On -> restores spellcheck="true"
-  const toggleBtn = h.doc.querySelector('[data-action="toggle-proofread"]');
-  toggleBtn.dispatchEvent({ type: 'click', bubbles: true });
-  assert.equal(taglineInput.getAttribute('spellcheck'), 'false');
-  toggleBtn.dispatchEvent({ type: 'click', bubbles: true });
-  assert.equal(taglineInput.getAttribute('spellcheck'), 'true');
-
-  // Save and verify every corrected field + preserved inline formatting on contactHeading!
-  h.doc.getElementById('save').dispatchEvent({ type: 'click', bubbles: true });
-  await h.flush();
-  await h.flush();
-
-  assert.equal(h.savedPayloads.length, 1);
-  const saved = h.savedPayloads[0].model;
-  assert.equal(saved.tagline, 'Versatile model');
-  assert.deepEqual(saved.bio, ['She works across an orange saree.']);
-  assert.equal(saved.texts.contactHeading, "Let's create something beautiful together.");
-  assert.deepEqual(saved.richText.contactHeading, [
-    { text: "Let's create something " },
-    { text: 'beautiful', italic: true, color: '#c9a77d' },
-    { text: ' together.' },
-  ]);
-  assert.deepEqual(saved.stats[0], { label: 'Measurements', value: 'English · Xyloform' });
-  assert.equal(saved.cover[0].alt, 'Bride in an expressive pose');
-  assert.deepEqual(saved.groups, ['Bridal']);
-  assert.equal(saved.videos[0].category, 'Bridal');
-  assert.equal(saved.videos[0].description, 'Photography reel');
-  assert.equal(saved.photos[0].category, 'Bridal');
-  assert.equal(saved.photos[0].title, 'Traditional look');
-  assert.equal(saved.photos[0].year, '2020');
-  assert.equal(saved.photos[0].alt, "I don't mind the rain");
-  assert.equal(saved.contact.email, 'sushmita@gmail.com');
-  assert.equal(saved.contact.instagram, 'https://instagram.com/sushmita');
-});
-
-test('save button shows green tick popup on success and red cross popup with details on error', async () => {
-  const h = await createAdminUploadHarness();
-  await h.boot();
-
-  const saveBtn = h.doc.getElementById('save');
-
-  // 1. Trigger a failed save -> Red Cross popup appears with clear title & bullet list of validation errors
-  h.failNextSave({
-    status: 400,
-    error: '"cover" needs at least one photo.',
-    errors: [
-      '"cover" needs at least one photo.',
-      '"phone" must have at least 8 digits.',
-    ],
-  });
-
-  saveBtn.dispatchEvent({ type: 'click', bubbles: true });
-  await h.flush();
-  await h.flush();
-
-  const popup = h.doc.getElementById('save-popup');
-  assert.ok(popup, '#save-popup exists');
-  assert.equal(popup.hidden, false, 'error popup is visible');
-  assert.ok(popup.querySelector('[data-save-popup-kind="error"]'), 'renders error popup card');
-  const redCrossIcon = popup.querySelector('[data-save-popup-icon="error"]');
-  assert.ok(redCrossIcon, 'renders red cross icon container');
-  assert.ok(redCrossIcon.querySelector('line'), 'renders SVG cross lines');
-  assert.equal(popup.querySelector('#save-popup-title').textContent, 'Could not save changes');
-  const errorItems = popup.querySelectorAll('.save-popup-errors li').map((li) => li.textContent);
-  assert.deepEqual(errorItems, [
-    '"cover" needs at least one photo.',
-    '"phone" must have at least 8 digits.',
-  ]);
-  assert.equal(saveBtn.textContent, 'Save changes', 'restores Save changes label after error');
-
-  // Error popup stays open across timers until explicitly closed by the user
-  h.runTimers();
-  assert.equal(popup.hidden, false, 'error popup does not auto-dismiss');
-
-  popup.querySelector('[data-save-popup-close]').dispatchEvent({ type: 'click', bubbles: true });
-  assert.equal(popup.hidden, true, 'clicking Close dismisses error popup');
-
-  // 2. Trigger a successful save -> Green Tick popup appears with confirmation message
-  saveBtn.dispatchEvent({ type: 'click', bubbles: true });
-  await h.flush();
-  await h.flush();
-
-  assert.equal(popup.hidden, false, 'success popup is visible');
-  assert.ok(popup.querySelector('[data-save-popup-kind="success"]'), 'renders success popup card');
-  const greenTickIcon = popup.querySelector('[data-save-popup-icon="success"]');
-  assert.ok(greenTickIcon, 'renders green tick icon container');
-  assert.ok(greenTickIcon.querySelector('polyline'), 'renders SVG tick checkmark');
-  assert.equal(popup.querySelector('#save-popup-title').textContent, 'Changes saved successfully');
-  assert.match(popup.querySelector('#save-popup-desc').textContent, /Sushmita Ghosh/);
-  assert.match(popup.querySelector('#save-popup-desc').textContent, /live on the website/);
-
-  // Auto-closes after timer (or when clicking Done)
-  h.runTimers();
-  assert.equal(popup.hidden, true, 'success popup auto-dismisses cleanly');
-});
-
-

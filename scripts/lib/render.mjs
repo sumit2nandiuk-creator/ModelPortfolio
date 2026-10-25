@@ -4,7 +4,13 @@
 // Each call only ever receives ONE model's data, so a page can never contain
 // another model's name, photos or links.
 
-import { fontStyleVarsFor, googleFontsHrefFor } from './fonts.mjs';
+import {
+  DEFAULT_TEXTS,
+  fontStyleVarsFor,
+  googleFontsHrefFor,
+  renderRuns,
+  splitNameRuns,
+} from './fonts.mjs';
 
 export function coverList(model) {
   if (Array.isArray(model?.cover)) return model.cover;
@@ -100,8 +106,30 @@ export function splitName(name) {
   return { given: parts.slice(0, -1).join(' '), family: parts[parts.length - 1] };
 }
 
-function renderHeader(model, available) {
+function renderTextOrRuns(model, key) {
+  const runs = model.richText?.[key];
+  if (Array.isArray(runs) && runs.length) return renderRuns(runs);
+  const custom = model.texts?.[key];
+  return esc(typeof custom === 'string' && custom.trim() ? custom : DEFAULT_TEXTS[key]);
+}
+
+function renderBrandLockup(model) {
+  const nameRuns = model.richText?.name;
+  if (Array.isArray(nameRuns) && nameRuns.length) {
+    const { givenRuns, familyRuns } = splitNameRuns(nameRuns);
+    return `<span class="brand-given">${renderRuns(givenRuns)}</span>${
+      familyRuns.length
+        ? `\n      <span class="brand-family">${renderRuns(familyRuns)}</span>`
+        : ''
+    }`;
+  }
   const { given, family } = splitName(model.name);
+  return `<span class="brand-given">${esc(given)}</span>${
+    family ? `\n      <span class="brand-family">${esc(family)}</span>` : ''
+  }`;
+}
+
+function renderHeader(model, available) {
   const links = [
     ['about', 'About'],
     ['portfolio', 'Portfolio'],
@@ -116,8 +144,7 @@ function renderHeader(model, available) {
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <a class="brand" href="#top" aria-label="${esc(model.name)} – back to top">
-      <span class="brand-given">${esc(given)}</span>${family ? `
-      <span class="brand-family">${esc(family)}</span>` : ''}
+      ${renderBrandLockup(model)}
     </a>
     <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">
       <span class="nav-toggle-bars" aria-hidden="true"></span>
@@ -170,12 +197,18 @@ function renderAbout(model) {
   const bio = model.bio ?? [];
   const stats = model.stats ?? [];
   if (!bio.length && !stats.length) return '';
+  const richBio = Array.isArray(model.richText?.bio) ? model.richText.bio : null;
   return `
     <section id="about" class="section about" aria-labelledby="about-title">
       <div class="container about-grid">
         <div class="about-text reveal">
-          <p id="about-title" class="eyebrow">About</p>
-          ${bio.map((p) => `<p class="lead">${esc(p)}</p>`).join('\n          ')}
+          <p id="about-title" class="eyebrow">${renderTextOrRuns(model, 'aboutLabel')}</p>
+          ${bio
+            .map((p, i) => {
+              const richPara = richBio && Array.isArray(richBio[i]) && richBio[i].length ? renderRuns(richBio[i]) : esc(p);
+              return `<p class="lead">${richPara}</p>`;
+            })
+            .join('\n          ')}
         </div>
         ${
           stats.length
@@ -230,8 +263,8 @@ function renderPortfolio(model, ctx) {
     <section id="portfolio" class="section section-alt" aria-labelledby="portfolio-title">
       <div class="container">
         <header class="section-head reveal">
-          <p class="eyebrow">Selected work</p>
-          <h2 id="portfolio-title" class="section-title">Portfolio</h2>
+          <p class="eyebrow">${renderTextOrRuns(model, 'portfolioLabel')}</p>
+          <h2 id="portfolio-title" class="section-title">${renderTextOrRuns(model, 'portfolioHeading')}</h2>
         </header>
         ${filters}
         <div class="gallery">${items}
@@ -265,8 +298,8 @@ function renderVideos(model, ctx) {
     <section id="videos" class="section" aria-labelledby="videos-title">
       <div class="container">
         <header class="section-head reveal">
-          <p class="eyebrow">Motion</p>
-          <h2 id="videos-title" class="section-title">Videos</h2>
+          <p class="eyebrow">${renderTextOrRuns(model, 'videosLabel')}</p>
+          <h2 id="videos-title" class="section-title">${renderTextOrRuns(model, 'videosHeading')}</h2>
         </header>
         <div class="video-grid">${cards}
         </div>
@@ -316,12 +349,21 @@ function renderContact(model) {
     cards.push(contactCard({ href: `tel:+${digitsOnly(c.phone)}`, icon: CONTACT_ICONS.phone, label: 'Phone', value: c.phone }));
   }
 
+  const customContactRuns = model.richText?.contactHeading;
+  const customContactText = model.texts?.contactHeading;
+  const contactHeadingHtml =
+    Array.isArray(customContactRuns) && customContactRuns.length
+      ? renderRuns(customContactRuns)
+      : typeof customContactText === 'string' && customContactText.trim()
+        ? esc(customContactText)
+        : 'Let’s create something <em>beautiful</em> together.';
+
   return `
     <section id="contact" class="section contact" aria-labelledby="contact-title">
       <div class="container">
         <div class="contact-head reveal">
-          <p class="eyebrow">Bookings &amp; enquiries</p>
-          <h2 id="contact-title" class="contact-heading">Let’s create something <em>beautiful</em> together.</h2>
+          <p class="eyebrow">${renderTextOrRuns(model, 'contactLabel')}</p>
+          <h2 id="contact-title" class="contact-heading">${contactHeadingHtml}</h2>
         </div>
         ${cards.length ? `<div class="contact-items reveal">${cards.join('')}
         </div>` : ''}
@@ -409,7 +451,7 @@ export function renderModelPage(model, ctx) {
     base: ctx.base,
     bodyClass: 'model-page',
     bodyStyle: fontStyleVarsFor(model.fonts),
-    fontsHref: googleFontsHrefFor(model.fonts),
+    fontsHref: googleFontsHrefFor(model.fonts, model.richText),
     extraHead: `<meta property="og:title" content="${esc(title)}">
   <meta property="og:description" content="${esc(description)}">
   <meta property="og:type" content="profile">

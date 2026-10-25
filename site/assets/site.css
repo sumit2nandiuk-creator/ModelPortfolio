@@ -1395,3 +1395,175 @@ main section {
 .js .whatsapp-float:not(.is-visible) svg {
   transform: translateY(10px);
 }
+
+/* Per-box typography customisation (configured from the admin text boxes) -- */
+
+.brand-given,
+.brand-family {
+  font-size: calc(2.1rem * var(--font-name-scale, 1));
+  text-decoration: var(--font-name-decoration, none);
+  color: var(--font-name-color, inherit);
+}
+
+#about-title {
+  font-family: var(--font-about-label-family, var(--font-captions-family));
+  font-style: var(--font-about-label-style, var(--font-captions-style));
+  font-weight: var(--font-about-label-weight, var(--font-captions-strong-weight));
+  font-size: calc(0.72rem * var(--font-about-label-scale, 1));
+  text-decoration: var(--font-about-label-decoration, none);
+  color: var(--font-about-label-color, var(--accent));
+  text-align: var(--font-about-label-align, inherit);
+}
+
+#about .lead {
+  font-size: calc(clamp(1.02rem, 1.2vw, 1.14rem) * var(--font-bio-scale, 1));
+  text-decoration: var(--font-bio-decoration, none);
+  color: var(--font-bio-color, var(--ink-soft));
+  text-align: var(--font-bio-align, inherit);
+}
+
+.stat dt {
+  font-size: calc(0.7rem * var(--font-stats-scale, 1));
+  text-decoration: var(--font-stats-decoration, none);
+  color: var(--font-stats-color, var(--muted));
+}
+
+.stat dd {
+  font-size: calc(1.3rem * var(--font-stats-scale, 1));
+  text-decoration: var(--font-stats-decoration, none);
+  color: var(--font-stats-color, inherit);
+}
+
+#portfolio .eyebrow {
+  font-family: var(--font-portfolio-label-family, var(--font-captions-family));
+  font-style: var(--font-portfolio-label-style, var(--font-captions-style));
+  font-weight: var(--font-portfolio-label-weight, var(--font-captions-strong-weight));
+  font-size: calc(0.72rem * var(--font-portfolio-label-scale, 1));
+  text-decoration: var(--font-portfolio-label-decoration, none);
+  color: var(--font-portfolio-label-color, var(--accent));
+  text-align: var(--font-portfolio-label-align, inherit);
+}
+
+#portfolio-title {
+  font-family: var(--font-portfolio-heading-family, var(--font-headings-family));
+  font-style: var(--font-portfolio-heading-style, var(--font-headings-style));
+  font-weight: var(--font-portfolio-heading-weight, var(--font-headings-weight));
+  font-size: calc(clamp(2.6rem, 5.5vw, 4.4rem) * var(--font-portfolio-heading-scale, var(--font-headings-scale, 1)));
+  text-decoration: var(--font-portfolio-heading-decoration, none);
+  color: var(--font-portfolio-heading-color, inherit);
+  text-align: var(--font-portfolio-heading-align, inherit);
+}
+
+.filter,
+.gallery-caption .tag,
+.gallery-year,
+.lb-caption {
+  text-decoration: var(--font-captions-decoration, none);
+}
+
+.gallery-caption .tag {
+  font-size: calc(0.68rem * var(--font-captions-scale, 1));
+  color: var(--font-captions-color, var(--accent));
+}
+
+.gallery-year {
+  font-size: calc(0.8rem * var(--font-captions-scale, 1));
+  color: var(--font-captions-color, var(--muted));
+}
+
+.filter {
+  font-size: calc(0.74rem * var(--font-captions-scale, 1));
+}
+
+.lb-caption {
+  font-size: calc(1.1rem * var(--font-captions-scale, 1));
+}
+
+#videos .eyebrow {
+  font-family: var(--font-videos-label-family, var(--font-captions-family));
+  font-style: var(--font-videos-label-style, var(--font-captions-style));
+  font-weight: var(--font-videos-label-weight, var(--font-captions-strong-weight));
+  font-size: calc(0.72rem * var(--font-videos-label-scale, 1));
+  text-decoration: var(--font-videos-label-decoration, none);
+  color: var(--font-videos-label-color, var(--accent));
+  text-align: var(--font-videos-label-align, inherit);
+}
+
+#videos-title {
+  font-family: var(--font-videos-heading-family, var(--font-headings-family));
+  font-style: var(--font-videos-heading-style, var(--font-headings-style));
+  font-weight: var(--font-videos-heading-weight, var(--font-headings-weight));
+  font-size: calc(clamp(2.6rem, 5.5vw, 4.4rem) * var(--font-videos-heading-scale, var(--font-headings-scale, 1)));
+  text-decoration: var(--font-videos-heading-decoration, none);
+  color: var(--font-videos-heading-color, inherit);
+  text-align: var(--font-videos-heading-align, inherit);
+}
+
+.video-title {
+  font-family: var(--font-video-text-family, var(--font-headings-family));
+  font-style: var(--font-video-text-style, var(--font-headings-style));
+  font-weight: var(--font-video-text-weight, var(--font-headings-weight));
+  font-size: calc(1.7rem * var(--font-video-text-scale, 1));
+  text-decoration: var(--font-video-text-decoration, none);
+  color: var(--font-video-text-color, inherit);
+}
+
+.video-desc {
+  font-family: var(--font-video-text-family, var(--font-captions-family));
+  font-style: var(--font-video-text-style, var(--font-captions-style));
+  font-weight: var(--font-video-text-weight, var(--font-captions-weight));
+  font-size: calc(0.95rem * var(--font-video-text-scale, 1));
+  text-decoration: var(--font-video-text-decoration, none);
+  color: var(--font-video-text-color, var(--muted));
+}
+
+#contact .eyebrow {
+  font-family: var(--font-contact-label-family, var(--font-captions-family));
+  font-style: var(--font-contact-label-style, var(--font-captions-style));
+  font-weight: var(--font-contact-label-weight, var(--font-captions-strong-weight));
+  font-size: calc(0.72rem * var(--font-contact-label-scale, 1));
+  text-decoration: var(--font-contact-label-decoration, none);
+  color: var(--font-contact-label-color, var(--accent-soft));
+  text-align: var(--font-contact-label-align, inherit);
+}
+
+#contact-title {
+  font-family: var(--font-contact-heading-family, var(--font-headings-family));
+  font-style: var(--font-contact-heading-style, var(--font-headings-style));
+  font-weight: var(--font-contact-heading-weight, 400);
+  font-size: calc(clamp(2.6rem, 6vw, 5rem) * var(--font-contact-heading-scale, var(--font-headings-scale, 1)));
+  text-decoration: var(--font-contact-heading-decoration, none);
+  color: var(--font-contact-heading-color, inherit);
+  text-align: var(--font-contact-heading-align, inherit);
+}
+
+.contact-label {
+  font-family: var(--font-contact-family, var(--font-captions-family));
+  font-style: var(--font-contact-style, var(--font-captions-style));
+  font-weight: var(--font-contact-strong-weight, var(--font-captions-strong-weight));
+  font-size: calc(0.66rem * var(--font-contact-scale, 1));
+  text-decoration: var(--font-contact-decoration, none);
+}
+
+.contact-value {
+  font-family: var(--font-contact-family, var(--font-captions-family));
+  font-style: var(--font-contact-style, var(--font-captions-style));
+  font-weight: var(--font-contact-weight, var(--font-captions-weight));
+  font-size: calc(1.02rem * var(--font-contact-scale, 1));
+  text-decoration: var(--font-contact-decoration, none);
+  color: var(--font-contact-color, inherit);
+}
+
+@media (max-width: 560px) {
+  .contact-value {
+    font-size: calc(clamp(0.78rem, 3.7vw, 1.02rem) * var(--font-contact-scale, 1));
+  }
+}
+
+.contact-socials a {
+  font-family: var(--font-contact-family, var(--font-captions-family));
+  font-style: var(--font-contact-style, var(--font-captions-style));
+  font-weight: var(--font-contact-weight, var(--font-captions-weight));
+  font-size: calc(0.9rem * var(--font-contact-scale, 1));
+  color: var(--font-contact-color, var(--paper));
+}

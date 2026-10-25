@@ -1,4 +1,4 @@
-/* Admin page styles. Self-contained: it does not load the public site's theme or fonts. */
+/* Admin page styles. Self-contained: loads Google Fonts dynamically for live WYSIWYG text boxes. */
 
 :root {
   --ink: #1d1a16;
@@ -43,9 +43,15 @@ label > input, label > textarea, label > select { color: var(--ink); }
 }
 .login { max-width: 420px; margin: 40px auto; }
 .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.stack { display: grid; gap: 14px; }
 .full { grid-column: 1 / -1; }
 .muted { color: var(--muted); font-size: 0.9rem; }
+.hint { color: var(--muted); font-size: 0.78rem; font-weight: 400; margin-left: 6px; }
 .error { color: var(--danger); min-height: 1.2em; margin: 8px 0 0; }
+.subhead {
+  margin: 14px 0 8px; padding-top: 12px; border-top: 1px solid var(--line);
+  font-size: 0.84rem; font-weight: 600; color: var(--muted);
+}
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
@@ -63,6 +69,70 @@ label > input, label > textarea, label > select { color: var(--ink); }
 .file-btn { position: relative; overflow: hidden; }
 .file-btn input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 
+/* Email-style text composer boxes with integrated font formatting bar ------- */
+
+.composer-field { display: grid; gap: 6px; }
+.composer-label { font-size: 0.86rem; color: var(--muted); display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.composer {
+  border: 1px solid #cfc7b9; border-radius: 10px; background: #fff;
+  overflow: hidden; transition: border-color 0.15s, box-shadow 0.15s;
+}
+.composer:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(154, 106, 60, 0.14);
+}
+.composer-bar {
+  display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+  padding: 6px 8px; background: #faf7f2; border-bottom: 1px solid var(--line);
+}
+.composer-bar--standalone {
+  border: 1px solid var(--line); border-radius: 9px; margin-bottom: 12px;
+}
+.composer-bar-tag {
+  font-size: 0.78rem; font-weight: 600; color: var(--muted);
+  margin-right: 4px; padding: 0 4px;
+}
+.fmt-select {
+  width: auto; max-width: 195px; padding: 4px 8px; height: 28px;
+  font-size: 0.8rem; border-radius: 6px; border: 1px solid #dcd4c6;
+  background: #fff; color: var(--ink); cursor: pointer;
+}
+.fmt-select.fmt-size { max-width: 108px; }
+.fmt-sep { width: 1px; height: 18px; background: #dfd8cb; margin: 0 2px; }
+.fmt-btn {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 28px; height: 28px; padding: 0 6px; border-radius: 6px;
+  border: 1px solid transparent; background: transparent; color: var(--ink);
+  font-size: 0.84rem; line-height: 1; cursor: pointer; user-select: none;
+}
+.fmt-btn:hover { background: #efe9de; }
+.fmt-btn.is-active { background: #e6dccb; border-color: #c8b69b; font-weight: 600; }
+.fmt-color { overflow: hidden; flex-direction: column; gap: 1px; padding-top: 2px; }
+.fmt-color-a { font-weight: 700; font-size: 0.8rem; line-height: 1; }
+.fmt-color-bar { width: 14px; height: 3px; border-radius: 2px; background: currentColor; }
+.fmt-color input[type=color] {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; border: 0; padding: 0; cursor: pointer;
+}
+
+.composer-editor {
+  padding: 10px 12px; min-height: 42px; outline: none;
+  color: var(--ink); line-height: 1.5; word-break: break-word;
+}
+.composer-editor.is-single { white-space: pre-wrap; }
+.composer-editor.is-multiline { min-height: 124px; line-height: 1.65; }
+.composer-editor.is-multiline p { margin: 0 0 0.75em; }
+.composer-editor.is-multiline p:last-child { margin-bottom: 0; }
+.composer-editor[data-empty="1"]::before {
+  content: attr(data-placeholder);
+  color: #a39b8e; pointer-events: none; font-style: normal; font-weight: 400;
+}
+.composer--dark .composer-editor { background: #1d1a16; color: #f7f4ef; }
+.composer--dark .composer-editor[data-empty="1"]::before { color: rgba(247, 244, 239, 0.42); }
+.composer-editor--name { font-size: 1.55rem; line-height: 1.2; }
+.composer-editor--heading { font-size: 1.45rem; line-height: 1.18; }
+.composer-editor--label { font-size: 0.82rem; letter-spacing: 0.16em; text-transform: uppercase; }
+
 .list { display: grid; gap: 12px; }
 .item {
   display: grid; gap: 12px; grid-template-columns: 110px 1fr; align-items: start;
@@ -78,29 +148,6 @@ label > input, label > textarea, label > select { color: var(--ink); }
 .item-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .stat-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; margin-bottom: 8px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-
-.font-list { display: grid; gap: 12px; }
-.font-row {
-  display: grid; gap: 10px; padding: 14px;
-  border: 1px solid var(--line); border-radius: 12px; background: #fcfaf7;
-}
-.font-row-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
-.font-row-title { font-weight: 600; font-size: 0.94rem; color: var(--ink); }
-.font-row-hint { font-size: 0.82rem; color: var(--muted); }
-.font-controls {
-  display: grid; gap: 10px;
-  grid-template-columns: minmax(180px, 2fr) minmax(130px, 1fr) minmax(140px, 1fr);
-}
-.font-preview {
-  padding: 10px 12px; border-radius: 8px; background: #fff;
-  border: 1px dashed #dcd4c6; color: var(--ink);
-  line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.font-preview--name { font-size: 1.5rem; }
-.font-preview--headings { font-size: 1.3rem; }
-.font-preview--bio { font-size: 1rem; white-space: normal; }
-.font-preview--stats { font-size: 1.08rem; }
-.font-preview--captions { font-size: 0.94rem; }
 
 .savebar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
@@ -122,5 +169,5 @@ label > input, label > textarea, label > select { color: var(--ink); }
   .thumb { width: 100%; max-width: 220px; }
   .stat-row { grid-template-columns: 1fr 1fr; }
   .stat-row .btn { grid-column: 1 / -1; }
-  .font-controls { grid-template-columns: 1fr; }
+  .fmt-select { max-width: 145px; }
 }

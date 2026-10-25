@@ -1090,7 +1090,7 @@
       '</div>' +
       (uploadSlotId ? uploadSlotHtml(uploadSlotId) : '') +
       '<div id="' + esc(bodyId) + '" class="section-card-body"' + (isCollapsed ? ' hidden' : '') + '>' +
-        bodyHtml +
+        '<div class="section-card-body-inner">' + bodyHtml + '</div>' +
       '</div>' +
     '</section>';
   }
@@ -1298,7 +1298,7 @@
         '</div>' +
         uploadSlotHtml('group-' + grp.id) +
         '<div id="group-body-' + esc(grp.id) + '" class="group-card-body"' + (isCollapsed ? ' hidden' : '') + '>' +
-          rowBody +
+          '<div class="group-card-body-inner">' + rowBody + '</div>' +
         '</div>' +
       '</div>';
     }).join('');

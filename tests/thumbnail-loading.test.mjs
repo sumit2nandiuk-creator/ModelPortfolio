@@ -28,15 +28,16 @@ function render(model = profile) {
 
 test('site markup starts with R2 thumbnails and retains full-size sources for progressive replacement and popup', () => {
   const html = render();
-  assert.match(html, /<img class="hero-media" src="\/media\/jane-doe\/cover-preview\.webp" data-medium-src="\/media\/jane-doe\/cover-thumb\.webp" data-full-src="\/media\/jane-doe\/cover\.jpg"/);
+  assert.match(html, /<img class="hero-media" data-preview-src="\/media\/jane-doe\/cover-preview\.webp" data-medium-src="\/media\/jane-doe\/cover-thumb\.webp" data-full-src="\/media\/jane-doe\/cover\.jpg"/);
+  assert.doesNotMatch(html, /<img class="hero-media"[^>]*\ssrc="\/media\/jane-doe\/cover-preview\.webp"/);
   assert.match(html, /data-src="\/media\/jane-doe\/cover\.jpg" data-thumb="\/media\/jane-doe\/cover-thumb\.webp"/);
   assert.match(html, /<img src="\/media\/jane-doe\/photo-preview\.webp" data-medium-src="\/media\/jane-doe\/photo-thumb\.webp" data-full-src="\/media\/jane-doe\/photo\.jpg"/);
   assert.match(html, /data-src="\/media\/jane-doe\/photo\.jpg" data-thumb="\/media\/jane-doe\/photo-thumb\.webp"/);
   assert.match(html, /poster="\/media\/jane-doe\/poster-thumb\.webp" data-full-poster="\/media\/jane-doe\/poster\.jpg"/);
-  assert.match(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-preview\.webp" fetchpriority="high">/);
+  assert.doesNotMatch(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-preview\.webp"/);
 });
 
-test('cover slideshow uses tiny previews first, loads only the first cover eagerly, and preloads only its preview', () => {
+test('cover slideshow checks cached full-size images before activating its tiny preview', () => {
   const html = render({
     ...profile,
     cover: [
@@ -47,11 +48,11 @@ test('cover slideshow uses tiny previews first, loads only the first cover eager
     ],
   });
   for (let i = 1; i <= 4; i++) {
-    assert.match(html, new RegExp(`src="/media/jane-doe/cover-${i}-preview\\.webp" data-medium-src="/media/jane-doe/cover-${i}-thumb\\.webp" data-full-src="/media/jane-doe/cover-${i}\\.jpg"`));
+    assert.match(html, new RegExp(`data-preview-src="/media/jane-doe/cover-${i}-preview\\.webp" data-medium-src="/media/jane-doe/cover-${i}-thumb\\.webp" data-full-src="/media/jane-doe/cover-${i}\\.jpg"`));
   }
-  assert.match(html, /cover-1-preview\.webp" data-medium-src[^>]*loading="eager" fetchpriority="high"/);
-  assert.match(html, /cover-2-preview\.webp" data-medium-src[^>]*loading="lazy"/);
-  assert.match(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-1-preview\.webp" fetchpriority="high">/);
+  assert.match(html, /data-preview-src="\/media\/jane-doe\/cover-1-preview\.webp" data-medium-src[^>]*loading="eager" fetchpriority="high"/);
+  assert.match(html, /data-preview-src="\/media\/jane-doe\/cover-2-preview\.webp" data-medium-src[^>]*loading="lazy"/);
+  assert.doesNotMatch(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-1-preview\.webp"/);
   assert.doesNotMatch(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-[2-4]-thumb\.webp"/);
 });
 
@@ -74,6 +75,9 @@ test('admin exposes the Generate Thumbnails action and the site upgrades thumbna
   assert.match(admin, /id="new-model"[^>]*aria-label="New profile"/);
   assert.match(admin, /href="\.\.\/errors"[^>]*aria-label="Application errors"/);
   assert.match(admin, /id="view-site"[^>]*aria-label="View site"/);
+  assert.match(siteJs, /function activateHeroImage\(img\)/);
+  assert.match(siteJs, /cache: 'only-if-cached', mode: 'same-origin'/);
+  assert.match(siteJs, /setMediaSrc\(img, fullUrl\);/);
   assert.match(siteJs, /function loadFullImageAfterThumbnail\(img\)/);
   assert.match(siteJs, /var mediumUrl = typeof img\.getAttribute === 'function' \? img\.getAttribute\('data-medium-src'\) : ''/);
   assert.match(siteJs, /setMediaSrc\(img, mediumUrl\);\s*loadFullImageAfterThumbnail\(img\);/);

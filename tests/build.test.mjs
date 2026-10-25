@@ -599,7 +599,7 @@ test('local tiny previews and normal thumbnails are copied into the profile medi
     assert.equal(await exists(path.join(outMedia, 'preview-check-tiny.webp')), true);
     assert.equal(await exists(path.join(outMedia, 'preview-check-thumb.webp')), true);
     const html = await fs.readFile(path.join(ws.outDir, 'preview-check', 'index.html'), 'utf8');
-    assert.match(html, /src="\/preview-check\/media\/preview-check-tiny\.webp" data-medium-src="\/preview-check\/media\/preview-check-thumb\.webp" data-full-src="\/preview-check\/media\/preview-check-cover\.png"/);
+    assert.match(html, /data-preview-src="\/preview-check\/media\/preview-check-tiny\.webp" data-medium-src="\/preview-check\/media\/preview-check-thumb\.webp" data-full-src="\/preview-check\/media\/preview-check-cover\.png"/);
   } finally {
     await ws.cleanup();
   }

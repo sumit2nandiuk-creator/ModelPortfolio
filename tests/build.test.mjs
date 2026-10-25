@@ -561,9 +561,10 @@ test('a cover list builds a slideshow with dots and autoplay; a single cover has
     assert.match(manyHero, /data-autoplay="6000"/);
     assert.match(manyHero, /aria-label="Open cover photo 2 of 3"/);
     assert.doesNotMatch(manyHero, /carousel-control|Previous cover photo|Next cover photo/);
-    // All cover slides are eager.
+    // First two cover slides are eager (fixes black hero for 2 covers without hanging on many).
     assert.match(manyHero, /fetchpriority="high"/);
-    assert.equal((manyHero.match(/loading="eager"/g) ?? []).length, 3);
+    assert.equal((manyHero.match(/loading="eager"/g) ?? []).length, 2);
+    assert.equal((manyHero.match(/loading="lazy"/g) ?? []).length, 1);
     assert.doesNotMatch(many, /<link rel="preload" as="image" href="\/slides-check\/media\/slides-check-photo\.png"/);
 
     const single = await fs.readFile(path.join(ws.outDir, 'single-check', 'index.html'), 'utf8');

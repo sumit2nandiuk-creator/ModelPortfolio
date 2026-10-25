@@ -513,6 +513,7 @@ test('redesigned admin groups videos first followed by photos per category/title
   assert.equal(groupCards.length, 3);
   const groupTitles = groupCards.map((c) => c.querySelector('[data-group-title]').value);
   assert.deepEqual(groupTitles, ['Bridal', 'Meesho', 'Traditional']);
+  assert.equal(groupCards[0].querySelector('[data-group-title]').getAttribute('data-styled-slot'), 'aboutLabel');
   // Traditional contains only landscape items (1600x1067) -> marked data-landscape-group="1" (not resized to portrait)
   assert.equal(groupCards[0].getAttribute('data-landscape-group'), null);
   assert.equal(groupCards[1].getAttribute('data-landscape-group'), null);

@@ -403,9 +403,14 @@ test('the Sushmita Ghosh profile has compact mobile-friendly stats with no shoe 
   const css = await fs.readFile(path.join(siteDir, 'assets', 'site.css'), 'utf8');
   assert.match(css, /\.stats \{[\s\S]*?grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/);
   assert.match(css, /\.stat--full \{[\s\S]*?grid-column: 1 \/ -1;/);
+  assert.match(css, /\.stat--full \{[\s\S]*?display: grid;/);
+  assert.match(css, /\.stat--full dd \{[\s\S]*?text-align: left;/);
   // Measurement label font and color match "ABOUT" in Profile & About section
   assert.match(css, /\.stat dt \{[\s\S]*?font-family:\s*var\(--font-about-label-family,\s*var\(--font-captions-family\)\);/);
   assert.match(css, /\.stat dt \{[\s\S]*?color:\s*var\(--font-about-label-color,\s*var\(--accent\)\);/);
+  // Category / Row Title font style and color match "ABOUT" in Profile & About section
+  assert.match(css, /\.media-group-title \{[\s\S]*?font-family:\s*var\(--font-about-label-family,\s*var\(--font-captions-family\)\);/);
+  assert.match(css, /\.media-group-title \{[\s\S]*?color:\s*var\(--font-about-label-color,\s*var\(--accent\)\);/);
 
   const ws = await tempWorkspace();
   try {

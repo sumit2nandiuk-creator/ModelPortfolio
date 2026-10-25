@@ -436,16 +436,10 @@
     // Clean custom section texts and inline richText runs.
     var texts = {};
     var richText = {};
-    var singleKeys = ['name', 'aboutLabel', 'portfolioLabel', 'portfolioHeading', 'videosLabel', 'videosHeading', 'contactLabel', 'contactHeading'];
+    var singleKeys = ['name', 'aboutLabel', 'portfolioLabel', 'videosLabel', 'videosHeading', 'contactLabel', 'contactHeading'];
 
     singleKeys.forEach(function (key) {
       var defaultText = key === 'name' ? out.name : DEFAULT_TEXTS[key];
-      if (key === 'portfolioHeading') {
-        var rawHeading = m.texts && m.texts[key];
-        if (rawHeading !== undefined && (!trimmed(rawHeading) || /^categories$/i.test(trimmed(rawHeading)))) {
-          return;
-        }
-      }
       var plain = key === 'name'
         ? out.name
         : (trimmed(m.texts && m.texts[key]) || defaultText);
@@ -1369,28 +1363,16 @@
           '<button type="button" class="btn small primary" data-action="add-group">+ Add category / group</button>',
         '<div class="stack">' +
           '<p class="muted" style="margin:0">Each group renders as a horizontal scrollable row on the website: its video(s) appear first on the left, followed by its photos (with 10% of the next item peeking on the right whenever more exist).</p>' +
-          '<div class="grid">' +
-            composerBoxHtml({
-              richKey: 'portfolioLabel',
-              slot: 'portfolioLabel',
-              label: 'Section label',
-              multiline: false,
-              alignable: true,
-              editorClass: 'composer-editor--label',
-              baseRem: 0.82,
-              placeholder: DEFAULT_TEXTS.portfolioLabel,
-            }) +
-            composerBoxHtml({
-              richKey: 'portfolioHeading',
-              slot: 'portfolioHeading',
-              label: 'Section heading',
-              multiline: false,
-              alignable: true,
-              editorClass: 'composer-editor--heading',
-              baseRem: 1.45,
-              placeholder: DEFAULT_TEXTS.portfolioHeading,
-            }) +
-          '</div>' +
+          composerBoxHtml({
+            richKey: 'portfolioLabel',
+            slot: 'portfolioLabel',
+            label: 'Section label',
+            multiline: false,
+            alignable: true,
+            editorClass: 'composer-editor--label',
+            baseRem: 0.82,
+            placeholder: DEFAULT_TEXTS.portfolioLabel,
+          }) +
           '<div class="grid">' +
             groupFormatBarHtml('captions', 'Filters & photo captions font:') +
             groupFormatBarHtml('videoText', 'Video titles & descriptions font:') +

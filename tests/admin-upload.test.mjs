@@ -555,6 +555,10 @@ test('redesigned admin groups videos first followed by photos per category/title
     sectionCards.map((s) => s.getAttribute('data-section-card')),
     ['profile', 'measurements', 'contact', 'cover', 'portfolio'],
   );
+  const portfolioSection = h.doc.querySelector('[data-section-card="portfolio"]');
+  assert.ok(portfolioSection);
+  assert.ok(portfolioSection.querySelector('[data-composer="portfolioLabel"]'), 'portfolio section has Section label composer');
+  assert.equal(portfolioSection.querySelector('[data-composer="portfolioHeading"]'), null, 'portfolio section heading is removed from admin panel');
   const profileSection = sectionCards[0];
   const profileToggle = profileSection.querySelector('.section-collapse-btn');
   const profileBody = profileSection.querySelector('.section-card-body');

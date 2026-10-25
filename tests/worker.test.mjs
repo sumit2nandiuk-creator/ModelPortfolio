@@ -16,7 +16,7 @@ import {
   utf8ToBase64,
   validateModelShape,
 } from '../worker/src/model.mjs';
-import { handleRequest } from '../worker/src/index.mjs';
+import { handleModelPageRequest, handleRequest, handleSeedMediaRequest } from '../worker/src/index.mjs';
 import { onRequest as onApiRequest } from '../functions/api/[[path]].js';
 import { onRequest as onMediaRequest } from '../functions/media/[[path]].js';
 import { onRequest as onSlugPageRequest } from '../functions/[slug]/index.js';
@@ -332,6 +332,88 @@ test('saving a profile stores it in R2 with zero GitHub commits (no Cloudflare d
     env,
   });
   assert.equal(mediaAttempt.status, 404);
+});
+
+test('profiles can be archived and restored without losing their R2 data', async () => {
+  const env = fakeEnv();
+  const model = validModel();
+  await env.MEDIA.put('_profiles/jane-doe.json', JSON.stringify(model), { customMetadata: { version: 'v-1' } });
+  await env.MEDIA.put('jane-doe/cover.jpg', new Uint8Array([1, 2, 3]));
+
+  const archived = await handleRequest(apiRequest('DELETE', '/api/models/jane-doe', { body: { action: 'archive' } }), env);
+  assert.equal(archived.status, 200);
+  assert.equal((await archived.json()).state, 'archived');
+  assert.ok(env.MEDIA.objects.has('_profiles/jane-doe.json'));
+  assert.ok(env.MEDIA.objects.has('jane-doe/cover.jpg'));
+
+  const listing = await handleRequest(apiRequest('GET', '/api/models'), env);
+  assert.deepEqual(await listing.json(), { models: ['jane-doe'], archived: ['jane-doe'] });
+  const adminRead = await handleRequest(apiRequest('GET', '/api/models/jane-doe'), env);
+  assert.equal(adminRead.status, 200, 'archived profile remains accessible in the admin');
+
+  const hiddenPage = await handleModelPageRequest({
+    request: new Request('https://site.test/jane-doe/'), env, params: { slug: 'jane-doe' }, next: () => new Response('static'),
+  });
+  assert.equal(hiddenPage.status, 404, 'archived page is hidden from public visitors');
+  const hiddenMedia = await handleSeedMediaRequest({
+    request: new Request('https://site.test/jane-doe/media/cover.jpg'), env, params: { slug: 'jane-doe', path: 'cover.jpg' }, next: () => new Response('static image'),
+  });
+  assert.equal(hiddenMedia.status, 404, 'archived static seed media is also hidden');
+
+  const restored = await handleRequest(apiRequest('DELETE', '/api/models/jane-doe', { body: { action: 'restore' } }), env);
+  assert.equal((await restored.json()).state, 'active');
+  const restoredPage = await handleModelPageRequest({
+    request: new Request('https://site.test/jane-doe/'), env, params: { slug: 'jane-doe' }, next: () => new Response('static'),
+  });
+  assert.equal(restoredPage.status, 200);
+  const restoredMedia = await handleSeedMediaRequest({
+    request: new Request('https://site.test/jane-doe/media/cover.jpg'), env, params: { slug: 'jane-doe' }, next: () => new Response('static image'),
+  });
+  assert.equal(restoredMedia.status, 200);
+});
+
+test('permanent profile deletion removes its R2 profile/media and leaves a tombstone to block seed resurrection', async () => {
+  const env = fakeEnv({
+    ASSETS: fakeAssets({
+      '/_seed/_index.json': { models: ['jane-doe', 'other-model'] },
+      '/_seed/jane-doe.json': { model: validModel(), sizes: {} },
+      '/_seed/other-model.json': { model: validModel({ slug: 'other-model', name: 'Other Model' }), sizes: {} },
+    }),
+  });
+  await env.MEDIA.put('_profiles/jane-doe.json', JSON.stringify(validModel()), { customMetadata: { version: 'v-1' } });
+  await env.MEDIA.put('jane-doe/cover.jpg', new Uint8Array([1, 2, 3]));
+  await env.MEDIA.put('jane-doe/thumb.webp', new Uint8Array([4, 5]));
+  await env.MEDIA.put('other-model/keep.jpg', new Uint8Array([6]));
+
+  const deleted = await handleRequest(
+    apiRequest('DELETE', '/api/models/jane-doe', { body: { action: 'permanent', sha: 'v-1' } }),
+    env,
+  );
+  assert.equal(deleted.status, 200);
+  assert.equal((await deleted.json()).state, 'deleted');
+  assert.equal(env.MEDIA.objects.has('_profiles/jane-doe.json'), false);
+  assert.equal(env.MEDIA.objects.has('jane-doe/cover.jpg'), false);
+  assert.equal(env.MEDIA.objects.has('jane-doe/thumb.webp'), false);
+  assert.equal(env.MEDIA.objects.has('other-model/keep.jpg'), true);
+
+  const listing = await handleRequest(apiRequest('GET', '/api/models'), env);
+  assert.deepEqual(await listing.json(), { models: ['other-model'], archived: [] });
+  const blockedRead = await handleRequest(apiRequest('GET', '/api/models/jane-doe'), env);
+  assert.equal(blockedRead.status, 404);
+  const blockedRecreate = await handleRequest(
+    apiRequest('PUT', '/api/models/jane-doe', { body: { model: validModel() } }),
+    env,
+  );
+  assert.equal(blockedRecreate.status, 410);
+
+  const publicPage = await handleModelPageRequest({
+    request: new Request('https://site.test/jane-doe/'), env, params: { slug: 'jane-doe' }, next: () => new Response('seed page'),
+  });
+  assert.equal(publicPage.status, 404);
+  const deletedSeedMedia = await handleSeedMediaRequest({
+    request: new Request('https://site.test/jane-doe/media/cover.jpg'), env, params: { slug: 'jane-doe' }, next: () => new Response('seed image'),
+  });
+  assert.equal(deletedSeedMedia.status, 404);
 });
 
 test('creating a new profile and optimistic concurrency conflict checks work in R2', async () => {

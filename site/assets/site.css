@@ -677,9 +677,8 @@ main section {
 
 .stat--full {
   grid-column: 1 / -1;
-  flex-direction: row;
-  flex-wrap: wrap;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: clamp(92px, 26%, 132px) minmax(0, 1fr);
   align-items: baseline;
   gap: 3px 12px;
 }
@@ -707,7 +706,7 @@ main section {
 }
 
 .stat--full dd {
-  text-align: right;
+  text-align: left;
 }
 
 /* Filters ------------------------------------------------------------------ */
@@ -774,11 +773,13 @@ main section {
 
 .media-group-title {
   margin: 0;
-  font-family: var(--font-display);
+  font-family: var(--font-about-label-family, var(--font-captions-family));
+  font-style: var(--font-about-label-style, var(--font-captions-style));
   font-size: clamp(1.45rem, 2.4vw, 2rem);
-  font-weight: 400;
+  font-weight: var(--font-about-label-weight, var(--font-captions-strong-weight));
   letter-spacing: 0.01em;
   line-height: 1.15;
+  color: var(--font-about-label-color, var(--accent));
 }
 
 .media-row-nav {
@@ -1715,10 +1716,10 @@ main section {
 }
 
 .media-group-title {
-  font-family: var(--font-portfolio-heading-family, var(--font-headings-family));
-  font-style: var(--font-portfolio-heading-style, var(--font-headings-style));
-  font-weight: var(--font-portfolio-heading-weight, 400);
-  color: var(--font-portfolio-heading-color, inherit);
+  font-family: var(--font-about-label-family, var(--font-captions-family));
+  font-style: var(--font-about-label-style, var(--font-captions-style));
+  font-weight: var(--font-about-label-weight, var(--font-captions-strong-weight));
+  color: var(--font-about-label-color, var(--accent));
 }
 
 .video-title {

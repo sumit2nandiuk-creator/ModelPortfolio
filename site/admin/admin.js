@@ -1092,6 +1092,7 @@
     var groups = Array.isArray(m._groups) && m._groups.length ? m._groups : [{ id: 'default', title: 'Portfolio' }];
     var videoStyle = esc(boxInlineCss('videoText'));
     var captionStyle = esc(boxInlineCss('captions'));
+    var aboutLabelStyle = esc(boxInlineCss('aboutLabel'));
 
     return groups.map(function (grp, gIdx) {
       var isCollapsed = Boolean(S.collapsedGroups[grp.id]);
@@ -1191,7 +1192,7 @@
               '<span class="group-collapse-text">' + (isCollapsed ? 'Expand' : 'Collapse') + '</span>' +
             '</button>' +
             '<label class="group-title-label">Category / Row Title' +
-              '<input class="group-title-input" data-group-title="' + gIdx + '" data-styled-slot="captions" style="' + captionStyle + '" value="' + esc(groupTitleVal) + '" placeholder="e.g. Bridal, Editorial, Traditional">' +
+              '<input class="group-title-input" data-group-title="' + gIdx + '" data-styled-slot="aboutLabel" style="' + aboutLabelStyle + '" value="' + esc(groupTitleVal) + '" placeholder="e.g. Bridal, Editorial, Traditional">' +
             '</label>' +
             '<button type="button" class="group-count-pill" data-action="toggle-group" data-group-id="' + esc(grp.id) + '" aria-expanded="' + String(!isCollapsed) + '" data-group-counts="' + gIdx + '">' + esc(groupSummaryText(groupVideos.length, groupPhotos.length)) + '</button>' +
           '</div>' +

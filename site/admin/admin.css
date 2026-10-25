@@ -457,7 +457,7 @@ label > input, label > textarea, label > select { color: var(--ink); }
   flex: 1 1 200px;
   max-width: 340px;
   font-weight: 600;
-  color: var(--ink);
+  color: var(--accent);
 }
 
 .group-title-input {

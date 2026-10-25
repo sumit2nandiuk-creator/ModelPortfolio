@@ -476,63 +476,6 @@
     };
   }
 
-  function activateHeroImage(img) {
-    if (!img || typeof img.getAttribute !== 'function') return;
-    var previewUrl = img.getAttribute('data-preview-src');
-    if (!previewUrl) return;
-    var fullUrl = img.getAttribute('data-full-src');
-    if (!fullUrl || img._heroActivationPending) return;
-
-    function isCurrentSlide() {
-      var root = img.closest && img.closest('.hero-carousel');
-      var slide = root && img.closest('.carousel-slide');
-      return !root || !slide || slide.classList.contains('is-current');
-    }
-
-    function usePreview() {
-      if (!isCurrentSlide() || img.getAttribute('data-preview-src') !== previewUrl) return;
-      img.removeAttribute('data-preview-src');
-      setMediaSrc(img, previewUrl);
-    }
-
-    var pageOrigin;
-    var fullOrigin;
-    try {
-      pageOrigin = new URL(window.location.href).origin;
-      fullOrigin = new URL(fullUrl, window.location.href).origin;
-    } catch (_) {
-      usePreview();
-      return;
-    }
-    if (pageOrigin !== fullOrigin || typeof window.fetch !== 'function') {
-      usePreview();
-      return;
-    }
-
-    img._heroActivationPending = true;
-    var settled = false;
-    var timer = setTimeout(function () { finishCacheProbe(false); }, 80);
-    function finishCacheProbe(isCached) {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      img._heroActivationPending = false;
-      if (!isCurrentSlide()) return;
-      if (isCached && img.getAttribute('data-preview-src') === previewUrl) {
-        img.removeAttribute('data-preview-src');
-        img.removeAttribute('data-medium-src');
-        img.removeAttribute('data-full-src');
-        setMediaSrc(img, fullUrl);
-      } else {
-        usePreview();
-      }
-    }
-
-    window.fetch(fullUrl, { cache: 'only-if-cached', mode: 'same-origin' }).then(function (response) {
-      finishCacheProbe(Boolean(response && response.ok));
-    }, function () { finishCacheProbe(false); });
-  }
-
   // ---- Cover slideshow -----------------------------------------------------
   var heroRoot = heroSection ? heroSection.querySelector('.carousel') : null;
   var heroDots = heroSection
@@ -554,7 +497,6 @@
         heroDots.forEach(function (dot, j) { dot.classList.toggle('is-active', j === i); });
         var active = heroRoot.querySelectorAll('.carousel-slide')[i];
         var activeImg = active && active.querySelector('img');
-        if (activeImg) activateHeroImage(activeImg);
         if (activeImg && activeImg.complete && (activeImg.naturalWidth || 0) > 0) loadFullImageAfterThumbnail(activeImg);
       },
     });

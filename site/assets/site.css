@@ -1100,14 +1100,19 @@ main section {
 .js .lb-stage .carousel-slide.is-loading img,
 .gallery-btn.is-loading img,
 .video-frame.is-loading video,
-.carousel-slide.is-loading img {
+.lb-stage .carousel-slide.is-loading img {
   opacity: 0;
 }
 
 .gallery-btn.is-loaded img,
 .video-frame.is-loaded video,
-.carousel-slide.is-loaded img {
+.lb-stage .carousel-slide.is-loaded img {
   opacity: 1;
+}
+
+/* Banner slideshow hero media remains visible without being hidden by opacity 0 */
+.hero-media {
+  opacity: 1 !important;
 }
 
 /* Media automatic retry states -------------------------------------------- */

@@ -161,13 +161,14 @@ function renderHero(model, ctx) {
   const many = covers.length > 1;
 
   // One slide per cover photo. A tap opens the viewer; a drag moves the slides instead.
+  // All slideshow images are loaded eagerly so every slide is ready before rotating.
   const slides = covers
     .map((cover, i) => {
       const src = ctx.mediaUrl(cover.file);
       const label = many ? `Open cover photo ${i + 1} of ${covers.length}` : 'Open cover photo';
       return `
         <button class="carousel-slide" type="button" data-src="${esc(src)}" data-alt="${esc(cover.alt)}" data-caption="" aria-label="${esc(label)}">
-          <img class="hero-media" src="${esc(src)}" alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} ${i === 0 ? 'loading="eager" fetchpriority="high"' : 'loading="lazy"'} decoding="async" draggable="false">
+          <img class="hero-media" src="${esc(src)}" alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} loading="eager"${i === 0 ? ' fetchpriority="high"' : ''} decoding="async" draggable="false">
         </button>`;
     })
     .join('');
@@ -603,9 +604,15 @@ export function renderModelPage(model, ctx) {
     )
     .join('\n  ');
 
-  const lcpPreload = cover
-    ? `<link rel="preload" as="image" href="${esc(cover)}" fetchpriority="high">`
-    : '';
+  // Preload all banner slideshow images first so they are fetched immediately
+  const coverPreloads = covers
+    .map((c, i) => {
+      const url = ctx.mediaUrl(c.file);
+      if (!url) return '';
+      return `<link rel="preload" as="image" href="${esc(url)}"${i === 0 ? ' fetchpriority="high"' : ''}>`;
+    })
+    .filter(Boolean)
+    .join('\n  ');
 
   const extraHead = [
     `<meta property="og:title" content="${esc(title)}">`,
@@ -613,7 +620,7 @@ export function renderModelPage(model, ctx) {
     `<meta property="og:type" content="profile">`,
     cover ? `<meta property="og:image" content="${esc(cover)}">` : '',
     preconnectTags,
-    lcpPreload,
+    coverPreloads,
   ]
     .filter(Boolean)
     .join('\n  ');

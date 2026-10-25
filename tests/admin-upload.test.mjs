@@ -12,6 +12,7 @@ const adminJsPath = path.join(root, 'site', 'admin', 'admin.js');
 function createAdminUploadHarness(modelOverrides = {}) {
   const xhrs = [];
   const savedPayloads = [];
+  let putFailure = null;
   const storage = new Map([['admin.token', 'secret-token']]);
 
   class ClassList {
@@ -331,6 +332,16 @@ function createAdminUploadHarness(modelOverrides = {}) {
     }
     if (url.endsWith('/api/models/sushmita-ghosh') && opts.method === 'PUT') {
       const parsed = JSON.parse(opts.body);
+      if (putFailure) {
+        const fail = putFailure;
+        putFailure = null;
+        return {
+          status: fail.status,
+          ok: false,
+          headers: { get: () => 'application/json' },
+          json: async () => ({ error: fail.error, ...(fail.errors ? { errors: fail.errors } : {}) }),
+        };
+      }
       savedPayloads.push(parsed);
       return {
         status: 200,
@@ -352,6 +363,9 @@ function createAdminUploadHarness(modelOverrides = {}) {
     doc,
     xhrs,
     savedPayloads,
+    failNextSave(error, { status = 409, errors } = {}) {
+      putFailure = { error, status, errors };
+    },
     async boot() {
       const code = await fs.readFile(adminJsPath, 'utf8');
       const ctx = vm.createContext({
@@ -707,4 +721,59 @@ test('admin panel moves measurement attributes up/down and adds newly uploaded p
     'https://modelportfolio.pages.dev/media/sushmita-ghosh/3-fresh-second.jpg',
     'bridal-old.jpg',
   ]);
+});
+
+test('save success shows a green-tick popup and a success status', async () => {
+  const h = await createAdminUploadHarness();
+  await h.boot();
+
+  const toastEl = h.doc.getElementById('toast');
+  assert.equal(toastEl.hidden, true, 'no popup before saving');
+
+  h.doc.getElementById('save').dispatchEvent({ type: 'click', bubbles: true });
+  await h.flush();
+  await h.flush();
+
+  // Exactly one payload reached the API.
+  assert.equal(h.savedPayloads.length, 1);
+
+  // Green-tick popup: visible, styled ok, with a tick icon and a clear message.
+  assert.equal(toastEl.hidden, false, 'success popup is visible');
+  assert.match(toastEl.className, /toast--ok/);
+  const okIcon = toastEl.querySelector('.toast-icon');
+  assert.ok(okIcon, 'success popup has an icon');
+  assert.equal(okIcon.textContent, '✓');
+  assert.match(toastEl.querySelector('.toast-text').textContent, /Saved/);
+
+  // The inline status line matches the popup.
+  const statusEl = h.doc.getElementById('status');
+  assert.match(statusEl.className, /status ok/);
+  assert.match(statusEl.textContent, /Saved/);
+});
+
+test('save failure shows a red-cross popup and an error status', async () => {
+  const h = await createAdminUploadHarness();
+  await h.boot();
+
+  const failure = 'This profile changed since you opened it. Reload it, then apply your changes again.';
+  h.failNextSave(failure, { status: 409, errors: ['version conflict'] });
+
+  h.doc.getElementById('save').dispatchEvent({ type: 'click', bubbles: true });
+  await h.flush();
+  await h.flush();
+
+  // Nothing was persisted when the server refused the save.
+  assert.equal(h.savedPayloads.length, 0);
+
+  const toastEl = h.doc.getElementById('toast');
+  assert.equal(toastEl.hidden, false, 'error popup is visible');
+  assert.match(toastEl.className, /toast--error/);
+  const errIcon = toastEl.querySelector('.toast-icon');
+  assert.ok(errIcon, 'error popup has an icon');
+  assert.equal(errIcon.textContent, '✕');
+  assert.match(toastEl.querySelector('.toast-text').textContent, /changed since you opened it/);
+
+  const statusEl = h.doc.getElementById('status');
+  assert.match(statusEl.className, /status error/);
+  assert.match(statusEl.textContent, /changed since you opened it/);
 });

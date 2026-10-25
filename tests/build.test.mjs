@@ -665,3 +665,11 @@ test('email-style text boxes support custom copy, inline rich-text runs, box fon
     await badWs.cleanup();
   }
 });
+
+test('sections use balanced vertical padding without extra bottom gaps after stats or gallery items', async () => {
+  const css = await fs.readFile(path.join(siteDir, 'assets', 'site.css'), 'utf8');
+  assert.match(css, /\.section \{\s*padding: clamp\(40px, 6vw, 84px\) 0;\s*\}/);
+  assert.doesNotMatch(css, /clamp\(88px,\s*12vw,\s*160px\)/);
+  assert.match(css, /\.gallery \{[\s\S]*?margin-bottom: calc\(-1 \* clamp\(16px, 2vw, 28px\)\);/);
+  assert.match(css, /@media \(max-width: 560px\) \{[\s\S]*?\.gallery \{\s*display: grid;\s*gap: 20px;\s*margin-bottom: 0;\s*\}/);
+});

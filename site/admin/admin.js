@@ -482,9 +482,31 @@
   }
 
   var toastTimer = null;
-  function toast(text) {
+  // Save-feedback icons: green tick for success, red cross for failure.
+  var TOAST_ICONS = { ok: '✓', error: '✕' };
+
+  function hideToast() {
     var el = $('toast');
-    el.textContent = text;
+    if (!el) return;
+    clearTimeout(toastTimer);
+    toastTimer = null;
+    el.hidden = true;
+  }
+
+  // Shows a transient popup. Pass kind = 'ok' for a green tick or 'error' for a
+  // red cross so save feedback is unambiguous. Without a kind it stays a plain
+  // message (used for upload / profile notices).
+  function toast(text, kind) {
+    var el = $('toast');
+    if (!el) return;
+    var icon = kind ? TOAST_ICONS[kind] || '' : '';
+    var body = (icon
+      ? '<span class="toast-icon" role="img" aria-label="' + (kind === 'ok' ? 'Success' : 'Error') + '">' + icon + '</span>'
+      : '') + '<span class="toast-text">' + esc(text) + '</span>';
+    el.innerHTML = body;
+    el.className = 'toast' + (kind ? ' toast--' + kind : '');
+    if (kind === 'error') el.setAttribute('role', 'alert');
+    else el.setAttribute('role', 'status');
     el.hidden = false;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { el.hidden = true; }, 3200);
@@ -2652,6 +2674,7 @@
 
   function save() {
     if (!S.model || S.busy) return;
+    hideToast();
     var model = cleanProfile(S.model);
     setBusy(true, 'Saving…');
     var path = profilePath(S.slug);
@@ -2664,12 +2687,15 @@
       renderPicker();
       return removeHostedFiles();
     }).then(function () {
-      setStatus('Saved. Changes are live immediately.', 'ok');
-      toast('Saved');
+      var okMessage = 'Saved. Changes are live immediately.';
+      setStatus(okMessage, 'ok');
+      toast(okMessage, 'ok');
       updateDirtyNote();
     }).catch(function (err) {
       var detail = err.details && err.details.length ? ' ' + err.details.join(' ') : '';
-      setStatus((err.message || 'Saving failed.') + detail, 'error');
+      var message = (err.message || 'Saving failed.') + detail;
+      setStatus(message, 'error');
+      toast(message, 'error');
     }).then(function () { setBusy(false); });
   }
 

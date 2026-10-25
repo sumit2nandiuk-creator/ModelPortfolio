@@ -118,17 +118,12 @@
     {
       "file": "reel-placeholder.mp4",
       "poster": "video-poster.jpg",
-      "title": "Showreel 2026",
-      "category": "Showreel",
-      "description": "Placeholder reel. Replace with a real showreel exported as MP4 (H.264)."
+      "title": "Video"
     }
   ],
   "contact": {
     "email": "sushmitaghosh0099@gmail.com",
     "phone": "+91 86977 71768",
-    "whatsapp": "+91 86977 71768",
-    "instagram": "",
-    "linkedin": "",
-    "website": ""
+    "whatsapp": "+91 86977 71768"
   }
 }

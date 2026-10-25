@@ -68,27 +68,6 @@
   var SIZE_EM = { sm: '0.86em', md: '1em', lg: '1.2em', xl: '1.42em' };
   var SIZE_SCALE = { sm: 0.86, md: 1, lg: 1.18, xl: 1.38 };
 
-  function loadIgnoredWords() {
-    var set = {};
-    try {
-      var raw = typeof localStorage !== 'undefined' && localStorage.getItem('admin.ignoredWords');
-      if (raw) {
-        JSON.parse(raw).forEach(function (w) {
-          if (typeof w === 'string' && w) set[w.toLowerCase()] = 1;
-        });
-      }
-    } catch (e) { /* storage unavailable */ }
-    return set;
-  }
-
-  function saveIgnoredWords(map) {
-    try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('admin.ignoredWords', JSON.stringify(Object.keys(map || {})));
-      }
-    } catch (e) { /* storage unavailable */ }
-  }
-
   var S = {
     token: sessionStorage.getItem('admin.token') || '',
     models: [],
@@ -102,10 +81,6 @@
     uploads: {},         // slotId -> { state, title, detail, percent, indeterminate, canCancel }
     collapsedSections: {}, // sectionId -> true when collapsed in the editor
     collapsedGroups: {}, // groupId -> true when collapsed in the editor
-    proofreadEnabled: true,
-    ignoredWords: loadIgnoredWords(),
-    proofreadIssues: {}, // targetId -> array of issues
-    proofreadTimer: null,
     activeUploadSlot: '',
     abortUpload: null,
     groupSeq: 1,
@@ -515,121 +490,6 @@
     toastTimer = setTimeout(function () { el.hidden = true; }, 3200);
   }
 
-  var savePopupTimer = null;
-
-  function closeSavePopup() {
-    clearTimeout(savePopupTimer);
-    savePopupTimer = null;
-    var el = $('save-popup');
-    if (el) {
-      el.hidden = true;
-      el.innerHTML = '';
-    }
-  }
-
-  function ensureSavePopup() {
-    var el = $('save-popup');
-    if (!el && document.body) {
-      el = document.createElement('div');
-      el.id = 'save-popup';
-      el.className = 'save-popup-backdrop';
-      el.setAttribute('role', 'alertdialog');
-      el.setAttribute('aria-modal', 'true');
-      el.setAttribute('aria-labelledby', 'save-popup-title');
-      el.setAttribute('aria-describedby', 'save-popup-desc');
-      el.hidden = true;
-      document.body.appendChild(el);
-    }
-    if (el && !el._bound) {
-      el._bound = true;
-      el.addEventListener('click', function (e) {
-        if (e.target === el || (e.target && e.target.closest && e.target.closest('[data-save-popup-close]'))) {
-          closeSavePopup();
-        }
-      });
-    }
-    return el;
-  }
-
-  function showSavePopup(opts) {
-    opts = opts || {};
-    var el = ensureSavePopup();
-    if (!el) return;
-    clearTimeout(savePopupTimer);
-    savePopupTimer = null;
-
-    var isSuccess = opts.kind === 'success';
-    var iconSvg = isSuccess
-      ? '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>'
-      : '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
-
-    var errs = Array.isArray(opts.errors) ? opts.errors : [];
-    var errorsHtml = errs.length
-      ? '<ul class="save-popup-errors">' + errs.map(function (msg) { return '<li>' + esc(msg) + '</li>'; }).join('') + '</ul>'
-      : '';
-
-    var actionsHtml = isSuccess
-      ? ((S.slug ? '<a class="btn ghost" href="../' + encodeURIComponent(S.slug) + '/" target="_blank" rel="noopener">View live page</a>' : '') +
-         '<button type="button" class="btn success-solid save-popup-ok" data-save-popup-close>Done</button>')
-      : '<button type="button" class="btn danger-solid save-popup-ok" data-save-popup-close>Close</button>';
-
-    el.innerHTML =
-      '<div class="save-popup-card ' + (isSuccess ? 'is-success' : 'is-error') + '" data-save-popup-kind="' + (isSuccess ? 'success' : 'error') + '">' +
-        '<button type="button" class="save-popup-x" data-save-popup-close aria-label="Close popup">✕</button>' +
-        '<div class="save-popup-icon ' + (isSuccess ? 'is-success' : 'is-error') + '" data-save-popup-icon="' + (isSuccess ? 'success' : 'error') + '" aria-hidden="true">' +
-          iconSvg +
-        '</div>' +
-        '<h3 id="save-popup-title" class="save-popup-title">' + esc(opts.title || (isSuccess ? 'Changes saved successfully' : 'Could not save changes')) + '</h3>' +
-        '<p id="save-popup-desc" class="save-popup-desc">' + esc(opts.message || '') + '</p>' +
-        errorsHtml +
-        '<div class="save-popup-actions">' + actionsHtml + '</div>' +
-      '</div>';
-
-    el.hidden = false;
-    var okBtn = el.querySelector('.save-popup-ok');
-    if (okBtn && typeof okBtn.focus === 'function') okBtn.focus();
-
-    if (isSuccess) {
-      savePopupTimer = setTimeout(closeSavePopup, 4000);
-    }
-  }
-
-  function formatSaveError(err) {
-    var seen = {};
-    var items = [];
-    function addMsg(m) {
-      var s = trimmed(String(m == null ? '' : m));
-      if (!s || seen[s]) return;
-      seen[s] = 1;
-      items.push(s);
-    }
-    if (err && Array.isArray(err.details) && err.details.length) {
-      err.details.forEach(addMsg);
-    }
-    if (err && err.message) {
-      addMsg(err.message);
-    }
-    if (err && err.status === 401) {
-      return {
-        title: 'Session expired',
-        message: 'Your admin token is missing or no longer valid. Please sign in again to save your changes.',
-        errors: [],
-      };
-    }
-    if (items.length > 1) {
-      return {
-        title: 'Could not save changes',
-        message: 'Please fix the following ' + items.length + ' issues and try saving again:',
-        errors: items,
-      };
-    }
-    return {
-      title: 'Could not save changes',
-      message: items[0] || 'Saving failed. Please check your entries and connection, then try again.',
-      errors: [],
-    };
-  }
-
   function setBusy(on, label) {
     S.busy = on;
     $('save').disabled = on;
@@ -929,40 +789,12 @@
     return plain ? [[{ text: plain }]] : [];
   }
 
-  function defaultProofreadModeForField(path) {
-    if (path === 'contact.email') return 'email';
-    if (path === 'contact.phone' || path === 'contact.whatsapp') return 'phone';
-    if (/^contact\.(instagram|linkedin|tiktok|imdb|website)$/.test(path)) return 'url';
-    if (path === 'seo.description') return 'prose';
-    return 'phrase';
-  }
-
-  function spellAttrsForMode(mode) {
-    var on = S.proofreadEnabled ? 'true' : 'false';
-    var noAutoCorr = mode === 'email' || mode === 'url' || mode === 'phone' || mode === 'year' || mode === 'name';
-    var autoCap = (mode === 'email' || mode === 'url' || mode === 'phone' || mode === 'year')
-      ? 'none'
-      : ((mode === 'name' || mode === 'label' || mode === 'heading') ? 'words' : 'sentences');
-    return 'type="text" spellcheck="' + on + '" lang="en" autocorrect="' + (noAutoCorr ? 'off' : 'on') +
-      '" autocapitalize="' + autoCap + '" data-gramm="true" data-enable-grammarly="true"';
-  }
-
-  function proofreadSlotHtml(targetId) {
-    return '<div class="proofread-slot" data-proofread-slot="' + esc(targetId) + '"></div>';
-  }
-
   function composerBoxHtml(opts) {
     var paras = initialParagraphsFor(opts.richKey);
     var inner = renderEditorInnerHtml(paras, opts.multiline);
     var isEmpty = !paras.length || !trimmed(runsToPlain(paras[0]));
     var cls = 'composer-editor ' + (opts.multiline ? 'is-multiline' : 'is-single') +
       (opts.editorClass ? ' ' + opts.editorClass : '');
-    var targetId = 'rich:' + opts.richKey;
-    var mode = opts.proofreadMode ||
-      (opts.richKey === 'name' ? 'name' : ((opts.multiline || opts.richKey === 'contactHeading') ? 'prose' : 'heading'));
-    var spellOn = S.proofreadEnabled ? 'true' : 'false';
-    var autoCorr = opts.richKey === 'name' ? 'off' : 'on';
-    var autoCap = opts.richKey === 'name' ? 'words' : (mode === 'heading' ? 'words' : 'sentences');
     return '<div class="composer-field' + (opts.full ? ' full' : '') + '">' +
       '<div class="composer-label"><span>' + esc(opts.label) + '</span>' +
         (opts.hint ? '<span class="hint">' + esc(opts.hint) + '</span>' : '') +
@@ -971,11 +803,7 @@
         '<div class="composer-bar" data-toolbar="' + esc(opts.slot) + '">' +
           formatToolbarInnerHtml(opts) +
         '</div>' +
-        '<div class="' + cls + '" contenteditable="true" spellcheck="' + spellOn + '" lang="en"' +
-          ' autocorrect="' + autoCorr + '" autocapitalize="' + autoCap + '"' +
-          ' data-gramm="true" data-gramm_editor="true" data-enable-grammarly="true"' +
-          ' data-proofread-target="' + esc(targetId) + '"' +
-          ' data-proofread-mode="' + esc(mode) + '"' +
+        '<div class="' + cls + '" contenteditable="true" spellcheck="true"' +
           ' data-rich-key="' + esc(opts.richKey) + '"' +
           ' data-slot="' + esc(opts.slot) + '"' +
           ' data-base-rem="' + (opts.baseRem || '') + '"' +
@@ -986,7 +814,6 @@
           inner +
         '</div>' +
       '</div>' +
-      proofreadSlotHtml(targetId) +
     '</div>';
   }
 
@@ -996,16 +823,10 @@
     '</div>';
   }
 
-  function field(label, path, value, extra, styledSlot, proofreadMode) {
-    var mode = proofreadMode || defaultProofreadModeForField(path);
-    var targetId = 'field:' + path;
+  function field(label, path, value, extra, styledSlot) {
     var styleAttr = styledSlot ? ' data-styled-slot="' + esc(styledSlot) + '" style="' + esc(boxInlineCss(styledSlot)) + '"' : '';
     return '<label>' + esc(label) +
-      '<input ' + spellAttrsForMode(mode) +
-      ' data-proofread-target="' + esc(targetId) + '" data-proofread-mode="' + esc(mode) + '"' +
-      ' data-field="' + esc(path) + '" value="' + esc(value) + '"' + styleAttr + (extra || '') + '>' +
-      proofreadSlotHtml(targetId) +
-      '</label>';
+      '<input data-field="' + esc(path) + '" value="' + esc(value) + '"' + styleAttr + (extra || '') + '></label>';
   }
 
   function formatBytes(bytes) {
@@ -1183,14 +1004,11 @@
 
   function coverHtml() {
     return S.model.cover.map(function (c, i) {
-      var altTarget = 'list:cover:' + i + ':alt';
       return '<div class="item">' +
         thumbBoxHtml('<img class="thumb" alt="" src="' + esc(mediaSrc(c.file)) + '" loading="lazy">', 'Loading photo…') +
         '<div><div class="item-fields">' +
         '<label class="full">Alt text (describe the photo for screen readers)' +
-        '<input ' + spellAttrsForMode('caption') + ' data-proofread-target="' + esc(altTarget) + '" data-proofread-mode="caption" data-list="cover" data-i="' + i + '" data-key="alt" value="' + esc(c.alt) + '">' +
-        proofreadSlotHtml(altTarget) +
-        '</label>' +
+        '<input data-list="cover" data-i="' + i + '" data-key="alt" value="' + esc(c.alt) + '"></label>' +
         '</div><div class="item-actions">' + moveButtons('cover', i, S.model.cover.length) + removeButton('cover', i) +
         '</div></div></div>';
     }).join('') || '<p class="muted">No cover photos yet. The first one is shown first on the site.</p>';
@@ -1300,9 +1118,9 @@
               '<span class="muted small-file">' + esc(v.file ? (isHttp(v.file) ? 'hosted video' : v.file) : '') + '</span>' +
             '</div>' +
             '<div class="item-fields">' +
-              '<label>Subtitle / Title<input ' + spellAttrsForMode('heading') + ' data-proofread-target="list:videos:' + i + ':title" data-proofread-mode="heading" data-list="videos" data-i="' + i + '" data-key="title" data-styled-slot="videoText" style="' + videoStyle + '" value="' + esc(v.title) + '" placeholder="Optional video title">' + proofreadSlotHtml('list:videos:' + i + ':title') + '</label>' +
+              '<label>Subtitle / Title<input data-list="videos" data-i="' + i + '" data-key="title" data-styled-slot="videoText" style="' + videoStyle + '" value="' + esc(v.title) + '" placeholder="Optional video title"></label>' +
               '<label>Group<select data-move-item-group="videos" data-i="' + i + '">' + groupSelectOptionsHtml(groups, grp.id) + '</select></label>' +
-              '<label class="full">Description<input ' + spellAttrsForMode('caption') + ' data-proofread-target="list:videos:' + i + ':description" data-proofread-mode="caption" data-list="videos" data-i="' + i + '" data-key="description" data-styled-slot="videoText" style="' + videoStyle + '" value="' + esc(v.description) + '" placeholder="Optional caption">' + proofreadSlotHtml('list:videos:' + i + ':description') + '</label>' +
+              '<label class="full">Description<input data-list="videos" data-i="' + i + '" data-key="description" data-styled-slot="videoText" style="' + videoStyle + '" value="' + esc(v.description) + '" placeholder="Optional caption"></label>' +
             '</div>' +
             uploadSlotHtml('poster-' + i) +
             '<div class="item-actions">' +
@@ -1326,10 +1144,10 @@
               '<span class="media-kind-badge is-photo">#' + seqNum + ' · Photo</span>' +
             '</div>' +
             '<div class="item-fields">' +
-              '<label>Photo title<input ' + spellAttrsForMode('heading') + ' data-proofread-target="list:photos:' + i + ':title" data-proofread-mode="heading" data-list="photos" data-i="' + i + '" data-key="title" value="' + esc(p.title) + '">' + proofreadSlotHtml('list:photos:' + i + ':title') + '</label>' +
+              '<label>Photo title<input data-list="photos" data-i="' + i + '" data-key="title" value="' + esc(p.title) + '"></label>' +
               '<label>Group<select data-move-item-group="photos" data-i="' + i + '">' + groupSelectOptionsHtml(groups, grp.id) + '</select></label>' +
-              '<label>Year<input ' + spellAttrsForMode('year') + ' data-proofread-target="list:photos:' + i + ':year" data-proofread-mode="year" data-list="photos" data-i="' + i + '" data-key="year" data-styled-slot="captions" style="' + captionStyle + '" value="' + esc(p.year) + '" placeholder="Optional">' + proofreadSlotHtml('list:photos:' + i + ':year') + '</label>' +
-              '<label>Alt text<input ' + spellAttrsForMode('caption') + ' data-proofread-target="list:photos:' + i + ':alt" data-proofread-mode="caption" data-list="photos" data-i="' + i + '" data-key="alt" value="' + esc(p.alt) + '" placeholder="Describe photo">' + proofreadSlotHtml('list:photos:' + i + ':alt') + '</label>' +
+              '<label>Year<input data-list="photos" data-i="' + i + '" data-key="year" data-styled-slot="captions" style="' + captionStyle + '" value="' + esc(p.year) + '" placeholder="Optional"></label>' +
+              '<label>Alt text<input data-list="photos" data-i="' + i + '" data-key="alt" value="' + esc(p.alt) + '" placeholder="Describe photo"></label>' +
             '</div>' +
             '<div class="item-actions">' +
               groupMoveItemButtons('photos', i, pPos, groupPhotos.length) +
@@ -1351,8 +1169,7 @@
               '<span class="group-collapse-text">' + (isCollapsed ? 'Expand' : 'Collapse') + '</span>' +
             '</button>' +
             '<label class="group-title-label">Category / Row Title' +
-              '<input class="group-title-input" ' + spellAttrsForMode('heading') + ' data-proofread-target="group:' + gIdx + ':title" data-proofread-mode="heading" data-group-title="' + gIdx + '" data-styled-slot="captions" style="' + captionStyle + '" value="' + esc(groupTitleVal) + '" placeholder="e.g. Bridal, Editorial, Traditional">' +
-              proofreadSlotHtml('group:' + gIdx + ':title') +
+              '<input class="group-title-input" data-group-title="' + gIdx + '" data-styled-slot="captions" style="' + captionStyle + '" value="' + esc(groupTitleVal) + '" placeholder="e.g. Bridal, Editorial, Traditional">' +
             '</label>' +
             '<button type="button" class="group-count-pill" data-action="toggle-group" data-group-id="' + esc(grp.id) + '" aria-expanded="' + String(!isCollapsed) + '" data-group-counts="' + gIdx + '">' + esc(groupSummaryText(groupVideos.length, groupPhotos.length)) + '</button>' +
           '</div>' +
@@ -1380,18 +1197,14 @@
       '<span>Label</span><span>Value</span><span>Order</span>' +
     '</div>';
     var rows = S.model.stats.map(function (s, i) {
-      var lblTarget = 'list:stats:' + i + ':label';
-      var valTarget = 'list:stats:' + i + ':value';
       return '<div class="stat-row">' +
-        '<input ' + spellAttrsForMode('label') + ' data-proofread-target="' + esc(lblTarget) + '" data-proofread-mode="label" aria-label="Measurement label" placeholder="Label (e.g. Height)" data-list="stats" data-i="' + i + '" data-key="label" data-styled-slot="stats" style="' + statStyle + '" value="' + esc(s.label) + '">' +
-        '<input ' + spellAttrsForMode('statValue') + ' data-proofread-target="' + esc(valTarget) + '" data-proofread-mode="statValue" aria-label="Measurement value" placeholder="Value (e.g. 5′4″)" data-list="stats" data-i="' + i + '" data-key="value" data-styled-slot="stats" style="' + statStyle + '" value="' + esc(s.value) + '">' +
+        '<input aria-label="Measurement label" placeholder="Label (e.g. Height)" data-list="stats" data-i="' + i + '" data-key="label" data-styled-slot="stats" style="' + statStyle + '" value="' + esc(s.label) + '">' +
+        '<input aria-label="Measurement value" placeholder="Value (e.g. 5′4″)" data-list="stats" data-i="' + i + '" data-key="value" data-styled-slot="stats" style="' + statStyle + '" value="' + esc(s.value) + '">' +
         '<div class="stat-row-actions">' +
           '<button type="button" class="btn small stat-icon-btn" data-action="move" data-list="stats" data-i="' + i + '" data-dir="-1"' + (i === 0 ? ' disabled' : '') + ' title="Move up" aria-label="Move measurement up">↑</button>' +
           '<button type="button" class="btn small stat-icon-btn" data-action="move" data-list="stats" data-i="' + i + '" data-dir="1"' + (i === count - 1 ? ' disabled' : '') + ' title="Move down" aria-label="Move measurement down">↓</button>' +
           '<button type="button" class="btn small danger stat-icon-btn" data-action="remove" data-list="stats" data-i="' + i + '" title="Remove measurement" aria-label="Remove measurement">✕</button>' +
         '</div>' +
-        proofreadSlotHtml(lblTarget) +
-        proofreadSlotHtml(valTarget) +
       '</div>';
     }).join('');
     return '<div class="stats-editor-list">' + head + rows + '</div>';
@@ -1405,15 +1218,9 @@
     $('editor-body').innerHTML = [
       '<div class="sections-overview-bar">' +
         '<span class="muted">Sections</span>' +
-        '<div class="sections-overview-actions">' +
-          '<span data-proofread-summary></span>' +
-          '<button type="button" class="btn small ghost" data-action="toggle-proofread" aria-pressed="' + String(Boolean(S.proofreadEnabled)) + '">' +
-            'Spell &amp; grammar: ' + (S.proofreadEnabled ? 'On' : 'Off') +
-          '</button>' +
-          '<button type="button" class="btn small ghost" data-action="toggle-all-sections">' +
-            (areAllSectionsCollapsed() ? 'Expand all sections' : 'Collapse all sections') +
-          '</button>' +
-        '</div>' +
+        '<button type="button" class="btn small ghost" data-action="toggle-all-sections">' +
+          (areAllSectionsCollapsed() ? 'Expand all sections' : 'Collapse all sections') +
+        '</button>' +
       '</div>',
 
       sectionCard(
@@ -1559,7 +1366,6 @@
       ),
     ].join('');
     syncMediaLoadStates();
-    runProofreadAll();
     updateDirtyNote();
   }
 
@@ -1586,13 +1392,6 @@
       if (node.nodeType !== 1) return;
       var tag = node.tagName.toUpperCase();
       if (tag === 'BR') return;
-      if (node !== editorEl) {
-        if (tag.indexOf('GRAMMARLY-') === 0 ||
-            (node.hasAttribute && (node.hasAttribute('data-grammarly-part') || node.hasAttribute('data-lt-tmp-id'))) ||
-            (node.getAttribute && node.getAttribute('contenteditable') === 'false')) {
-          return;
-        }
-      }
       var next = {
         family: inherited.family,
         size: inherited.size,
@@ -1965,313 +1764,6 @@
     applyBoxFormatting(slotKey, richKey, prop, val);
   }
 
-  // ---- Live spell check & grammar check ---------------------------------
-
-  function customWordsForModel() {
-    var set = new Set(Object.keys(S.ignoredWords || {}));
-    if (S.slug) {
-      String(S.slug).toLowerCase().split('-').forEach(function (part) {
-        if (part.length >= 2) set.add(part);
-      });
-    }
-    if (S.model && S.model.name) {
-      var nameTokens = String(S.model.name).toLowerCase().match(/[a-z]{2,}/g) || [];
-      nameTokens.forEach(function (w) { set.add(w); });
-    }
-    return set;
-  }
-
-  function copyRunFormatting(run) {
-    var out = {};
-    if (!run) return out;
-    if (run.family) out.family = run.family;
-    if (run.size) out.size = run.size;
-    if (run.bold) out.bold = true;
-    if (run.italic) out.italic = true;
-    if (run.underline) out.underline = true;
-    if (run.color) out.color = run.color;
-    return out;
-  }
-
-  function replaceSpanInRuns(runs, start, end, replacement) {
-    var src = Array.isArray(runs) && runs.length ? runs : [{ text: '' }];
-    var out = [];
-    var pos = 0;
-    var inserted = false;
-    var fallbackStyle = copyRunFormatting(src[0]);
-
-    for (var i = 0; i < src.length; i++) {
-      var r = src[i];
-      var txt = (r && r.text) || '';
-      var rStart = pos;
-      var rEnd = pos + txt.length;
-      pos = rEnd;
-
-      if (rEnd <= start || rStart >= end) {
-        if (!inserted && rStart >= end) {
-          if (replacement) out.push(Object.assign({ text: replacement }, fallbackStyle));
-          inserted = true;
-        }
-        out.push(Object.assign({ text: txt }, copyRunFormatting(r)));
-        continue;
-      }
-
-      var style = copyRunFormatting(r);
-      if (rStart < start) {
-        out.push(Object.assign({ text: txt.slice(0, start - rStart) }, style));
-      }
-      if (!inserted) {
-        if (replacement) out.push(Object.assign({ text: replacement }, style));
-        inserted = true;
-      }
-      if (rEnd > end) {
-        out.push(Object.assign({ text: txt.slice(end - rStart) }, style));
-      }
-    }
-
-    if (!inserted && replacement) {
-      out.push(Object.assign({ text: replacement }, fallbackStyle));
-    }
-    return normaliseRuns(out);
-  }
-
-  function checkTargetIssues(targetEl) {
-    if (!S.proofreadEnabled || !window.AdminProofread || !targetEl) return [];
-    var mode = targetEl.getAttribute('data-proofread-mode') || 'prose';
-    var custom = customWordsForModel();
-    var all = [];
-
-    if (targetEl.hasAttribute('data-rich-key')) {
-      var paras = readEditorParagraphs(targetEl);
-      for (var pIdx = 0; pIdx < paras.length; pIdx++) {
-        var plain = runsToPlain(paras[pIdx]);
-        var pIssues = window.AdminProofread.checkParagraph(plain, { mode: mode, customWords: custom });
-        for (var j = 0; j < pIssues.length; j++) {
-          all.push(Object.assign({ paraIndex: pIdx }, pIssues[j]));
-        }
-      }
-      return all;
-    }
-
-    var val = String(targetEl.value || '');
-    var listIssues = window.AdminProofread.checkParagraph(val, { mode: mode, customWords: custom });
-    for (var k = 0; k < listIssues.length; k++) {
-      all.push(Object.assign({ paraIndex: 0 }, listIssues[k]));
-    }
-    return all;
-  }
-
-  function renderProofreadIssuesHtml(targetId, issues) {
-    if (!issues || !issues.length) return '';
-    var shown = issues.slice(0, 4);
-    var itemsHtml = shown.map(function (iss, idx) {
-      var isSpell = iss.kind === 'spelling';
-      var badge = isSpell ? 'Spelling' : 'Grammar';
-      var sugBtns = (iss.suggestions || []).map(function (sug, sIdx) {
-        var label = sug === ' ' ? 'Single space' : ('Fix: ' + sug);
-        return '<button type="button" class="proofread-fix-btn" data-action="apply-proofread"' +
-          ' data-target-id="' + esc(targetId) + '" data-issue-idx="' + idx + '" data-sug-idx="' + sIdx + '">' +
-          esc(label) + '</button>';
-      }).join('');
-      var ignoreBtn = (isSpell && iss.word)
-        ? '<button type="button" class="proofread-ignore-btn" data-action="ignore-proofread-word" data-word="' + esc(iss.word) + '" title="Ignore this word in all fields">Ignore</button>'
-        : '';
-      return '<div class="proofread-item' + (isSpell ? ' is-spelling' : ' is-grammar') + '">' +
-        '<span class="proofread-info">' +
-          '<span class="proofread-badge">' + badge + '</span>' +
-          '<span class="proofread-msg">' + esc(iss.message) + '</span>' +
-        '</span>' +
-        ((sugBtns || ignoreBtn) ? '<span class="proofread-actions">' + sugBtns + ignoreBtn + '</span>' : '') +
-      '</div>';
-    }).join('');
-    var moreNote = issues.length > 4
-      ? '<div class="muted" style="font-size:0.75rem;padding-left:4px">+' + (issues.length - 4) + ' more suggestion(s) in this field</div>'
-      : '';
-    return '<div class="proofread-list">' + itemsHtml + moreNote + '</div>';
-  }
-
-  function paintProofreadTarget(targetEl) {
-    var root = $('editor-body');
-    if (!root || !targetEl) return;
-    var targetId = targetEl.getAttribute('data-proofread-target');
-    if (!targetId) return;
-    var issues = checkTargetIssues(targetEl);
-    if (issues.length) S.proofreadIssues[targetId] = issues;
-    else delete S.proofreadIssues[targetId];
-
-    var hasAny = issues.length > 0;
-    var hasSpell = issues.some(function (x) { return x.kind === 'spelling'; });
-    var borderHost = targetEl.hasAttribute('data-rich-key')
-      ? (targetEl.closest ? targetEl.closest('.composer') : null)
-      : targetEl;
-    if (borderHost && borderHost.classList) {
-      borderHost.classList.toggle('has-proofread-issue', hasAny);
-      borderHost.classList.toggle('has-spelling-issue', hasSpell);
-    }
-
-    var slotEl = root.querySelector('[data-proofread-slot="' + targetId + '"]');
-    if (slotEl) {
-      slotEl.innerHTML = renderProofreadIssuesHtml(targetId, issues);
-    }
-  }
-
-  function paintProofreadSummary() {
-    var root = $('editor-body');
-    if (!root) return;
-    var host = root.querySelector('[data-proofread-summary]');
-    if (!host) return;
-    if (!S.proofreadEnabled) {
-      host.innerHTML = '<span class="proofread-summary-pill is-off">Spell &amp; grammar paused</span>';
-      return;
-    }
-    if (!window.AdminProofread) {
-      host.innerHTML = '';
-      return;
-    }
-    var total = 0;
-    Object.keys(S.proofreadIssues).forEach(function (k) {
-      total += (S.proofreadIssues[k] ? S.proofreadIssues[k].length : 0);
-    });
-    if (total === 0) {
-      host.innerHTML = '<span class="proofread-summary-pill is-ok">✓ Spell &amp; grammar OK</span>';
-    } else {
-      host.innerHTML = '<button type="button" class="proofread-summary-pill has-issues" data-action="next-proofread-issue" title="Jump to next spelling or grammar suggestion">' +
-        '⚠ ' + total + (total === 1 ? ' suggestion' : ' suggestions') + ' · Review' +
-      '</button>';
-    }
-  }
-
-  function runProofreadAll() {
-    clearTimeout(S.proofreadTimer);
-    S.proofreadIssues = {};
-    var root = $('editor-body');
-    if (!root) return;
-    var targets = root.querySelectorAll('[data-proofread-target]');
-    for (var i = 0; i < targets.length; i++) {
-      paintProofreadTarget(targets[i]);
-    }
-    paintProofreadSummary();
-  }
-
-  function scheduleProofreadTarget(targetEl) {
-    clearTimeout(S.proofreadTimer);
-    S.proofreadTimer = setTimeout(function () {
-      if (!targetEl) return;
-      if (targetEl.getAttribute('data-rich-key') === 'name') {
-        runProofreadAll();
-        return;
-      }
-      paintProofreadTarget(targetEl);
-      paintProofreadSummary();
-    }, 150);
-  }
-
-  function syncInputControlToModel(t) {
-    if (!S.model || !t) return false;
-    if (t.hasAttribute('data-group-title')) {
-      var gIdx = Number(t.getAttribute('data-group-title'));
-      var grp = S.model._groups && S.model._groups[gIdx];
-      if (grp) {
-        grp.title = t.value;
-        var nextLabel = trimmed(t.value) || ('Group ' + (gIdx + 1));
-        (S.model.videos || []).forEach(function (v) { if (v && v._gid === grp.id) v.category = nextLabel; });
-        (S.model.photos || []).forEach(function (p) { if (p && p._gid === grp.id) p.category = nextLabel; });
-        var root = $('editor-body');
-        if (root) {
-          var opts = root.querySelectorAll('select[data-move-item-group] option[value="' + grp.id + '"]');
-          for (var o = 0; o < opts.length; o++) opts[o].textContent = nextLabel;
-        }
-      }
-      return true;
-    }
-    if (t.hasAttribute('data-field')) {
-      var value = t.type === 'checkbox' ? t.checked : t.value;
-      setPath(S.model, t.getAttribute('data-field'), value);
-      return true;
-    }
-    if (t.hasAttribute('data-list')) {
-      var list = S.model[t.getAttribute('data-list')];
-      var item = list && list[Number(t.getAttribute('data-i'))];
-      if (item) item[t.getAttribute('data-key')] = t.value;
-      return true;
-    }
-    return false;
-  }
-
-  function applyProofreadFix(targetId, issueIdx, sugIdx) {
-    var root = $('editor-body');
-    if (!root || !targetId) return;
-    var issues = S.proofreadIssues[targetId];
-    var issue = issues && issues[issueIdx];
-    if (!issue || !issue.suggestions || issue.suggestions[sugIdx] === undefined) return;
-    var replacement = issue.suggestions[sugIdx];
-    var targetEl = root.querySelector('[data-proofread-target="' + targetId + '"]');
-    if (!targetEl) return;
-
-    if (targetEl.hasAttribute('data-rich-key')) {
-      var paras = readEditorParagraphs(targetEl);
-      var pIdx = issue.paraIndex || 0;
-      paras[pIdx] = replaceSpanInRuns(paras[pIdx] || [], issue.start, issue.end, replacement);
-      targetEl.innerHTML = renderEditorInnerHtml(paras, targetEl.getAttribute('data-multiline') === '1');
-      syncEditorToModel(targetEl);
-      if (targetEl.getAttribute('data-rich-key') === 'name') runProofreadAll();
-      else {
-        paintProofreadTarget(targetEl);
-        paintProofreadSummary();
-      }
-      updateDirtyNote();
-      return;
-    }
-
-    var cur = String(targetEl.value || '');
-    targetEl.value = cur.slice(0, issue.start) + replacement + cur.slice(issue.end);
-    syncInputControlToModel(targetEl);
-    paintProofreadTarget(targetEl);
-    paintProofreadSummary();
-    updateDirtyNote();
-  }
-
-  function ignoreProofreadWord(word) {
-    var w = String(word || '').toLowerCase().trim();
-    if (!w) return;
-    S.ignoredWords[w] = 1;
-    saveIgnoredWords(S.ignoredWords);
-    runProofreadAll();
-  }
-
-  function jumpToNextProofreadIssue() {
-    var root = $('editor-body');
-    if (!root) return;
-    var targets = root.querySelectorAll('[data-proofread-target]');
-    for (var i = 0; i < targets.length; i++) {
-      var el = targets[i];
-      var tid = el.getAttribute('data-proofread-target');
-      if (tid && S.proofreadIssues[tid] && S.proofreadIssues[tid].length) {
-        var secCard = el.closest ? el.closest('[data-section-card]') : null;
-        if (secCard) {
-          var sid = secCard.getAttribute('data-section-card');
-          if (sid && S.collapsedSections[sid]) {
-            delete S.collapsedSections[sid];
-            syncSectionCollapseDom(sid);
-          }
-        }
-        var grpCard = el.closest ? el.closest('[data-group-card]') : null;
-        if (grpCard) {
-          var gid = grpCard.getAttribute('data-group-card');
-          if (gid && S.collapsedGroups[gid]) {
-            delete S.collapsedGroups[gid];
-            syncGroupCollapseDom(gid);
-          }
-        }
-        if (typeof el.scrollIntoView === 'function') {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-        if (typeof el.focus === 'function') el.focus();
-        return;
-      }
-    }
-  }
-
   // ---- Editing events ---------------------------------------------------
 
   function setPath(obj, path, value) {
@@ -2291,7 +1783,6 @@
     if (richEditor) {
       syncEditorToModel(richEditor);
       captureSelection();
-      scheduleProofreadTarget(richEditor);
       updateDirtyNote();
       return;
     }
@@ -2301,9 +1792,32 @@
       }
       return;
     }
-    if (!syncInputControlToModel(t)) return;
-    if (t.hasAttribute('data-proofread-target')) {
-      scheduleProofreadTarget(t);
+    if (t.hasAttribute('data-group-title')) {
+      var gIdx = Number(t.getAttribute('data-group-title'));
+      var grp = S.model._groups && S.model._groups[gIdx];
+      if (grp) {
+        grp.title = t.value;
+        var nextLabel = trimmed(t.value) || ('Group ' + (gIdx + 1));
+        (S.model.videos || []).forEach(function (v) { if (v && v._gid === grp.id) v.category = nextLabel; });
+        (S.model.photos || []).forEach(function (p) { if (p && p._gid === grp.id) p.category = nextLabel; });
+        var root = $('editor-body');
+        if (root) {
+          var opts = root.querySelectorAll('select[data-move-item-group] option[value="' + grp.id + '"]');
+          for (var o = 0; o < opts.length; o++) opts[o].textContent = nextLabel;
+        }
+      }
+      updateDirtyNote();
+      return;
+    }
+    if (t.hasAttribute('data-field')) {
+      var value = t.type === 'checkbox' ? t.checked : t.value;
+      setPath(S.model, t.getAttribute('data-field'), value);
+    } else if (t.hasAttribute('data-list')) {
+      var list = S.model[t.getAttribute('data-list')];
+      var item = list[Number(t.getAttribute('data-i'))];
+      if (item) item[t.getAttribute('data-key')] = t.value;
+    } else {
+      return;
     }
     updateDirtyNote();
   }
@@ -2336,14 +1850,13 @@
       }
     }
     syncEditorToModel(richEditor);
-    scheduleProofreadTarget(richEditor);
     updateDirtyNote();
   }
 
   function onMousedown(e) {
-    // Keep text selection active inside the rich box when clicking B / I / U / Align / Clear or Fix buttons.
-    var keepBtn = e.target.closest ? e.target.closest('button[data-fmt], .proofread-fix-btn, .proofread-ignore-btn') : null;
-    if (keepBtn) e.preventDefault();
+    // Keep text selection active inside the rich box when clicking B / I / U / Align / Clear buttons.
+    var fmtBtn = e.target.closest ? e.target.closest('button[data-fmt]') : null;
+    if (fmtBtn) e.preventDefault();
   }
 
   function removeItem(listName, i) {
@@ -2425,36 +1938,6 @@
         delete S.uploads[dismissSlot];
         paintUploadSlot(dismissSlot);
       }
-      return;
-    }
-    if (action === 'toggle-proofread') {
-      S.proofreadEnabled = !S.proofreadEnabled;
-      btn.setAttribute('aria-pressed', String(Boolean(S.proofreadEnabled)));
-      btn.textContent = 'Spell & grammar: ' + (S.proofreadEnabled ? 'On' : 'Off');
-      var rootEl = $('editor-body');
-      if (rootEl) {
-        var spellTargets = rootEl.querySelectorAll('[data-proofread-target]');
-        for (var st = 0; st < spellTargets.length; st++) {
-          spellTargets[st].setAttribute('spellcheck', S.proofreadEnabled ? 'true' : 'false');
-        }
-      }
-      runProofreadAll();
-      return;
-    }
-    if (action === 'apply-proofread') {
-      applyProofreadFix(
-        btn.getAttribute('data-target-id'),
-        Number(btn.getAttribute('data-issue-idx')),
-        Number(btn.getAttribute('data-sug-idx'))
-      );
-      return;
-    }
-    if (action === 'ignore-proofread-word') {
-      ignoreProofreadWord(btn.getAttribute('data-word'));
-      return;
-    }
-    if (action === 'next-proofread-issue') {
-      jumpToNextProofreadIssue();
       return;
     }
     if (action === 'toggle-section') {
@@ -3169,10 +2652,7 @@
 
   function save() {
     if (!S.model || S.busy) return;
-    closeSavePopup();
     var model = cleanProfile(S.model);
-    var saveBtn = $('save');
-    if (saveBtn) saveBtn.textContent = 'Saving…';
     setBusy(true, 'Saving…');
     var path = profilePath(S.slug);
     api('PUT', path, { json: { sha: S.sha, model: model } }).then(function (data) {
@@ -3184,30 +2664,13 @@
       renderPicker();
       return removeHostedFiles();
     }).then(function () {
-      var modelLabel = trimmed(model.name) || S.slug || 'your profile';
-      setStatus('✓ Saved. Changes are live immediately.', 'ok');
+      setStatus('Saved. Changes are live immediately.', 'ok');
+      toast('Saved');
       updateDirtyNote();
-      showSavePopup({
-        kind: 'success',
-        title: 'Changes saved successfully',
-        message: 'Your updates to ' + modelLabel + ' are now live on the website.',
-      });
     }).catch(function (err) {
-      var formatted = formatSaveError(err);
-      var statusText = formatted.errors && formatted.errors.length
-        ? formatted.errors.join(' ')
-        : formatted.message;
-      setStatus('✕ ' + statusText, 'error');
-      showSavePopup({
-        kind: 'error',
-        title: formatted.title,
-        message: formatted.message,
-        errors: formatted.errors,
-      });
-    }).then(function () {
-      if (saveBtn) saveBtn.textContent = 'Save changes';
-      setBusy(false);
-    });
+      var detail = err.details && err.details.length ? ' ' + err.details.join(' ') : '';
+      setStatus((err.message || 'Saving failed.') + detail, 'error');
+    }).then(function () { setBusy(false); });
   }
 
   function removeHostedFiles() {
@@ -3277,12 +2740,6 @@
   body.addEventListener('loadeddata', onMediaReady, true);
   body.addEventListener('error', onMediaError, true);
   document.addEventListener('selectionchange', captureSelection);
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') {
-      var sp = $('save-popup');
-      if (sp && !sp.hidden) closeSavePopup();
-    }
-  });
 
   window.addEventListener('beforeunload', function (e) {
     if (isDirty()) { e.preventDefault(); e.returnValue = ''; }

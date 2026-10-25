@@ -71,7 +71,9 @@
   var S = {
     token: sessionStorage.getItem('admin.token') || '',
     models: [],
+    archived: [],
     slug: '',
+    isArchived: false,
     isNew: false,
     model: null,
     sha: null,
@@ -88,6 +90,18 @@
   };
 
   var $ = function (id) { return document.getElementById(id); };
+  var LAST_PROFILE_KEY = 'admin.last-profile';
+
+  function rememberedProfile() {
+    try { return localStorage.getItem(LAST_PROFILE_KEY) || ''; } catch (_) { return ''; }
+  }
+
+  function rememberProfile(slug) {
+    try {
+      if (slug) localStorage.setItem(LAST_PROFILE_KEY, slug);
+      else localStorage.removeItem(LAST_PROFILE_KEY);
+    } catch (_) {}
+  }
 
   function esc(value) {
     return String(value == null ? '' : value)
@@ -105,6 +119,8 @@
     save: '<path d="M5 3h12l4 4v14H3V3z"/><path d="M7 3v6h10V3M7 21v-8h10v8"/>',
     sparkles: '<path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 15l1 2.5 2.5 1-2.5 1L19 22l-1-2.5-2.5-1 2.5-1 1-2.5z"/>',
     trash: '<path d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3"/>',
+    archive: '<path d="M3 4h18v5H3zM5 9v11h14V9M10 13h4"/>',
+    restore: '<path d="M3 4h18v5H3zM5 9v11h14V9M12 13v5m0 0-2-2m2 2 2-2"/>',
     up: '<path d="m6 14 6-6 6 6"/>',
     down: '<path d="m6 10 6 6 6-6"/>',
     left: '<path d="m14 6-6 6 6 6"/>',
@@ -539,6 +555,7 @@
   function setBusy(on, label) {
     S.busy = on;
     $('save').disabled = on;
+    updateProfileActions();
     if (on) setStatus(label || 'Working…');
   }
 
@@ -562,9 +579,13 @@
     sessionStorage.setItem('admin.token', token);
     return api('GET', '/api/models').then(function (data) {
       S.models = data.models || [];
+      S.archived = data.archived || [];
       showScreen('editor');
       renderPicker();
-      if (S.models.length) return openProfile(S.models[0]);
+      if (S.models.length) {
+        var wanted = rememberedProfile();
+        return openProfile(S.models.indexOf(wanted) !== -1 ? wanted : S.models[0]);
+      }
       setStatus('No profiles yet. Choose “New profile” to start one.');
       S.model = null;
       $('editor-body').innerHTML = '';
@@ -578,6 +599,7 @@
     sessionStorage.removeItem('admin.token');
     S.model = null;
     S.slug = '';
+    S.isArchived = false;
     S.uploads = {};
     S.collapsedSections = {};
     S.collapsedGroups = {};
@@ -586,13 +608,36 @@
     showScreen('login');
   }
 
+  function updateProfileActions() {
+    var archiveBtn = $('archive-profile');
+    var deleteBtn = $('delete-profile');
+    var viewBtn = $('view-site');
+    var disabled = !S.slug || S.isNew || S.busy;
+    if (archiveBtn) {
+      var label = S.isArchived ? 'Restore profile' : 'Temporarily hide profile';
+      archiveBtn.disabled = disabled;
+      archiveBtn.setAttribute('aria-label', label);
+      archiveBtn.setAttribute('title', label);
+      archiveBtn.innerHTML = icon(S.isArchived ? 'restore' : 'archive');
+    }
+    if (deleteBtn) deleteBtn.disabled = disabled;
+    if (viewBtn) {
+      var unavailable = !S.slug || S.isArchived;
+      viewBtn.href = unavailable ? '#' : '../' + encodeURIComponent(S.slug) + '/';
+      viewBtn.setAttribute('aria-disabled', String(unavailable));
+      viewBtn.classList.toggle('is-disabled', unavailable);
+      viewBtn.title = S.isArchived ? 'Archived profile is hidden from the public site' : 'View site';
+    }
+  }
+
   function renderPicker() {
     var list = S.models.slice();
     if (S.isNew && S.slug && list.indexOf(S.slug) === -1) list.push(S.slug);
     $('model-picker').innerHTML = list.map(function (slug) {
-      return '<option value="' + esc(slug) + '"' + (slug === S.slug ? ' selected' : '') + '>' + esc(slug) + '</option>';
+      var label = slug + (S.archived.indexOf(slug) !== -1 ? ' · Archived' : '');
+      return '<option value="' + esc(slug) + '"' + (slug === S.slug ? ' selected' : '') + '>' + esc(label) + '</option>';
     }).join('');
-    $('view-site').href = S.slug ? '../' + encodeURIComponent(S.slug) + '/' : '#';
+    updateProfileActions();
   }
 
   function confirmLeave() {
@@ -608,6 +653,8 @@
     return api('GET', profilePath(slug)).then(function (data) {
       S.slug = slug;
       S.isNew = false;
+      S.isArchived = S.archived.indexOf(slug) !== -1;
+      rememberProfile(slug);
       S.sha = data.sha;
       S.model = normalise(data.model);
       S.saved = snapshot();
@@ -619,7 +666,7 @@
       S.activeUploadSlot = '';
       paintSavebarProgress();
       renderPicker();
-      setStatus('');
+      setStatus(S.isArchived ? 'Archived profile · hidden from the public site' : '');
       render();
     }).catch(function (err) {
       setStatus(err.message, 'error');
@@ -642,6 +689,7 @@
     if (!name) return;
     S.slug = slug;
     S.isNew = true;
+    S.isArchived = false;
     S.sha = null;
     S.model = normalise(blankProfile(slug, name));
     S.saved = '';
@@ -2851,6 +2899,53 @@
     });
   }
 
+  function manageProfile(action) {
+    if (!S.slug || S.isNew || S.busy) return;
+    var slug = S.slug;
+    var restore = action === 'restore';
+    if (action === 'archive' && !window.confirm('Temporarily hide "' + slug + '" from the website? Its profile and media will be kept, and you can restore it later.')) return;
+    if (restore && !window.confirm('Restore "' + slug + '" to the public website?')) return;
+    if (action === 'permanent' && !window.confirm('Permanently delete "' + slug + '" and its R2 profile/media? This cannot be undone.')) return;
+
+    var status = action === 'permanent' ? 'Deleting profile…' : (restore ? 'Restoring profile…' : 'Archiving profile…');
+    setBusy(true, status);
+    api('DELETE', profilePath(slug), { json: { action: action, sha: S.sha } }).then(function () {
+      if (action === 'permanent') {
+        S.models = S.models.filter(function (item) { return item !== slug; });
+        S.archived = S.archived.filter(function (item) { return item !== slug; });
+        S.model = null;
+        S.slug = '';
+        S.isNew = false;
+        S.isArchived = false;
+        S.sha = null;
+        S.saved = '';
+        S.pendingDeletes = [];
+        rememberProfile('');
+        renderPicker();
+        $('editor-body').innerHTML = '';
+        updateDirtyNote();
+        setBusy(false);
+        var next = S.models.filter(function (item) { return S.archived.indexOf(item) === -1; })[0] || S.models[0];
+        if (next) return openProfile(next);
+        setStatus('Profile permanently deleted. Create a profile to continue.', 'ok');
+        return;
+      }
+
+      S.isArchived = !restore;
+      S.archived = restore
+        ? S.archived.filter(function (item) { return item !== slug; })
+        : (S.archived.indexOf(slug) === -1 ? S.archived.concat([slug]) : S.archived);
+      renderPicker();
+      setBusy(false);
+      setStatus(restore ? 'Profile restored and visible on the website.' : 'Profile archived and hidden from the website. Its data is retained.', 'ok');
+    }).catch(function (err) {
+      setBusy(false);
+      var message = err.message || 'The profile action failed.';
+      setStatus(message, 'error');
+      toast(message, 'error');
+    });
+  }
+
   // ---- Saving -----------------------------------------------------------
 
   function save(successMessage) {
@@ -2863,12 +2958,15 @@
       S.sha = data.sha;
       S.saved = JSON.stringify(model);
       S.isNew = false;
+      rememberProfile(S.slug);
       if (S.models.indexOf(S.slug) === -1) S.models.push(S.slug);
       S.models.sort();
       renderPicker();
       return removeHostedFiles();
     }).then(function () {
-      var okMessage = typeof successMessage === 'string' ? successMessage : 'Saved. Changes are live immediately.';
+      var okMessage = typeof successMessage === 'string'
+        ? successMessage
+        : (S.isArchived ? 'Saved. Profile remains hidden from the public site.' : 'Saved. Changes are live immediately.');
       setStatus(okMessage, 'ok');
       toast(okMessage, 'ok');
       updateDirtyNote();
@@ -2929,6 +3027,10 @@
   $('model-picker').addEventListener('change', function (e) { openProfile(e.target.value); });
   $('new-model').addEventListener('click', startNewProfile);
   if ($('generate-thumbnails')) $('generate-thumbnails').addEventListener('click', generateThumbnails);
+  if ($('archive-profile')) $('archive-profile').addEventListener('click', function () {
+    manageProfile(S.isArchived ? 'restore' : 'archive');
+  });
+  if ($('delete-profile')) $('delete-profile').addEventListener('click', function () { manageProfile('permanent'); });
   $('sign-out').addEventListener('click', function () {
     if (confirmLeave()) signOut();
   });

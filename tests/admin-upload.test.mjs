@@ -9,10 +9,12 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const adminJsPath = path.join(root, 'site', 'admin', 'admin.js');
 
 // Lightweight DOM + XHR harness for site/admin/admin.js upload & preview progress flows.
-function createAdminUploadHarness(modelOverrides = {}) {
+function createAdminUploadHarness(modelOverrides = {}, modelSlugs = ['sushmita-ghosh'], localProfileStorage = new Map()) {
   const xhrs = [];
   const savedPayloads = [];
   const thumbnailUploads = [];
+  const profileReads = [];
+  const profileActions = [];
   let putFailure = null;
   const storage = new Map([['admin.token', 'secret-token']]);
 
@@ -269,6 +271,8 @@ function createAdminUploadHarness(modelOverrides = {}) {
       <button id="new-model"></button>
       <button id="generate-thumbnails">Generate Thumbnails</button>
       <a id="view-site"></a>
+      <button id="archive-profile"></button>
+      <button id="delete-profile"></button>
       <button id="sign-out"></button>
     </div>
     <section id="login" hidden><form id="login-form"><input id="token"><p id="login-error"></p></form></section>
@@ -329,20 +333,36 @@ function createAdminUploadHarness(modelOverrides = {}) {
   };
 
   async function fakeFetch(url, opts = {}) {
-    if (url.endsWith('/api/models')) {
+    const pathname = new URL(url, 'https://modelportfolio.pages.dev').pathname;
+    if (pathname === '/api/models') {
       return {
         status: 200,
         ok: true,
         headers: { get: () => 'application/json' },
-        json: async () => ({ models: ['sushmita-ghosh'] }),
+        json: async () => ({ models: modelSlugs, archived: [] }),
       };
     }
-    if (url.endsWith('/api/models/sushmita-ghosh') && (!opts.method || opts.method === 'GET')) {
+    const modelMatch = /^\/api\/models\/([^/]+)$/.exec(pathname);
+    if (modelMatch && (!opts.method || opts.method === 'GET')) {
+      const slug = decodeURIComponent(modelMatch[1]);
+      profileReads.push(slug);
+      const model = JSON.parse(JSON.stringify(fakeModel));
+      model.slug = slug;
       return {
         status: 200,
         ok: true,
         headers: { get: () => 'application/json' },
-        json: async () => ({ sha: 'v-1', model: JSON.parse(JSON.stringify(fakeModel)) }),
+        json: async () => ({ sha: 'v-1', model: model }),
+      };
+    }
+    if (modelMatch && opts.method === 'DELETE') {
+      const body = JSON.parse(opts.body);
+      profileActions.push({ slug: decodeURIComponent(modelMatch[1]), action: body.action });
+      return {
+        status: 200,
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ state: body.action === 'permanent' ? 'deleted' : body.action === 'archive' ? 'archived' : 'active' }),
       };
     }
     if (url.endsWith('/api/models/sushmita-ghosh/media') && opts.method === 'POST') {
@@ -403,6 +423,9 @@ function createAdminUploadHarness(modelOverrides = {}) {
     xhrs,
     savedPayloads,
     thumbnailUploads,
+    profileReads,
+    profileActions,
+    localProfileStorage,
     canvases,
     failNextSave(error, { status = 409, errors } = {}) {
       putFailure = { error, status, errors };
@@ -416,6 +439,11 @@ function createAdminUploadHarness(modelOverrides = {}) {
           getItem: (k) => storage.get(k) ?? null,
           setItem: (k, v) => storage.set(k, String(v)),
           removeItem: (k) => storage.delete(k),
+        },
+        localStorage: {
+          getItem: (k) => localProfileStorage.get(k) ?? null,
+          setItem: (k, v) => localProfileStorage.set(k, String(v)),
+          removeItem: (k) => localProfileStorage.delete(k),
         },
         fetch: fakeFetch,
         XMLHttpRequest: FakeXHR,
@@ -768,6 +796,46 @@ test('admin panel moves measurement attributes up/down and adds newly uploaded p
     'https://modelportfolio.pages.dev/media/sushmita-ghosh/3-fresh-second.jpg',
     'bridal-old.jpg',
   ]);
+});
+
+test('refreshing the admin reopens the last selected profile', async () => {
+  const persisted = new Map([['admin.last-profile', 'profile-b']]);
+  const first = await createAdminUploadHarness({}, ['profile-a', 'profile-b'], persisted);
+  await first.boot();
+  assert.deepEqual(first.profileReads, ['profile-b']);
+
+  first.doc.getElementById('model-picker').value = 'profile-a';
+  first.doc.getElementById('model-picker').dispatchEvent({ type: 'change', bubbles: true });
+  for (let i = 0; i < 4; i++) await first.flush();
+  assert.equal(persisted.get('admin.last-profile'), 'profile-a');
+
+  const refreshed = await createAdminUploadHarness({}, ['profile-a', 'profile-b'], persisted);
+  await refreshed.boot();
+  assert.deepEqual(refreshed.profileReads, ['profile-a']);
+});
+
+test('profiles can be archived, restored, or permanently deleted from the admin', async () => {
+  const h = await createAdminUploadHarness();
+  await h.boot();
+  const archiveBtn = h.doc.getElementById('archive-profile');
+  const deleteBtn = h.doc.getElementById('delete-profile');
+
+  archiveBtn.dispatchEvent({ type: 'click', bubbles: true });
+  await h.flush();
+  assert.equal(h.profileActions[0].action, 'archive');
+  assert.equal(archiveBtn.getAttribute('aria-label'), 'Restore profile');
+  assert.match(h.doc.getElementById('status').textContent, /hidden from the website/);
+
+  archiveBtn.dispatchEvent({ type: 'click', bubbles: true });
+  await h.flush();
+  assert.equal(h.profileActions[1].action, 'restore');
+  assert.equal(archiveBtn.getAttribute('aria-label'), 'Temporarily hide profile');
+
+  deleteBtn.dispatchEvent({ type: 'click', bubbles: true });
+  await h.flush();
+  assert.equal(h.profileActions[2].action, 'permanent');
+  assert.equal(deleteBtn.disabled, true, 'permanent delete is unavailable after the profile is removed');
+  assert.equal(h.localProfileStorage.has('admin.last-profile'), false);
 });
 
 test('Generate Thumbnails downsizes missing model images, uploads them to R2 and saves their references', async () => {

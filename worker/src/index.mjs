@@ -6,6 +6,7 @@
 //   GET      /api/models                     list profiles from R2 + seed (requires Bearer ADMIN_TOKEN)
 //   GET      /api/models/:slug               read one profile and its version token (requires Bearer ADMIN_TOKEN)
 //   PUT      /api/models/:slug               save a profile directly to R2 — instant live update, zero deployments
+//   DELETE   /api/models/:slug               archive, restore, or permanently delete a profile
 //   POST     /api/models/:slug/media         upload a photo or video to R2 (requires Bearer ADMIN_TOKEN)
 //   DELETE   /api/models/:slug/media         delete an uploaded file from R2 (requires Bearer ADMIN_TOKEN)
 //
@@ -30,12 +31,69 @@ import { getModelFile, HttpError, listModelSlugs } from './github.mjs';
 const DEFAULT_REPO = 'sumit2nandiuk-creator/ModelPortfolio';
 const PLACEHOLDER_R2_BASE = 'https://media.example.com';
 const PROFILE_PREFIX = '_profiles/';
+const PROFILE_STATE_PREFIX = '_profile-state/';
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' };
 const MEDIA_CACHE = 'public, max-age=31536000, immutable';
 const PAGE_CACHE = 'public, max-age=0, must-revalidate';
 
 function profileKeyFor(slug) {
   return `${PROFILE_PREFIX}${slug}.json`;
+}
+
+function profileStateKeyFor(slug) {
+  return `${PROFILE_STATE_PREFIX}${slug}.json`;
+}
+
+async function profileState(bucket, slug) {
+  const obj = await bucket.get(profileStateKeyFor(slug));
+  if (!obj) return null;
+  const value = await readObjectText(obj).catch(() => '');
+  try {
+    const state = JSON.parse(value).state;
+    return state === 'archived' || state === 'deleted' ? state : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeProfileState(bucket, slug, state) {
+  await bucket.put(profileStateKeyFor(slug), JSON.stringify({ state }), {
+    httpMetadata: { contentType: 'application/json; charset=utf-8', cacheControl: 'no-store' },
+  });
+}
+
+async function listProfileStates(bucket) {
+  const states = new Map();
+  if (!bucket || typeof bucket.list !== 'function') return states;
+  let cursor;
+  do {
+    const page = await bucket.list({ prefix: PROFILE_STATE_PREFIX, cursor });
+    for (const item of page?.objects ?? []) {
+      const key = String(item?.key ?? '');
+      if (!key.startsWith(PROFILE_STATE_PREFIX) || !key.endsWith('.json')) continue;
+      const slug = key.slice(PROFILE_STATE_PREFIX.length, -5);
+      if (!SLUG_PATTERN.test(slug)) continue;
+      const state = await profileState(bucket, slug);
+      if (state) states.set(slug, state);
+    }
+    cursor = page?.truncated ? page.cursor : undefined;
+  } while (cursor);
+  return states;
+}
+
+async function deleteModelMedia(bucket, slug) {
+  if (!bucket || typeof bucket.list !== 'function') return;
+  const keys = [];
+  let cursor;
+  do {
+    const page = await bucket.list({ prefix: `${slug}/`, cursor });
+    for (const item of page?.objects ?? []) {
+      const key = String(item?.key ?? '');
+      if (key.startsWith(`${slug}/`)) keys.push(key);
+    }
+    cursor = page?.truncated ? page.cursor : undefined;
+  } while (cursor);
+  await Promise.all(keys.map((key) => bucket.delete(key)));
 }
 
 function normalizeBasePath(base = '/') {
@@ -152,21 +210,22 @@ async function fetchAssetJson(url, env, assetPath) {
 
 async function readSeedSlugs(url, ctx) {
   const fromAssets = await fetchAssetJson(url, ctx.env, '/_seed/_index.json');
+  let slugs = [];
   if (Array.isArray(fromAssets?.models)) {
-    return fromAssets.models.filter((slug) => SLUG_PATTERN.test(slug));
-  }
-  if (ctx.token) {
-    return listModelSlugs({
+    slugs = fromAssets.models.filter((slug) => SLUG_PATTERN.test(slug));
+  } else if (ctx.token) {
+    slugs = await listModelSlugs({
       repo: ctx.repo,
       branch: ctx.branch,
       token: ctx.token,
       fetchImpl: ctx.fetchImpl,
     });
   }
-  return [];
+  return slugs;
 }
 
 async function readSeedProfile(url, ctx, slug) {
+  if (await profileState(ctx.env.MEDIA, slug) === 'deleted') return null;
   const fromAssets = await fetchAssetJson(url, ctx.env, `/_seed/${encodeURIComponent(slug)}.json`);
   if (fromAssets && typeof fromAssets.model === 'object' && fromAssets.model) {
     return { model: fromAssets.model, sizes: fromAssets.sizes ?? {}, sha: 'seed' };
@@ -207,6 +266,19 @@ function buildSizeMap(model, seedSizes = {}) {
 
 // Cloudflare Pages Function handler for /:slug and /:slug/ so R2-updated or newly
 // created profiles go live immediately without rebuilding or redeploying the site.
+export async function handleSeedMediaRequest(context) {
+  const slug = String(context.params?.slug ?? '');
+  if (!SLUG_PATTERN.test(slug)) return context.next();
+  const state = await profileState(context.env.MEDIA, slug);
+  if (state === 'archived' || state === 'deleted') {
+    return new Response('This profile is not available.', {
+      status: 404,
+      headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
+    });
+  }
+  return context.next();
+}
+
 export async function handleModelPageRequest(context, { trailingSlash = true } = {}) {
   const { request, env, params } = context;
   const rawSlug = Array.isArray(params?.slug) ? params.slug[0] : params?.slug;
@@ -222,6 +294,13 @@ export async function handleModelPageRequest(context, { trailingSlash = true } =
 
   const url = new URL(request.url);
   const base = normalizeBasePath(env.SITE_BASE_PATH);
+  const state = await profileState(env.MEDIA, slug);
+  if (state === 'archived' || state === 'deleted') {
+    return new Response('This profile is not available.', {
+      status: 404,
+      headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
+    });
+  }
 
   if (!trailingSlash) {
     if (request.method !== 'GET' && request.method !== 'HEAD') return context.next();
@@ -419,12 +498,16 @@ async function route(request, url, ctx) {
 
   if (parts.length === 2) {
     if (request.method !== 'GET') return fail(cors, 405, 'Method not allowed.');
-    const [storedSlugs, seedSlugs] = await Promise.all([
+    const [storedSlugs, seedSlugs, states] = await Promise.all([
       listStoredSlugs(env.MEDIA),
       readSeedSlugs(url, ctx),
+      listProfileStates(env.MEDIA),
     ]);
-    const models = [...new Set([...storedSlugs, ...seedSlugs])].sort();
-    return reply(cors, { models });
+    const models = [...new Set([...storedSlugs, ...seedSlugs])]
+      .filter((slug) => states.get(slug) !== 'deleted')
+      .sort();
+    const archived = models.filter((slug) => states.get(slug) === 'archived');
+    return reply(cors, { models, archived });
   }
 
   const slug = decodeURIComponent(parts[2] ?? '');
@@ -432,6 +515,9 @@ async function route(request, url, ctx) {
 
   if (parts.length === 3) {
     if (request.method === 'GET') {
+      if (await profileState(env.MEDIA, slug) === 'deleted') {
+        return fail(cors, 404, 'That profile was permanently deleted.');
+      }
       const stored = await env.MEDIA.get(profileKeyFor(slug));
       if (stored) {
         const model = JSON.parse(await readObjectText(stored));
@@ -443,6 +529,9 @@ async function route(request, url, ctx) {
     }
 
     if (request.method === 'PUT') {
+      if (await profileState(env.MEDIA, slug) === 'deleted') {
+        return fail(cors, 410, 'This profile was permanently deleted and cannot be restored.');
+      }
       const body = await request.json().catch(() => null);
       if (!body || typeof body !== 'object') return fail(cors, 400, 'Send the profile as JSON.');
       const errors = validateModelShape(body.model, slug);
@@ -492,6 +581,33 @@ async function route(request, url, ctx) {
         customMetadata: { version: newVersion },
       });
       return reply(cors, { sha: newVersion });
+    }
+
+    if (request.method === 'DELETE') {
+      const body = await request.json().catch(() => null);
+      const action = body?.action;
+      const state = await profileState(env.MEDIA, slug);
+      if (action === 'archive') {
+        if (state === 'deleted') return fail(cors, 410, 'This profile was permanently deleted.');
+        await writeProfileState(env.MEDIA, slug, 'archived');
+        return reply(cors, { state: 'archived' });
+      }
+      if (action === 'restore') {
+        if (state === 'deleted') return fail(cors, 410, 'This profile was permanently deleted.');
+        await env.MEDIA.delete(profileStateKeyFor(slug));
+        return reply(cors, { state: 'active' });
+      }
+      if (action === 'permanent') {
+        const existing = await headObject(env.MEDIA, profileKeyFor(slug));
+        if (body?.sha && existing && body.sha !== objectVersion(existing)) {
+          return fail(cors, 409, 'This profile changed since you opened it. Reload it before permanent deletion.');
+        }
+        await writeProfileState(env.MEDIA, slug, 'deleted');
+        await deleteModelMedia(env.MEDIA, slug);
+        await env.MEDIA.delete(profileKeyFor(slug));
+        return reply(cors, { state: 'deleted' });
+      }
+      return fail(cors, 400, 'Choose archive, restore or permanent deletion.');
     }
     return fail(cors, 405, 'Method not allowed.');
   }

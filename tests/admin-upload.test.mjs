@@ -386,7 +386,13 @@ function createAdminUploadHarness(modelOverrides = {}) {
   const win = {
     ADMIN_CONFIG: { apiBase: '' },
     location: { href: 'https://modelportfolio.pages.dev/admin/' },
-    URL,
+    URL: {
+      createObjectURL: (file) => {
+        if (file && String(file.type || '').indexOf('video/') === 0) throw new Error('Synthetic video file has no bytes');
+        return 'blob:test-image';
+      },
+      revokeObjectURL() {},
+    },
     Image: FakeImage,
     addEventListener() {},
     confirm: () => true,
@@ -491,8 +497,7 @@ test('selecting a phone gallery video (.MOV or extensionless mp4) shows live upl
     kind: 'video',
   });
   h.xhrs[0].emit('load');
-  await h.flush();
-  await h.flush();
+  for (let i = 0; i < 8; i++) await h.flush();
 
   assert.equal(valueClearedCount, 1, 'input.value reset after upload finishes');
   assert.equal(savebarProgress.hidden, true, 'savebar progress hides once finished');
@@ -740,8 +745,7 @@ test('admin panel moves measurement attributes up/down and adds newly uploaded p
     kind: 'video',
   });
   h.xhrs[3].emit('load');
-  await h.flush();
-  await h.flush();
+  for (let i = 0; i < 8; i++) await h.flush();
 
   // Save and verify persisted order of stats, cover, videos, and photos!
   h.doc.getElementById('save').dispatchEvent({ type: 'click', bubbles: true });
@@ -785,6 +789,37 @@ test('Generate Thumbnails downsizes missing model images, uploads them to R2 and
   h.doc.getElementById('generate-thumbnails').dispatchEvent({ type: 'click', bubbles: true });
   await h.flush();
   assert.equal(h.thumbnailUploads.length, 1, 'a second run skips images that already have thumbnails');
+});
+
+test('a newly uploaded portfolio photo gets a thumbnail uploaded and linked automatically', async () => {
+  const h = await createAdminUploadHarness();
+  await h.boot();
+
+  const input = h.doc.querySelector('input[data-upload="photo"]');
+  assert.ok(input, 'photo input exists');
+  input.files = [{ name: 'fresh-photo.jpg', size: 4096, type: 'image/jpeg' }];
+  input.dispatchEvent({ type: 'change', bubbles: true });
+  await h.flush();
+  assert.equal(h.xhrs.length, 1, 'original image uploads first');
+
+  h.xhrs[0].status = 201;
+  h.xhrs[0].responseText = JSON.stringify({
+    key: 'sushmita-ghosh/1-photo.jpg',
+    url: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/1-photo.jpg',
+    kind: 'image',
+  });
+  h.xhrs[0].emit('load');
+  for (let i = 0; i < 8; i++) await h.flush();
+
+  assert.equal(h.thumbnailUploads.length, 1, 'generated thumbnail is uploaded to R2 automatically');
+  h.doc.getElementById('save').dispatchEvent({ type: 'click', bubbles: true });
+  await h.flush();
+  await h.flush();
+  assert.equal(
+    h.savedPayloads[0].model.photos[0].thumbnail,
+    'https://modelportfolio.pages.dev/media/sushmita-ghosh/thumb-cover.webp',
+    'saved photo references the generated thumbnail URL',
+  );
 });
 
 test('save success shows a green-tick popup and a success status', async () => {

@@ -80,6 +80,8 @@ test('each model is published only under its own URL', async () => {
     const alphaHtml = await fs.readFile(path.join(ws.outDir, 'alpha-model', 'index.html'), 'utf8');
     const betaHtml = await fs.readFile(path.join(ws.outDir, 'beta-model', 'index.html'), 'utf8');
     assert.match(alphaHtml, /Alpha Person/);
+    assert.equal(alphaHtml.includes('assets/error-reporting.js'), true);
+    assert.equal(await exists(path.join(ws.outDir, 'assets', 'error-reporting.js')), true);
     assert.doesNotMatch(alphaHtml, /Beta Person|beta-model|beta-model@example\.com/);
     assert.match(betaHtml, /Beta Person/);
     assert.doesNotMatch(betaHtml, /Alpha Person|alpha-model|alpha-model@example\.com/);
@@ -558,13 +560,17 @@ test('a cover list builds a slideshow with dots and autoplay; a single cover has
     assert.equal((manyHero.match(/class="carousel-dot(?: is-active)?"/g) ?? []).length, 3);
     assert.match(manyHero, /data-autoplay="6000"/);
     assert.match(manyHero, /aria-label="Open cover photo 2 of 3"/);
-    // Only the first cover is eager; the rest load lazily.
+    assert.match(manyHero, /aria-label="Previous cover photo"/);
+    assert.match(manyHero, /aria-label="Next cover photo"/);
+    // Only the first cover is eager and preloaded; adjacent slides are promoted lazily.
     assert.match(manyHero, /fetchpriority="high"/);
+    assert.match(manyHero, /loading="lazy"/);
+    assert.doesNotMatch(many, /<link rel="preload" as="image" href="\/slides-check\/media\/slides-check-photo\.png"/);
 
     const single = await fs.readFile(path.join(ws.outDir, 'single-check', 'index.html'), 'utf8');
     const singleHero = single.slice(single.indexOf('<section class="hero"'), single.indexOf('</section>', single.indexOf('<section class="hero"')));
     assert.equal((singleHero.match(/class="carousel-slide"/g) ?? []).length, 1);
-    assert.doesNotMatch(singleHero, /carousel-dot/);
+    assert.doesNotMatch(singleHero, /carousel-dot|carousel-control/);
     assert.match(singleHero, /data-autoplay="0"/);
   } finally {
     await ws.cleanup();

@@ -32,6 +32,8 @@ const DEFAULT_REPO = 'sumit2nandiuk-creator/ModelPortfolio';
 const PLACEHOLDER_R2_BASE = 'https://media.example.com';
 const PROFILE_PREFIX = '_profiles/';
 const PROFILE_STATE_PREFIX = '_profile-state/';
+const ERROR_PREFIX = '_errors/';
+const errorIngestWindows = new Map();
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' };
 const MEDIA_CACHE = 'public, max-age=31536000, immutable';
 const PAGE_CACHE = 'public, max-age=0, must-revalidate';
@@ -179,6 +181,77 @@ async function readObjectText(obj) {
   return new Response(obj.body).text();
 }
 
+function safeLogText(value, max = 1200) {
+  return String(value ?? '').replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, ' ').trim().slice(0, max);
+}
+
+function safeLogPath(value) {
+  if (!value) return '';
+  try { return new URL(String(value), 'https://errors.invalid').pathname.slice(0, 500); }
+  catch { return String(value).split(/[?#]/)[0].slice(0, 500); }
+}
+
+function allowFrontendErrorReport(request) {
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  const now = Date.now();
+  let window = errorIngestWindows.get(ip);
+  if (!window || now - window.startedAt >= 60_000) {
+    window = { startedAt: now, count: 0 };
+    errorIngestWindows.set(ip, window);
+  }
+  if (window.count >= 60) return false;
+  window.count += 1;
+  if (errorIngestWindows.size > 2000) {
+    for (const [key, value] of errorIngestWindows) {
+      if (now - value.startedAt >= 60_000) errorIngestWindows.delete(key);
+    }
+  }
+  return true;
+}
+
+async function persistApplicationError(env, entry) {
+  if (!env?.MEDIA || typeof env.MEDIA.put !== 'function') return false;
+  try {
+    const now = Date.now();
+    const timestamp = new Date(now).toISOString();
+    const id = typeof globalThis.crypto?.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : `${now}-${Math.random().toString(36).slice(2, 12)}`;
+    const inverted = String(Math.max(0, 9_999_999_999_999 - now)).padStart(13, '0');
+    const record = {
+      id,
+      timestamp,
+      source: safeLogText(entry.source || 'backend', 80),
+      message: safeLogText(entry.message || 'Unknown application error'),
+      path: safeLogPath(entry.path),
+      details: entry.details && typeof entry.details === 'object' ? entry.details : {},
+    };
+    await env.MEDIA.put(`${ERROR_PREFIX}${inverted}-${id}.json`, JSON.stringify(record), {
+      httpMetadata: { contentType: 'application/json; charset=utf-8', cacheControl: 'private, no-store' },
+    });
+    return true;
+  } catch (err) {
+    console.error('Could not persist application error.', err);
+    return false;
+  }
+}
+
+async function persistBackendError(env, request, err, details = {}) {
+  const error = err instanceof Error ? err : new Error(String(err || 'Unknown backend error'));
+  const url = request ? new URL(request.url) : null;
+  return persistApplicationError(env, {
+    source: 'backend',
+    message: error.message,
+    path: url?.pathname || '',
+    details: {
+      name: safeLogText(error.name, 100),
+      stack: safeLogText(error.stack, 5000),
+      method: request?.method || '',
+      ...details,
+    },
+  });
+}
+
 function objectVersion(obj) {
   return obj?.customMetadata?.version || obj?.httpEtag || 'r2-current';
 }
@@ -269,7 +342,14 @@ function buildSizeMap(model, seedSizes = {}) {
 export async function handleSeedMediaRequest(context) {
   const slug = String(context.params?.slug ?? '');
   if (!SLUG_PATTERN.test(slug)) return context.next();
-  const state = await profileState(context.env.MEDIA, slug);
+  let state;
+  try {
+    state = await profileState(context.env.MEDIA, slug);
+  } catch (err) {
+    console.error(err);
+    await persistBackendError(context.env, context.request, err, { status: 500, area: 'seed-media' });
+    return new Response('Something went wrong.', { status: 500, headers: { 'Cache-Control': 'no-store' } });
+  }
   if (state === 'archived' || state === 'deleted') {
     return new Response('This profile is not available.', {
       status: 404,
@@ -279,7 +359,20 @@ export async function handleSeedMediaRequest(context) {
   return context.next();
 }
 
-export async function handleModelPageRequest(context, { trailingSlash = true } = {}) {
+export async function handleModelPageRequest(context, options = {}) {
+  try {
+    return await renderModelPageRequest(context, options);
+  } catch (err) {
+    console.error(err);
+    await persistBackendError(context?.env, context?.request, err, { status: 500, area: 'profile-page' });
+    return new Response('Something went wrong.', {
+      status: 500,
+      headers: { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
+    });
+  }
+}
+
+async function renderModelPageRequest(context, { trailingSlash = true } = {}) {
   const { request, env, params } = context;
   const rawSlug = Array.isArray(params?.slug) ? params.slug[0] : params?.slug;
   let slug = '';
@@ -444,9 +537,17 @@ export async function handleRequest(request, env, deps = {}) {
 
   if (url.pathname === '/media' || url.pathname.startsWith('/media/')) {
     try {
-      return await serveMedia(request, url, env);
+      const response = await serveMedia(request, url, env);
+      if (response.status >= 500) {
+        await persistApplicationError(env, {
+          source: 'backend-media', message: `Media request failed with status ${response.status}`,
+          path: url.pathname, details: { method: request.method, status: response.status },
+        });
+      }
+      return response;
     } catch (err) {
       console.error(err);
+      await persistBackendError(env, request, err, { status: 500, area: 'media' });
       return new Response('Something went wrong.', { status: 500 });
     }
   }
@@ -457,12 +558,54 @@ export async function handleRequest(request, env, deps = {}) {
 
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
 
+  if (url.pathname === '/api/errors' && request.method === 'POST') {
+    if (!origin || !isOriginAllowed(origin, url, allowed)) {
+      return fail(cors, 403, 'Error reports must be sent from this site.');
+    }
+    if (!env.MEDIA) return fail(cors, 503, 'Error storage is not configured.');
+    const declaredLength = Number(request.headers.get('Content-Length') || 0);
+    if (declaredLength > 8192) return fail(cors, 413, 'Error report is too large.');
+    const raw = await request.text().catch(() => '');
+    if (new TextEncoder().encode(raw).byteLength > 8192) return fail(cors, 413, 'Error report is too large.');
+    const body = (() => { try { return JSON.parse(raw); } catch { return null; } })();
+    if (!body || typeof body !== 'object' || typeof body.message !== 'string' || !body.message.trim()) {
+      return fail(cors, 400, 'Send an error message as JSON.');
+    }
+    if (!allowFrontendErrorReport(request)) return fail(cors, 429, 'Too many error reports. Try again later.');
+    const source = /^frontend(?:-[a-z-]+)?$/.test(String(body.source || '')) ? body.source : 'frontend';
+    const rawDetails = body.details && typeof body.details === 'object' ? body.details : {};
+    const details = {
+      name: safeLogText(rawDetails.name, 100),
+      file: safeLogPath(rawDetails.file),
+      resource: safeLogPath(rawDetails.resource),
+      line: Number(rawDetails.line) || undefined,
+      column: Number(rawDetails.column) || undefined,
+      stack: safeLogText(rawDetails.stack, 4000),
+    };
+    const stored = await persistApplicationError(env, {
+      source,
+      message: body.message,
+      path: safeLogPath(body.path),
+      details,
+    });
+    return new Response(stored ? null : 'Could not store error report.', {
+      status: stored ? 202 : 503,
+      headers: { ...cors, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
+    });
+  }
+
   try {
     if (!url.pathname.startsWith('/api/')) return fail(cors, 404, 'Not found.');
     if (!isOriginAllowed(origin, url, allowed)) {
       return fail(cors, 403, 'This website is not allowed to use the admin.');
     }
     if (!env.ADMIN_TOKEN || !env.MEDIA) {
+      await persistApplicationError(env, {
+        source: 'backend-config',
+        message: 'Admin API is not configured: ADMIN_TOKEN or MEDIA binding is missing.',
+        path: url.pathname,
+        details: { method: request.method, status: 500 },
+      });
       return fail(
         cors,
         500,
@@ -483,10 +626,24 @@ export async function handleRequest(request, env, deps = {}) {
       branch: env.BRANCH || 'main',
       token: env.GITHUB_TOKEN || '',
     };
-    return await route(request, url, ctx);
+    const response = await route(request, url, ctx);
+    if (response.status >= 400) {
+      const body = await response.clone().json().catch(() => ({}));
+      await persistApplicationError(env, {
+        source: 'backend-api',
+        message: body.error || `API request failed with status ${response.status}`,
+        path: url.pathname,
+        details: { status: response.status, method: request.method },
+      });
+    }
+    return response;
   } catch (err) {
-    if (err instanceof HttpError) return fail(cors, err.status, err.message);
+    if (err instanceof HttpError) {
+      await persistBackendError(env, request, err, { status: err.status });
+      return fail(cors, err.status, err.message);
+    }
     console.error(err);
+    await persistBackendError(env, request, err, { status: 500 });
     return fail(cors, 500, 'Something went wrong. Please try again.');
   }
 }
@@ -494,6 +651,28 @@ export async function handleRequest(request, env, deps = {}) {
 async function route(request, url, ctx) {
   const { cors, env } = ctx;
   const parts = url.pathname.split('/').filter(Boolean); // ["api", "models", slug?, "media"?]
+
+  if (parts[1] === 'errors') {
+    if (parts.length !== 2 || request.method !== 'GET') return fail(cors, 405, 'Method not allowed.');
+    if (typeof env.MEDIA.list !== 'function') return fail(cors, 503, 'Error storage cannot list records.');
+    const requestedLimit = Number(url.searchParams.get('limit') || 50);
+    const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(100, Math.floor(requestedLimit))) : 50;
+    const cursor = url.searchParams.get('cursor') || undefined;
+    if (cursor && (cursor.length > 2048 || /[\x00-\x1f]/.test(cursor))) {
+      return fail(cors, 400, 'That error-log cursor is invalid.');
+    }
+    const page = await env.MEDIA.list({ prefix: ERROR_PREFIX, limit, cursor });
+    const errors = await Promise.all((page?.objects || []).map(async (item) => {
+      const object = await env.MEDIA.get(item.key);
+      if (!object) return null;
+      try { return JSON.parse(await readObjectText(object)); } catch { return null; }
+    }));
+    return reply(cors, {
+      errors: errors.filter(Boolean),
+      nextCursor: page?.truncated ? page.cursor || null : null,
+    });
+  }
+
   if (parts[1] !== 'models') return fail(cors, 404, 'Not found.');
 
   if (parts.length === 2) {

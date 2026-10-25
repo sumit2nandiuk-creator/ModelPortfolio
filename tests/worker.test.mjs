@@ -22,6 +22,7 @@ import { onRequest as onMediaRequest } from '../functions/media/[[path]].js';
 import { onRequest as onSlugPageRequest } from '../functions/[slug]/index.js';
 import { onRequest as onSlugBareRequest } from '../functions/[slug].js';
 import { onRequest as onSeedRequest } from '../functions/_seed/[[path]].js';
+import { onRequest as onErrorsPageRequest } from '../functions/errors.js';
 
 const ORIGIN = 'https://admin.example.test';
 const BASE = 'https://media.example.test';
@@ -148,14 +149,15 @@ function fakeBucket() {
         },
       };
     },
-    async list({ prefix = '' } = {}) {
-      const listObjects = [];
-      for (const [key, entry] of objects.entries()) {
-        if (key.startsWith(prefix)) {
-          listObjects.push({ key, size: entry.bytes?.byteLength ?? 0 });
-        }
-      }
-      return { objects: listObjects, truncated: false };
+    async list({ prefix = '', limit, cursor } = {}) {
+      const all = [...objects.entries()]
+        .filter(([key]) => key.startsWith(prefix))
+        .map(([key, entry]) => ({ key, size: entry.bytes?.byteLength ?? 0 }))
+        .sort((a, b) => a.key.localeCompare(b.key));
+      const start = cursor ? Number(cursor) : 0;
+      const page = Number.isFinite(limit) ? all.slice(start, start + limit) : all.slice(start);
+      const truncated = Number.isFinite(limit) && start + limit < all.length;
+      return { objects: page, truncated, cursor: truncated ? String(start + limit) : undefined };
     },
     async delete(key) {
       objects.delete(key);
@@ -220,6 +222,54 @@ function apiRequest(method, pathname, { body, form, token = TOKEN, origin = ORIG
   }
   return new Request(`https://admin.example.test${pathname}`, { method, headers, body: payload });
 }
+
+test('the /errors page is an unindexed, no-store dashboard shell with authenticated data access', async () => {
+  const response = await onErrorsPageRequest({ request: new Request('https://site.test/errors') });
+  const html = await response.text();
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('Cache-Control'), 'no-store');
+  assert.match(html, /Application errors/);
+  assert.match(html, /errors-dashboard\.js/);
+  assert.match(html, /name="robots" content="noindex,nofollow"/);
+});
+
+test('frontend errors can be reported publicly but error records are only readable with the admin token', async () => {
+  const env = fakeEnv();
+  const one = await handleRequest(apiRequest('POST', '/api/errors', {
+    token: '',
+    body: { source: 'frontend-js', message: 'Uncaught test error', path: '/jane-doe/?private=yes', details: { stack: 'test stack' } },
+  }), env);
+  assert.equal(one.status, 202);
+  const two = await handleRequest(apiRequest('POST', '/api/errors', {
+    token: '',
+    body: { source: 'frontend-resource', message: 'img failed to load', path: '/jane-doe/', details: { resource: '/jane-doe/media/cover.jpg' } },
+  }), env);
+  assert.equal(two.status, 202);
+
+  const unauthorized = await handleRequest(apiRequest('GET', '/api/errors', { token: '' }), env);
+  assert.equal(unauthorized.status, 401);
+  const firstPage = await handleRequest(apiRequest('GET', '/api/errors?limit=1'), env);
+  const firstBody = await firstPage.json();
+  assert.equal(firstPage.status, 200);
+  assert.equal(firstBody.errors.length, 1);
+  assert.ok(firstBody.nextCursor);
+  const secondPage = await handleRequest(apiRequest('GET', `/api/errors?limit=1&cursor=${encodeURIComponent(firstBody.nextCursor)}`), env);
+  const secondBody = await secondPage.json();
+  assert.equal(secondBody.errors.length, 1);
+  assert.notEqual(firstBody.errors[0].id, secondBody.errors[0].id);
+  assert.equal(firstBody.errors[0].path, '/jane-doe/');
+});
+
+test('authenticated API errors are captured in the backend error log', async () => {
+  const env = fakeEnv();
+  const failed = await handleRequest(apiRequest('GET', '/api/models/NOT-valid'), env);
+  assert.equal(failed.status, 400);
+  const logs = await handleRequest(apiRequest('GET', '/api/errors'), env);
+  const records = await logs.json();
+  assert.equal(records.errors.length, 1);
+  assert.equal(records.errors[0].source, 'backend-api');
+  assert.equal(records.errors[0].details.status, 400);
+});
 
 test('requests without the admin token are refused', async () => {
   const res = await handleRequest(apiRequest('GET', '/api/models', { token: '' }), fakeEnv());
@@ -306,7 +356,8 @@ test('saving a profile stores it in R2 with zero GitHub commits (no Cloudflare d
     { fetch: gh.fetchImpl },
   );
   assert.equal(bad.status, 400);
-  assert.equal(env.MEDIA.objects.size, 0);
+  assert.equal([...env.MEDIA.objects.keys()].some((key) => key.startsWith('_profiles/') || key.startsWith('jane-doe/')), false);
+  assert.equal([...env.MEDIA.objects.keys()].some((key) => key.startsWith('_errors/')), true, 'the rejected API request is retained in the error log');
 
   // Valid update writes directly to R2 (_profiles/jane-doe.json) and returns a new version token.
   const updatedModel = validModel({ name: 'Jane Q. Doe' });
@@ -647,7 +698,8 @@ test('uploading an unsupported file type is refused and nothing is stored', asyn
   form.append('file', new File(['MZ'], 'virus.exe', { type: 'application/octet-stream' }));
   const res = await handleRequest(apiRequest('POST', '/api/models/jane-doe/media', { form }), env);
   assert.equal(res.status, 400);
-  assert.equal(env.MEDIA.objects.size, 0);
+  assert.equal([...env.MEDIA.objects.keys()].some((key) => key.startsWith('jane-doe/')), false);
+  assert.equal([...env.MEDIA.objects.keys()].some((key) => key.startsWith('_errors/')), true, 'the backend rejection is retained in the error log');
 });
 
 test('deleting a file removes it from R2 only when it belongs to that profile', async () => {

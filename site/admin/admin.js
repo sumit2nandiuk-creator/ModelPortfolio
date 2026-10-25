@@ -2849,7 +2849,11 @@
     return makeThumbnailFromFile(file)
       .then(function (blob) { return uploadThumbnail(blob, 'upload-' + index); })
       .then(function (url) { return { url: url, error: '' }; })
-      .catch(function (err) { return { url: '', error: (err && err.message) || 'Thumbnail generation failed.' }; });
+      .catch(function (err) {
+        var message = (err && err.message) || 'Thumbnail generation failed.';
+        if (window.__appErrorReporter) window.__appErrorReporter.report('frontend-thumbnail', message, { name: 'cover-or-photo-thumbnail' });
+        return { url: '', error: message };
+      });
   }
 
   function generateThumbnails() {
@@ -2878,7 +2882,11 @@
             group.refs.forEach(function (ref) { ref.entry[ref.key] = url; });
             generated += 1;
           })
-          .catch(function (err) { failures.push(err.message || 'An image could not be processed.'); });
+          .catch(function (err) {
+            var message = err.message || 'An image could not be processed.';
+            failures.push(message);
+            if (window.__appErrorReporter) window.__appErrorReporter.report('frontend-thumbnail', message, { resource: group.source, name: 'manual-thumbnail-generation' });
+          });
       });
     }, Promise.resolve()).then(function () {
       if (generated) {

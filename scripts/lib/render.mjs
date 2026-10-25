@@ -231,20 +231,7 @@ function videoDimensions(video, ctx) {
   return null;
 }
 
-function photoDimensions(photo, ctx) {
-  if (photo?.width && photo?.height) return { width: photo.width, height: photo.height };
-  const fromFile = photo?.file ? ctx.sizeOf(photo.file) : null;
-  if (fromFile?.width && fromFile?.height) return fromFile;
-  return null;
-}
-
-function firstPhotoDimensions(photos, ctx) {
-  for (const photo of photos ?? []) {
-    const dim = photoDimensions(photo, ctx);
-    if (dim) return dim;
-  }
-  return null;
-}
+const UNIFORM_PHOTO_FRAME = { width: 2, height: 3 };
 
 // Groups a model's videos and photos by title/category (case-insensitively),
 // preserving explicit `model.groups` order first and placing all videos before
@@ -298,18 +285,26 @@ function renderPortfolio(model, ctx) {
       : '';
 
   const hasAnyPhotos = (model.photos ?? []).length > 0;
-  const fallbackPhotoDim = firstPhotoDimensions(model.photos, ctx) || (hasAnyPhotos ? { width: 2, height: 3 } : null);
 
   let photoIndex = 0;
   const groupSections = groups
     .map((group) => {
       const totalItems = group.videos.length + group.photos.length;
-      const targetPhotoDim = firstPhotoDimensions(group.photos, ctx) || fallbackPhotoDim;
+      const groupHasPhotos = group.photos.length > 0;
 
       const videoCards = group.videos
         .map((video) => {
           const nativeDim = videoDimensions(video, ctx);
-          const frameDim = targetPhotoDim || nativeDim;
+          let frameDim = null;
+          if (groupHasPhotos) {
+            // Match the uniform 2:3 photo frame whenever photos exist beside the video in this category.
+            frameDim = UNIFORM_PHOTO_FRAME;
+          } else if (nativeDim && nativeDim.width >= nativeDim.height) {
+            // Preserve natural aspect ratio for landscape videos in categories with no photos beside them.
+            frameDim = nativeDim;
+          } else if (nativeDim && nativeDim.height > nativeDim.width) {
+            frameDim = hasAnyPhotos ? UNIFORM_PHOTO_FRAME : nativeDim;
+          }
           const isPortrait = frameDim ? frameDim.height > frameDim.width : false;
           const isLandscape = frameDim ? frameDim.width >= frameDim.height : false;
           const cardClass = `media-card media-card--video video-card${isPortrait ? ' is-portrait' : isLandscape ? ' is-landscape' : ''}`;
@@ -376,7 +371,7 @@ function renderPortfolio(model, ctx) {
             <div class="media-group-head">
               <h3 class="media-group-title">${esc(group.title)}</h3>${navButtons}
             </div>
-            <div class="media-row${totalItems < 2 ? ' is-single' : ''}" data-media-row>${videoCards}${photoCards}
+            <div class="media-row${totalItems < 2 ? ' is-single' : ''}" data-media-row${groupHasPhotos ? ' data-has-photos="1"' : ''}>${videoCards}${photoCards}
             </div>
           </section>`;
     })

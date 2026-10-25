@@ -508,7 +508,28 @@ test('redesigned admin groups videos first followed by photos per category/title
   assert.equal(bridalCards[1].classList.contains('photo'), true);
   assert.match(bridalCards[1].textContent, /#2 · Photo/);
 
-  // 3. Add a new group, rename it to "Editorial", and save -> persists groups & clean items without _gid/_groups
+  // 3. Categories can be collapsed/expanded individually and via "Collapse all" / "Expand all"
+  const bridalToggle = groupCards[0].querySelector('.group-collapse-btn');
+  const bridalBody = groupCards[0].querySelector('.group-card-body');
+  assert.equal(bridalBody.hidden, false);
+  assert.equal(bridalToggle.getAttribute('aria-expanded'), 'true');
+
+  bridalToggle.dispatchEvent({ type: 'click', bubbles: true });
+  assert.equal(bridalBody.hidden, true);
+  assert.equal(groupCards[0].classList.contains('is-collapsed'), true);
+  assert.equal(bridalToggle.getAttribute('aria-expanded'), 'false');
+
+  const toggleAllBtn = h.doc.querySelector('[data-action="toggle-all-groups"]');
+  assert.ok(toggleAllBtn);
+  assert.equal(toggleAllBtn.textContent, 'Collapse all');
+  toggleAllBtn.dispatchEvent({ type: 'click', bubbles: true });
+  assert.equal(groupCards.every((c) => c.querySelector('.group-card-body').hidden), true);
+  assert.equal(toggleAllBtn.textContent, 'Expand all');
+
+  toggleAllBtn.dispatchEvent({ type: 'click', bubbles: true });
+  assert.equal(groupCards.every((c) => !c.querySelector('.group-card-body').hidden), true);
+
+  // 4. Add a new group, rename it to "Editorial", and save -> persists groups & clean items without _gid/_groups
   const addGroupBtn = h.doc.querySelector('[data-action="add-group"]');
   addGroupBtn.dispatchEvent({ type: 'click', bubbles: true });
   const newGroupInput = h.doc.querySelector('[data-group-title="3"]');

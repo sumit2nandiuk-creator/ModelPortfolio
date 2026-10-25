@@ -281,6 +281,7 @@ label > input, label > textarea, label > select { color: var(--ink); }
 .item-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 8px; }
 .stat-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; margin-bottom: 8px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.toolbar-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
 /* Grouped portfolio rows (videos first, then photos horizontally) ---------- */
 
@@ -298,6 +299,16 @@ label > input, label > textarea, label > select { color: var(--ink); }
   gap: 12px;
 }
 
+.group-card.is-collapsed {
+  gap: 0;
+  padding-top: 11px;
+  padding-bottom: 11px;
+}
+
+.group-card.is-collapsed .upload-slot:not(:empty) {
+  margin-top: 10px;
+}
+
 .group-card-head {
   display: flex;
   flex-wrap: wrap;
@@ -308,16 +319,34 @@ label > input, label > textarea, label > select { color: var(--ink); }
   border-bottom: 1px solid var(--line);
 }
 
+.group-card.is-collapsed .group-card-head {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
 .group-title-wrap {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 14px;
+  gap: 10px 12px;
   align-items: flex-end;
   flex: 1 1 260px;
 }
 
+.group-collapse-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.group-chevron {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
 .group-title-label {
-  flex: 1 1 220px;
+  flex: 1 1 200px;
   max-width: 340px;
   font-weight: 600;
   color: var(--ink);
@@ -333,11 +362,22 @@ label > input, label > textarea, label > select { color: var(--ink); }
   align-items: center;
   padding: 5px 10px;
   border-radius: 999px;
+  border: 1px solid transparent;
   background: #efe9de;
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 600;
   margin-bottom: 3px;
+  cursor: pointer;
+}
+
+.group-count-pill:hover {
+  border-color: #cfc7b9;
+  color: var(--ink);
+}
+
+.group-card-body {
+  min-width: 0;
 }
 
 .group-head-actions {
@@ -388,8 +428,12 @@ label > input, label > textarea, label > select { color: var(--ink); }
 
 .admin-media-card .thumb,
 .admin-media-card .thumb.portrait,
-.admin-media-card .thumb.wide {
+.group-card[data-has-photos="1"] .admin-media-card .thumb.wide {
   aspect-ratio: 2 / 3;
+}
+
+.group-card:not([data-has-photos="1"]) .admin-media-card .thumb.wide {
+  aspect-ratio: 16 / 9;
 }
 
 .admin-media-body {

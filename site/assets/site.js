@@ -936,47 +936,34 @@
     });
   }
 
-  // ---- Video frame sizing (matched to portfolio photo frames) & thumbnails --
+  // ---- Video frame sizing & thumbnails -------------------------------------
+  var UNIFORM_FRAME = { w: 2, h: 3 };
   var videoEls = Array.prototype.slice.call(document.querySelectorAll('.video-frame video'));
-  var portfolioImgs = Array.prototype.slice.call(document.querySelectorAll('.gallery-btn img'));
+  var hasPortfolioPhotos = document.querySelectorAll('.gallery-btn').length > 0;
 
-  function readImgDims(img) {
-    if (!img) return null;
-    if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-      return { w: img.naturalWidth, h: img.naturalHeight };
-    }
-    var attrW = Number(img.getAttribute && img.getAttribute('width')) || 0;
-    var attrH = Number(img.getAttribute && img.getAttribute('height')) || 0;
-    if (attrW > 0 && attrH > 0) {
-      return { w: attrW, h: attrH };
-    }
-    if (img.clientWidth > 0 && img.clientHeight > 0) {
-      return { w: img.clientWidth, h: img.clientHeight };
-    }
-    return null;
+  function rowHasPhotos(videoEl) {
+    var row = videoEl && videoEl.closest ? videoEl.closest('[data-media-row]') : null;
+    if (!row) return false;
+    if (row.getAttribute && row.getAttribute('data-has-photos') === '1') return true;
+    return Boolean(row.querySelector('.gallery-btn'));
   }
 
-  function photoFrameDimsForVideo(videoEl) {
-    var row = videoEl && videoEl.closest ? videoEl.closest('[data-media-row]') : null;
-    if (row) {
-      var rowImgs = row.querySelectorAll('.gallery-btn img');
-      for (var r = 0; r < rowImgs.length; r++) {
-        var rDim = readImgDims(rowImgs[r]);
-        if (rDim) return rDim;
-      }
-    }
-    for (var i = 0; i < portfolioImgs.length; i++) {
-      var pDim = readImgDims(portfolioImgs[i]);
-      if (pDim) return pDim;
+  function targetFrameDimsForVideo(videoEl) {
+    // 1. Whenever photos exist beside the video in the same category row, match the uniform 2:3 photo frame.
+    if (rowHasPhotos(videoEl)) return UNIFORM_FRAME;
+
+    // 2. Category has no photos beside the video: keep landscape videos in their natural landscape ratio!
+    var vw = videoEl.videoWidth;
+    var vh = videoEl.videoHeight;
+    if (vw > 0 && vh > 0) {
+      if (vw >= vh) return { w: vw, h: vh };
+      return hasPortfolioPhotos ? UNIFORM_FRAME : { w: vw, h: vh };
     }
     return null;
   }
 
   function syncVideoOrientation(videoEl) {
-    var photoDims = photoFrameDimsForVideo(videoEl);
-    var vw = videoEl.videoWidth;
-    var vh = videoEl.videoHeight;
-    var frameDims = photoDims || (vw > 0 && vh > 0 ? { w: vw, h: vh } : null);
+    var frameDims = targetFrameDimsForVideo(videoEl);
     if (!frameDims) return;
     var card = videoEl.closest ? videoEl.closest('.video-card') : null;
     var portrait = frameDims.h > frameDims.w;
@@ -987,12 +974,6 @@
     }
     syncAllMediaRows();
   }
-
-  portfolioImgs.forEach(function (img) {
-    img.addEventListener('load', function () {
-      videoEls.forEach(syncVideoOrientation);
-    });
-  });
 
   function frameBrightnessState(ctx2d, w, h) {
     var data = ctx2d.getImageData(0, 0, w, h).data;
@@ -1049,7 +1030,7 @@
         if (!canvas || typeof canvas.getContext !== 'function') return;
         var vw = v.videoWidth;
         var vh = v.videoHeight;
-        var frameDims = photoFrameDimsForVideo(v) || { w: vw, h: vh };
+        var frameDims = targetFrameDimsForVideo(v) || { w: vw, h: vh };
         var targetRatio = frameDims.w / frameDims.h;
         var srcRatio = vw / vh;
         var sx = 0;

@@ -550,34 +550,33 @@ test('double-tap on popup photo zooms to 2.5x around tap point and double-tap ag
   assert.equal(h.dialog.open, false);
 });
 
-test('video frames match portfolio photo frame size when photos exist, and fall back to video dimensions on video-only pages', async () => {
+test('videos beside photos match uniform 2:3 frame while landscape videos in photo-less categories stay landscape', async () => {
   const h = await createLightboxHarness();
-  // Attach a 2:3 portrait <img> inside the first Bridal .gallery-btn
-  const photoImg = h.documentObj.createElement('img');
-  photoImg.naturalWidth = 1362;
-  photoImg.naturalHeight = 2048;
-  h.galleryButtons[0].appendChild(photoImg);
-
   await h.boot();
 
-  const [bridal, meesho] = h.videoNodes;
-  // Even before video metadata arrives, both Bridal and Meesho video frames match the 1362 / 2048 photo frame
+  const [bridal, serial] = h.videoNodes;
+  // Bridal has photos beside it -> immediately gets uniform 2 / 3 frame
   assert.equal(bridal.card.classList.contains('is-portrait'), true);
-  assert.equal(bridal.vid.style.aspectRatio, '1362 / 2048');
-  assert.equal(meesho.vid.style.aspectRatio, '1362 / 2048');
+  assert.equal(bridal.vid.style.aspectRatio, '2 / 3');
 
-  // When 9:16 (1080x1920 / 720x1280) video metadata arrives, video frames stay locked to the photo frame size
+  // Serial has NO photos beside it: before metadata arrives, it is NOT forced to 2 / 3
+  assert.equal(serial.vid.style.aspectRatio || '', '');
+
+  // Bridal 9:16 video stays locked to uniform 2 / 3 beside its photos
   bridal.vid.videoWidth = 1080;
   bridal.vid.videoHeight = 1920;
   bridal.vid.dispatchEvent(h.makeEvent('loadedmetadata', { bubbles: false }));
-  assert.equal(bridal.vid.style.aspectRatio, '1362 / 2048');
+  assert.equal(bridal.vid.style.aspectRatio, '2 / 3');
 
-  meesho.vid.videoWidth = 720;
-  meesho.vid.videoHeight = 1280;
-  meesho.vid.dispatchEvent(h.makeEvent('loadedmetadata', { bubbles: false }));
-  assert.equal(meesho.vid.style.aspectRatio, '1362 / 2048');
+  // Serial 16:9 landscape video (no photos beside it in category) keeps its native 1280 / 720 landscape ratio!
+  serial.vid.videoWidth = 1280;
+  serial.vid.videoHeight = 720;
+  serial.vid.dispatchEvent(h.makeEvent('loadedmetadata', { bubbles: false }));
+  assert.equal(serial.vid.style.aspectRatio, '1280 / 720');
+  assert.equal(serial.card.classList.contains('is-landscape'), true);
+  assert.equal(serial.card.classList.contains('is-portrait'), false);
 
-  // Filtering to "Bridal" hides the "Meesho" group row while keeping "Bridal" visible
+  // Filtering to "Bridal" hides the second group row while keeping "Bridal" visible
   h.filterBridal.dispatchEvent(h.makeEvent('click'));
   assert.equal(h.bridalGroup.hidden, false);
   assert.equal(h.meeshoGroup.hidden, true);

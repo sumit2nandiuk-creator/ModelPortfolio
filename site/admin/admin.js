@@ -79,6 +79,7 @@
     pendingDeletes: [],
     savedSelections: {}, // richKey -> { startPara, startOffset, endPara, endOffset, collapsed }
     uploads: {},         // slotId -> { state, title, detail, percent, indeterminate, canCancel }
+    collapsedGroups: {}, // groupId -> true when collapsed in the editor
     activeUploadSlot: '',
     abortUpload: null,
     groupSeq: 1,
@@ -531,6 +532,7 @@
     S.model = null;
     S.slug = '';
     S.uploads = {};
+    S.collapsedGroups = {};
     S.activeUploadSlot = '';
     paintSavebarProgress();
     showScreen('login');
@@ -564,6 +566,7 @@
       S.pendingDeletes = [];
       S.savedSelections = {};
       S.uploads = {};
+      S.collapsedGroups = {};
       S.activeUploadSlot = '';
       paintSavebarProgress();
       renderPicker();
@@ -596,6 +599,7 @@
     S.pendingDeletes = [];
     S.savedSelections = {};
     S.uploads = {};
+    S.collapsedGroups = {};
     S.activeUploadSlot = '';
     paintSavebarProgress();
     renderPicker();
@@ -982,6 +986,36 @@
     return parts.join(' · ') + ' (videos shown first)';
   }
 
+  function areAllGroupsCollapsed() {
+    var groups = (S.model && S.model._groups) || [];
+    if (!groups.length) return false;
+    return groups.every(function (g) { return Boolean(S.collapsedGroups[g.id]); });
+  }
+
+  function syncGroupCollapseDom(groupId) {
+    var root = $('editor-body');
+    if (!root) return;
+    var collapsed = Boolean(S.collapsedGroups[groupId]);
+    var card = root.querySelector('[data-group-card="' + groupId + '"]');
+    if (card) {
+      card.classList.toggle('is-collapsed', collapsed);
+      var bodyEl = card.querySelector('.group-card-body');
+      if (bodyEl) bodyEl.hidden = collapsed;
+      var toggleBtns = card.querySelectorAll('[data-action="toggle-group"]');
+      for (var b = 0; b < toggleBtns.length; b++) {
+        toggleBtns[b].setAttribute('aria-expanded', String(!collapsed));
+      }
+      var chev = card.querySelector('.group-chevron');
+      if (chev) chev.textContent = collapsed ? '▸' : '▾';
+      var lbl = card.querySelector('.group-collapse-text');
+      if (lbl) lbl.textContent = collapsed ? 'Expand' : 'Collapse';
+    }
+    var toggleAllBtn = root.querySelector('[data-action="toggle-all-groups"]');
+    if (toggleAllBtn) {
+      toggleAllBtn.textContent = areAllGroupsCollapsed() ? 'Expand all' : 'Collapse all';
+    }
+  }
+
   function portfolioGroupsHtml() {
     var m = S.model;
     var groups = Array.isArray(m._groups) && m._groups.length ? m._groups : [{ id: 'default', title: 'Portfolio' }];
@@ -989,6 +1023,7 @@
     var captionStyle = esc(boxInlineCss('captions'));
 
     return groups.map(function (grp, gIdx) {
+      var isCollapsed = Boolean(S.collapsedGroups[grp.id]);
       var groupVideos = [];
       (m.videos || []).forEach(function (v, vIdx) {
         if (v && v._gid === grp.id) groupVideos.push({ entry: v, index: vIdx });
@@ -1062,13 +1097,17 @@
         ? '<div class="admin-media-row' + (totalItems < 2 ? ' is-single' : '') + '">' + videoCardsHtml + photoCardsHtml + '</div>'
         : '<p class="muted group-empty">Empty group — use <b>Add video</b> (shown first) or <b>Add photo</b> above to populate this horizontal row.</p>';
 
-      return '<div class="group-card" data-group-card="' + esc(grp.id) + '">' +
+      return '<div class="group-card' + (isCollapsed ? ' is-collapsed' : '') + '" data-group-card="' + esc(grp.id) + '"' + (groupPhotos.length > 0 ? ' data-has-photos="1"' : '') + '>' +
         '<div class="group-card-head">' +
           '<div class="group-title-wrap">' +
+            '<button type="button" class="btn small ghost group-collapse-btn" data-action="toggle-group" data-group-id="' + esc(grp.id) + '" aria-expanded="' + String(!isCollapsed) + '" aria-controls="group-body-' + esc(grp.id) + '" title="Collapse or expand category">' +
+              '<span class="group-chevron" aria-hidden="true">' + (isCollapsed ? '▸' : '▾') + '</span>' +
+              '<span class="group-collapse-text">' + (isCollapsed ? 'Expand' : 'Collapse') + '</span>' +
+            '</button>' +
             '<label class="group-title-label">Category / Row Title' +
               '<input class="group-title-input" data-group-title="' + gIdx + '" data-styled-slot="captions" style="' + captionStyle + '" value="' + esc(groupTitleVal) + '" placeholder="e.g. Bridal, Editorial, Traditional">' +
             '</label>' +
-            '<span class="group-count-pill" data-group-counts="' + gIdx + '">' + esc(groupSummaryText(groupVideos.length, groupPhotos.length)) + '</span>' +
+            '<button type="button" class="group-count-pill" data-action="toggle-group" data-group-id="' + esc(grp.id) + '" aria-expanded="' + String(!isCollapsed) + '" data-group-counts="' + gIdx + '">' + esc(groupSummaryText(groupVideos.length, groupPhotos.length)) + '</button>' +
           '</div>' +
           '<div class="group-head-actions">' +
             uploadButton('Add video', 'video', ' accept="video/*" multiple data-group-id="' + esc(grp.id) + '"') +
@@ -1079,7 +1118,9 @@
           '</div>' +
         '</div>' +
         uploadSlotHtml('group-' + grp.id) +
-        rowBody +
+        '<div id="group-body-' + esc(grp.id) + '" class="group-card-body"' + (isCollapsed ? ' hidden' : '') + '>' +
+          rowBody +
+        '</div>' +
       '</div>';
     }).join('');
   }
@@ -1186,7 +1227,12 @@
 
       listCard(
         'Portfolio groups (videos first, then photos)',
-        '<button type="button" class="btn small primary" data-action="add-group">+ Add category / group</button>',
+        '<div class="toolbar-actions">' +
+          ((m._groups && m._groups.length > 1)
+            ? '<button type="button" class="btn small ghost" data-action="toggle-all-groups">' + (areAllGroupsCollapsed() ? 'Expand all' : 'Collapse all') + '</button>'
+            : '') +
+          '<button type="button" class="btn small primary" data-action="add-group">+ Add category / group</button>' +
+        '</div>',
         '<div class="stack">' +
           '<p class="muted" style="margin:0">Each group renders as a horizontal scrollable row on the website: its video(s) appear first on the left, followed by its photos (with 10% of the next item peeking on the right whenever more exist).</p>' +
           '<div class="grid">' +
@@ -1794,10 +1840,31 @@
       }
       return;
     }
+    if (action === 'toggle-group') {
+      var toggleGid = btn.getAttribute('data-group-id');
+      if (toggleGid) {
+        if (S.collapsedGroups[toggleGid]) delete S.collapsedGroups[toggleGid];
+        else S.collapsedGroups[toggleGid] = true;
+        syncGroupCollapseDom(toggleGid);
+      }
+      return;
+    }
+    if (action === 'toggle-all-groups') {
+      var allGroups = (S.model && S.model._groups) || [];
+      var collapseNext = !areAllGroupsCollapsed();
+      allGroups.forEach(function (g) {
+        if (collapseNext) S.collapsedGroups[g.id] = true;
+        else delete S.collapsedGroups[g.id];
+        syncGroupCollapseDom(g.id);
+      });
+      return;
+    }
     if (action === 'add-group') {
       if (!Array.isArray(S.model._groups)) S.model._groups = [];
       var newIdx = S.model._groups.length;
-      S.model._groups.push({ id: nextGroupId(), title: 'Category ' + (newIdx + 1) });
+      var newGrpId = nextGroupId();
+      delete S.collapsedGroups[newGrpId];
+      S.model._groups.push({ id: newGrpId, title: 'Category ' + (newIdx + 1) });
       render();
       var titleInput = $('editor-body') && $('editor-body').querySelector('[data-group-title="' + newIdx + '"]');
       if (titleInput && typeof titleInput.focus === 'function') {
@@ -2089,6 +2156,7 @@
       var targetGrp = findEditorGroup(input.value);
       var targetItem = S.model && S.model[listName] && S.model[listName][itemIdx];
       if (targetGrp && targetItem) {
+        delete S.collapsedGroups[targetGrp.id];
         targetItem._gid = targetGrp.id;
         targetItem.category = trimmed(targetGrp.title) || 'Portfolio';
         render();
@@ -2129,6 +2197,7 @@
   function addMedia(kind, file, fileIndex, totalFiles, groupId) {
     var isVideo = kind === 'video';
     var targetGrp = (kind === 'photo' || kind === 'video') ? findEditorGroup(groupId) : null;
+    if (targetGrp) delete S.collapsedGroups[targetGrp.id];
     var slotId = targetGrp ? ('group-' + targetGrp.id) : kind;
     var prep = prepareUploadFile(file, isVideo);
     if (!prep.ok) {

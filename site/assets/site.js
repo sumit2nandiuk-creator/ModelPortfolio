@@ -296,11 +296,8 @@
         el.style.visibility = near ? 'visible' : 'hidden';
         el.classList.toggle('is-current', i === index);
         el.inert = i !== index;
-        if (near) {
-          var img = el.querySelector('img');
-          var shouldPrefetch = i === index || n === 2 || d === 1 || (dx > 0 && d === -1);
-          if (img && shouldPrefetch && img.getAttribute('loading') === 'lazy') img.setAttribute('loading', 'eager');
-        }
+        var img = el.querySelector('img');
+        if (img && img.getAttribute('loading') !== 'eager') img.setAttribute('loading', 'eager');
       });
     }
 

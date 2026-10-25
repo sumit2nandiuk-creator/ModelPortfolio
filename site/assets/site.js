@@ -289,7 +289,7 @@
       els.forEach(function (el, i) {
         var d = (i - index + n) % n;
         if (d > n / 2) d -= n;                              // nearest way round
-        if (n === 2 && i !== index) d = dx < 0 ? 1 : -1;    // one neighbour: show it on the side being dragged
+        if (n === 2 && i !== index && dx !== 0) d = dx < 0 ? 1 : -1;    // one neighbour: show it on the side being dragged (only while dragging)
         var near = Math.abs(d) <= 1;
         el.style.transition = animate ? 'transform ' + ms + 'ms ' + EASE : 'none';
         el.style.transform = 'translate3d(' + (d * stride + dx) + 'px, 0, 0)';
@@ -497,6 +497,14 @@
         if (activeImg) {
           if (typeof progressiveObserver !== 'undefined' && progressiveObserver) try { progressiveObserver.unobserve(activeImg); } catch (_) {}
           if (activeImg.complete && (activeImg.naturalWidth || 0) > 0) loadFullImageAfterThumbnail(activeImg);
+          // Also queue via the concurrency-aware path for portfolio-style staggering
+          queueProgressiveUpgrade(activeImg);
+          if (!activeImg.complete || (activeImg.naturalWidth || 0) === 0) {
+            activeImg.addEventListener('load', function onHeroLoad() {
+              activeImg.removeEventListener('load', onHeroLoad);
+              queueProgressiveUpgrade(activeImg);
+            }, { once: true });
+          }
         }
       },
     });
@@ -641,6 +649,20 @@
       }
       return;
     }
+    // Non-blank guarantee: if the new URL 404s, restore the previous src so hero
+    // never turns black after a preview was already visible (new profiles have R2
+    // preview/thumb URLs that may 404 on first deploy).
+    var previous = current;
+    var restored = false;
+    var restore = function () {
+      if (restored) return;
+      if (getMediaSrc(el) !== url) return;
+      restored = true;
+      try { el.src = previous; } catch (_) {}
+      if (typeof el.setAttribute === 'function') el.setAttribute('src', previous);
+    };
+    var onError = function () { restore(); };
+    el.addEventListener('error', onError, { once: true });
     // Keep current low-res visible until new source is decoded — no blink.
     try { el.src = url; } catch (_) {}
     if (typeof el.setAttribute === 'function') {
@@ -648,6 +670,7 @@
     }
     var check = function () {
       if ((el.complete && (el.naturalWidth || 0) > 0) || (el.naturalWidth || 0) > 0) {
+        try { el.removeEventListener('error', onError); } catch (_) {}
         updateMediaLoaded(el, true);
         syncAllFramesForUrl(url, true);
       }
@@ -658,8 +681,28 @@
     }
   }
 
+  function finishPortfolioUpgrade(img) {
+    if (!img) return;
+    if (img._portfolioDone) {
+      var cb = img._portfolioDone;
+      img._portfolioDone = null;
+      img._upgradeQueued = false;
+      try { cb(); } catch (_) {}
+    } else if (img._upgradeQueued && !img.closest('.hero-carousel')) {
+      img._upgradeQueued = false;
+      // Non-hero early return without queue callback – drain if needed
+      if (typeof onPortfolioUpgradeDone === 'function' && portfolioUpgrading > 0) {
+        // Only drain if this img was counted as upgrading; otherwise just ensure queue moves
+        // The queue's fallback timer will handle, but try to keep moving
+      }
+    }
+  }
+
   function loadFullImageAfterThumbnail(img) {
-    if (!img || img.tagName !== 'IMG') return;
+    if (!img || img.tagName !== 'IMG') {
+      finishPortfolioUpgrade(img);
+      return;
+    }
     // Hero slideshow: only upgrade the current slide eagerly to avoid hanging
     // the browser with N concurrent high-res downloads. Adjacent slides are
     // already eager for preview (tiny 64px) so no black flash, and full
@@ -667,36 +710,59 @@
     var heroCarousel = img.closest && img.closest('.hero-carousel');
     if (heroCarousel) {
       var heroSlide = img.closest('.carousel-slide');
-      if (!heroSlide || !heroSlide.classList.contains('is-current')) return;
+      if (!heroSlide || !heroSlide.classList.contains('is-current')) {
+        finishPortfolioUpgrade(img);
+        return;
+      }
     }
     var currentUrl = getMediaSrc(img);
     var mediumUrl = typeof img.getAttribute === 'function' ? img.getAttribute('data-medium-src') : '';
     var fullUrl = typeof img.getAttribute === 'function' ? img.getAttribute('data-full-src') : '';
     var targetUrl = mediumUrl && currentUrl !== mediumUrl ? mediumUrl : fullUrl;
-    if (!targetUrl || !fullUrl || currentUrl === fullUrl || img.src === fullUrl) return;
+    if (!targetUrl || !fullUrl || currentUrl === fullUrl || img.src === fullUrl) {
+      finishPortfolioUpgrade(img);
+      return;
+    }
     if (img._loadingFullImage && img._loadingFullUrl === targetUrl) return;
-    if (typeof window.Image !== 'function') return;
+    if (typeof window.Image !== 'function') {
+      finishPortfolioUpgrade(img);
+      return;
+    }
     img._loadingFullImage = true;
     img._loadingFullUrl = targetUrl;
     var full = new window.Image();
     // Wait for decode so swap is smooth with no blink; filter blur fades out via CSS.
+    var isPortfolio = !heroCarousel;
     var swapToTarget = function () {
       if (targetUrl === mediumUrl) {
-        if (img.getAttribute('data-medium-src') !== mediumUrl) return;
+        if (img.getAttribute('data-medium-src') !== mediumUrl) {
+          finishPortfolioUpgrade(img);
+          return;
+        }
         img.removeAttribute('data-medium-src');
         img._loadingFullImage = false;
         img._loadingFullUrl = '';
         setMediaSrc(img, mediumUrl);
         // Chain to full after medium paints; rAF avoids layout thrash.
+        // Medium done – now queue the full upgrade; keep portfolio slot occupied until full finishes
+        if (isPortfolio) {
+          // Keep upgrading counted; the next load will re-enter with same portfolio slot
+          // So don't finish yet – let the chained call handle final done
+          img._portfolioDone = img._portfolioDone || onPortfolioUpgradeDone;
+        }
         if (typeof requestFrame === 'function') requestFrame(function () { loadFullImageAfterThumbnail(img); });
         else loadFullImageAfterThumbnail(img);
         return;
       }
-      if (img.getAttribute('data-full-src') !== fullUrl) return;
+      if (img.getAttribute('data-full-src') !== fullUrl) {
+        finishPortfolioUpgrade(img);
+        return;
+      }
       img.removeAttribute('data-full-src');
       img._loadingFullImage = false;
       img._loadingFullUrl = '';
       setMediaSrc(img, fullUrl);
+      finishPortfolioUpgrade(img);
     };
     full.onload = function () {
       if (full.decode) {
@@ -710,7 +776,13 @@
       if (failedMedium) img.removeAttribute('data-medium-src');
       img._loadingFullImage = false;
       img._loadingFullUrl = '';
-      if (failedMedium) loadFullImageAfterThumbnail(img);
+      if (failedMedium) {
+        // Keep portfolio slot for retry to full
+        if (isPortfolio) img._portfolioDone = img._portfolioDone || onPortfolioUpgradeDone;
+        loadFullImageAfterThumbnail(img);
+      } else {
+        finishPortfolioUpgrade(img);
+      }
     };
     full.src = targetUrl;
   }
@@ -721,11 +793,85 @@
     var fullUrl = img.getAttribute('data-full-src');
     var nextUrl = mediumUrl || fullUrl;
     if (!nextUrl) return false;
-    if (mediumUrl) img.removeAttribute('data-medium-src');
-    else img.removeAttribute('data-full-src');
-    img._loadingFullImage = false;
-    img._loadingFullUrl = '';
-    setMediaSrc(img, nextUrl);
+    // Preload nextUrl before swapping so a 404 never replaces a visible preview
+    // with blank (hero would turn black). Only remove the data-* attr after preload succeeds.
+    if (typeof window.Image !== 'function') {
+      if (mediumUrl) img.removeAttribute('data-medium-src');
+      else img.removeAttribute('data-full-src');
+      img._loadingFullImage = false;
+      img._loadingFullUrl = '';
+      setMediaSrc(img, nextUrl);
+      return true;
+    }
+    var probe = new window.Image();
+    probe.onload = function () {
+      if (probe.decode) {
+        probe.decode().then(function () {
+          if (mediumUrl && img.getAttribute('data-medium-src') === mediumUrl) img.removeAttribute('data-medium-src');
+          else if (!mediumUrl && img.getAttribute('data-full-src') === fullUrl) img.removeAttribute('data-full-src');
+          img._loadingFullImage = false;
+          img._loadingFullUrl = '';
+          setMediaSrc(img, nextUrl);
+        }).catch(function () {
+          if (mediumUrl && img.getAttribute('data-medium-src') === mediumUrl) img.removeAttribute('data-medium-src');
+          else if (!mediumUrl && img.getAttribute('data-full-src') === fullUrl) img.removeAttribute('data-full-src');
+          img._loadingFullImage = false;
+          img._loadingFullUrl = '';
+          setMediaSrc(img, nextUrl);
+        });
+      } else {
+        if (mediumUrl && img.getAttribute('data-medium-src') === mediumUrl) img.removeAttribute('data-medium-src');
+        else if (!mediumUrl && img.getAttribute('data-full-src') === fullUrl) img.removeAttribute('data-full-src');
+        img._loadingFullImage = false;
+        img._loadingFullUrl = '';
+        setMediaSrc(img, nextUrl);
+      }
+    };
+    probe.onerror = function () {
+      // Next URL also 404 – drop it and try the following one (medium -> full) without blanking
+      if (mediumUrl) {
+        if (img.getAttribute('data-medium-src') === mediumUrl) img.removeAttribute('data-medium-src');
+        // Try full next, preloaded as well
+        var fallback = img.getAttribute('data-full-src');
+        if (fallback) {
+          var probe2 = new window.Image();
+          probe2.onload = function () {
+            if (probe2.decode) {
+              probe2.decode().then(function () {
+                if (img.getAttribute('data-full-src') === fallback) img.removeAttribute('data-full-src');
+                img._loadingFullImage = false;
+                img._loadingFullUrl = '';
+                setMediaSrc(img, fallback);
+              }).catch(function () {
+                if (img.getAttribute('data-full-src') === fallback) img.removeAttribute('data-full-src');
+                img._loadingFullImage = false;
+                img._loadingFullUrl = '';
+                setMediaSrc(img, fallback);
+              });
+            } else {
+              if (img.getAttribute('data-full-src') === fallback) img.removeAttribute('data-full-src');
+              img._loadingFullImage = false;
+              img._loadingFullUrl = '';
+              setMediaSrc(img, fallback);
+            }
+          };
+          probe2.onerror = function () {
+            if (img.getAttribute('data-full-src') === fallback) img.removeAttribute('data-full-src');
+            img._loadingFullImage = false;
+            img._loadingFullUrl = '';
+          };
+          probe2.src = fallback;
+        } else {
+          img._loadingFullImage = false;
+          img._loadingFullUrl = '';
+        }
+      } else {
+        if (img.getAttribute('data-full-src') === fullUrl) img.removeAttribute('data-full-src');
+        img._loadingFullImage = false;
+        img._loadingFullUrl = '';
+      }
+    };
+    probe.src = nextUrl;
     return true;
   }
 
@@ -850,6 +996,44 @@
 
   // Progressive upgrade observer: only upgrade portfolio images when near viewport
   // to avoid N concurrent high-res downloads hanging the browser.
+  // Portfolio uses a concurrency-limited queue (max 2) so a model with 30 photos
+  // still loads preview first (tiny 64px, no hang) and upgrades medium->full smoothly
+  // with blur fade, same as hero.
+  var portfolioUpgradeQueue = [];
+  var portfolioUpgrading = 0;
+  var MAX_PORTFOLIO_CONCURRENT = 2;
+  function onPortfolioUpgradeDone() {
+    portfolioUpgrading = Math.max(0, portfolioUpgrading - 1);
+    drainPortfolioQueue();
+  }
+  function drainPortfolioQueue() {
+    if (portfolioUpgrading >= MAX_PORTFOLIO_CONCURRENT) return;
+    var next = portfolioUpgradeQueue.shift();
+    if (!next) return;
+    if (!next.getAttribute('data-medium-src') && !next.getAttribute('data-full-src')) {
+      next._upgradeQueued = false;
+      drainPortfolioQueue();
+      return;
+    }
+    portfolioUpgrading++;
+    // Attach completion hook so we know when this img's upgrade chain finished
+    next._portfolioDone = onPortfolioUpgradeDone;
+    loadFullImageAfterThumbnail(next);
+    // Fallback: if upgrade never starts (e.g., hero guard), release slot after tick
+    setTimeout(function () {
+      if (next._upgradeQueued && !next._loadingFullImage) {
+        next._upgradeQueued = false;
+        onPortfolioUpgradeDone();
+      }
+    }, 1200);
+  }
+  function enqueuePortfolioUpgrade(img) {
+    if (!img || img._upgradeQueued) return;
+    img._upgradeQueued = true;
+    portfolioUpgradeQueue.push(img);
+    drainPortfolioQueue();
+  }
+
   var progressiveObserver = null;
   if ('IntersectionObserver' in window && !reducedMotion) {
     progressiveObserver = new IntersectionObserver(function (entries) {
@@ -858,7 +1042,9 @@
           var img = entry.target;
           try { progressiveObserver.unobserve(img); } catch (_) {}
           if (img.getAttribute('data-medium-src') || img.getAttribute('data-full-src')) {
-            loadFullImageAfterThumbnail(img);
+            var isHero = img.closest && img.closest('.hero-carousel');
+            if (isHero) loadFullImageAfterThumbnail(img);
+            else enqueuePortfolioUpgrade(img);
           }
         }
       });
@@ -881,9 +1067,9 @@
       return;
     }
     if (progressiveObserver) {
-      try { progressiveObserver.observe(img); } catch (_) { loadFullImageAfterThumbnail(img); }
+      try { progressiveObserver.observe(img); } catch (_) { enqueuePortfolioUpgrade(img); }
     } else {
-      loadFullImageAfterThumbnail(img);
+      enqueuePortfolioUpgrade(img);
     }
   }
 

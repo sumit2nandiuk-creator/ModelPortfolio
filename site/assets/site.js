@@ -533,17 +533,39 @@
     }
   }
 
+  function syncAllFramesForUrl(url, loaded) {
+    if (!url || typeof document === 'undefined') return;
+    var clean = url.split('#')[0].split('?')[0];
+    var imgs = Array.prototype.slice.call(document.querySelectorAll('img'));
+    imgs.forEach(function (otherImg) {
+      var otherSrc = getMediaSrc(otherImg);
+      if (!otherSrc) return;
+      var otherClean = otherSrc.split('#')[0].split('?')[0];
+      if (otherClean === clean || otherSrc === url || (clean && otherClean && (clean.endsWith(otherClean) || otherClean.endsWith(clean)))) {
+        updateMediaLoaded(otherImg, loaded);
+      }
+    });
+  }
+
   function setupMediaFrameState(el) {
     if (!el) return;
     if (el.tagName === 'IMG') {
+      var checkReady = function () {
+        var ready = (el.complete && (el.naturalWidth || 0) > 0) || ((el.naturalWidth || 0) > 0);
+        if (ready) {
+          updateMediaLoaded(el, true);
+          syncAllFramesForUrl(getMediaSrc(el), true);
+        }
+      };
       var isReady = el.complete && (el.naturalWidth || 0) > 0;
       updateMediaLoaded(el, isReady);
-      el.addEventListener('load', function () {
-        if ((el.naturalWidth || 0) > 0) updateMediaLoaded(el, true);
-      });
+      el.addEventListener('load', checkReady);
       el.addEventListener('error', function () {
         updateMediaLoaded(el, false);
       });
+      if (el.decode) {
+        el.decode().then(checkReady).catch(function () {});
+      }
     } else if (el.tagName === 'VIDEO') {
       var isVideoReady = (el.readyState || 0) >= 2 || Boolean(el.getAttribute && el.getAttribute('poster'));
       updateMediaLoaded(el, isVideoReady);
@@ -601,15 +623,25 @@
     if (!el || !url) return;
     var current = getMediaSrc(el);
     if (current === url) {
-      if (el.complete && (el.naturalWidth || 0) > 0) updateMediaLoaded(el, true);
+      if ((el.complete && (el.naturalWidth || 0) > 0) || (el.naturalWidth || 0) > 0) {
+        updateMediaLoaded(el, true);
+        syncAllFramesForUrl(url, true);
+      }
       return;
     }
     try { el.src = url; } catch (_) {}
     if (typeof el.setAttribute === 'function') {
       el.setAttribute('src', url);
     }
-    if (el.complete && (el.naturalWidth || 0) > 0) {
-      updateMediaLoaded(el, true);
+    var check = function () {
+      if ((el.complete && (el.naturalWidth || 0) > 0) || (el.naturalWidth || 0) > 0) {
+        updateMediaLoaded(el, true);
+        syncAllFramesForUrl(url, true);
+      }
+    };
+    check();
+    if (el.decode) {
+      el.decode().then(check).catch(function () {});
     }
   }
 
@@ -620,6 +652,7 @@
     el._retryAttempts = 0;
     el._waitingForOnline = false;
     updateMediaLoaded(el, true);
+    syncAllFramesForUrl(getMediaSrc(el), true);
     if (el.classList && typeof el.classList.remove === 'function') {
       el.classList.remove('is-retrying');
       el.classList.remove('is-failed');
@@ -926,6 +959,7 @@
           setMediaSrc(img, item.src);
           if ((existing && existing.complete && (existing.naturalWidth || 0) > 0) || (img.complete && (img.naturalWidth || 0) > 0)) {
             updateMediaLoaded(img, true);
+            syncAllFramesForUrl(item.src, true);
           }
         }
       });
@@ -960,6 +994,10 @@
         img.decoding = 'async';
         img.draggable = false;
 
+        figure.appendChild(img);
+        stage.appendChild(figure);
+        observeMedia(img);
+
         var existing = findExistingImage(item.src);
         var isPreloaded = !!(existing && existing.complete && (existing.naturalWidth || 0) > 0);
 
@@ -979,9 +1017,12 @@
           figure.classList.add('is-loading');
         }
 
-        observeMedia(img);
-        figure.appendChild(img);
-        stage.appendChild(figure);
+        if (img.decode) {
+          img.decode().then(function () {
+            updateMediaLoaded(img, true);
+            syncAllFramesForUrl(item.src, true);
+          }).catch(function () {});
+        }
       });
       dialog.classList.toggle('is-single', list.length < 2);
       if (hero) hero.pause();

@@ -1087,25 +1087,33 @@ main section {
   border-top-color: var(--accent-soft, #c9a77d);
 }
 
+/* Once media is loaded, completely remove loading spinner */
+.gallery-btn.is-loaded::before,
+.video-frame.is-loaded::before,
+.carousel-slide.is-loaded::before,
+.lb-stage .carousel-slide.is-loaded::before {
+  display: none !important;
+  content: none !important;
+}
+
 /* Smooth transition when media finishes loading */
 .gallery-btn img,
 .video-frame video {
   transition: opacity 0.35s ease;
 }
 
-.js .gallery-btn:not(.is-loaded) img,
 .js .video-frame:not(.is-loaded) video,
-.gallery-btn.is-loading img,
 .video-frame.is-loading video {
   opacity: 0;
 }
 
-.gallery-btn.is-loaded img,
 .video-frame.is-loaded video {
   opacity: 1;
 }
 
-/* Banner slideshow hero media and lightbox popup images remain visible without opacity suppression */
+/* Photos are always visible; never suppressed with opacity 0 */
+.gallery-btn img,
+.gallery-btn.is-loaded img,
 .hero-media,
 .lb-stage .carousel-slide img {
   opacity: 1 !important;

@@ -171,7 +171,7 @@ function renderHero(model, ctx) {
   const many = covers.length > 1;
 
   // One slide per cover photo. A tap opens the viewer; a drag moves the slides instead.
-  // All slideshow images are loaded eagerly so every slide is ready before rotating.
+  // Load only the first cover eagerly; adjacent slides are promoted by the carousel as needed.
   const slides = covers
     .map((cover, i) => {
       const source = imageSource(cover, ctx);
@@ -179,10 +179,16 @@ function renderHero(model, ctx) {
       const label = many ? `Open cover photo ${i + 1} of ${covers.length}` : 'Open cover photo';
       return `
         <button class="carousel-slide" type="button" data-src="${esc(src)}"${source.thumb ? ` data-thumb="${esc(source.thumb)}"` : ''} data-alt="${esc(cover.alt)}" data-caption="" aria-label="${esc(label)}">
-          <img class="hero-media" src="${esc(source.src)}"${progressiveAttrs(source)} alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} loading="eager"${i === 0 ? ' fetchpriority="high"' : ''} decoding="async" draggable="false">
+          <img class="hero-media" src="${esc(source.src)}"${progressiveAttrs(source)} alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} loading="${i === 0 ? 'eager' : 'lazy'}"${i === 0 ? ' fetchpriority="high"' : ''} decoding="async" draggable="false">
         </button>`;
     })
     .join('');
+
+  const controls = many
+    ? `
+      <button class="carousel-control carousel-prev" type="button" aria-label="Previous cover photo">‹</button>
+      <button class="carousel-control carousel-next" type="button" aria-label="Next cover photo">›</button>`
+    : '';
 
   const dots = many
     ? `
@@ -199,7 +205,7 @@ function renderHero(model, ctx) {
   return `
     <section class="hero" aria-labelledby="hero-title">
       <div class="carousel hero-carousel" role="region" aria-roledescription="carousel" aria-label="Cover photos" data-autoplay="${many ? 6000 : 0}">${slides}
-      </div>
+      </div>${controls}
       <span class="hero-shade" aria-hidden="true"></span>
       <h1 id="hero-title" class="sr-only">${esc(model.name)}</h1>${dots}
     </section>`;
@@ -598,7 +604,9 @@ export function renderModelPage(model, ctx) {
       } catch (_) {}
     }
   };
-  if (cover) registerRemoteOrigin(cover);
+  for (const coverEntry of covers) {
+    if (coverEntry?.file) registerRemoteOrigin(ctx.mediaUrl(coverEntry.thumbnail || coverEntry.file));
+  }
   for (const p of model.photos ?? []) {
     if (p.file) registerRemoteOrigin(ctx.mediaUrl(p.file));
   }
@@ -614,8 +622,9 @@ export function renderModelPage(model, ctx) {
     )
     .join('\n  ');
 
-  // Preload all banner slideshow images first so they are fetched immediately
+  // Preload only the first cover (the LCP image); neighboring slides load on demand.
   const coverPreloads = covers
+    .slice(0, 1)
     .map((c, i) => {
       const url = c.thumbnail ? ctx.mediaUrl(c.thumbnail) : ctx.mediaUrl(c.file);
       if (!url) return '';
@@ -647,6 +656,7 @@ export function renderModelPage(model, ctx) {
   ${renderFooter(model, ctx.year)}
   ${renderLightbox()}
   ${renderWhatsAppFloat(model)}
+  <script src="${esc(ctx.base)}assets/error-reporting.js" defer></script>
   <script src="${esc(ctx.base)}assets/site.js" defer></script>`;
 
   return documentShell({

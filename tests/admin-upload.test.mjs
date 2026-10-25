@@ -787,6 +787,8 @@ test('admin panel moves measurement attributes up/down and adds newly uploaded p
     'https://modelportfolio.pages.dev/media/sushmita-ghosh/1-new-hero.jpg',
     'cover-old.jpg',
   ]);
+  assert.ok(saved.cover[0].thumbnail, 'new slideshow cover receives a small thumbnail automatically');
+  assert.equal(h.thumbnailUploads.length, 3, 'cover and both new portfolio photos each upload a thumbnail');
   assert.deepEqual(saved.videos.map((v) => v.file), [
     'https://modelportfolio.pages.dev/media/sushmita-ghosh/4-new-reel.mp4',
     'https://modelportfolio.pages.dev/media/sushmita-ghosh/old-bridal.mp4',
@@ -857,6 +859,36 @@ test('Generate Thumbnails downsizes missing model images, uploads them to R2 and
   h.doc.getElementById('generate-thumbnails').dispatchEvent({ type: 'click', bubbles: true });
   await h.flush();
   assert.equal(h.thumbnailUploads.length, 1, 'a second run skips images that already have thumbnails');
+});
+
+test('a batch of four cover slideshow photos receives a thumbnail per image before publishing', async () => {
+  const h = await createAdminUploadHarness({ cover: [] });
+  await h.boot();
+  const input = h.doc.querySelector('input[data-upload="cover"]');
+  assert.ok(input, 'cover upload input exists');
+  input.files = [1, 2, 3, 4].map((n) => ({ name: 'hero-' + n + '.jpg', size: 1000 + n, type: 'image/jpeg' }));
+  input.dispatchEvent({ type: 'change', bubbles: true });
+
+  for (let i = 0; i < 4; i++) {
+    for (let wait = 0; wait < 10 && !h.xhrs[i]; wait++) await h.flush();
+    const xhr = h.xhrs[i];
+    assert.ok(xhr, 'original cover ' + (i + 1) + ' starts uploading');
+    xhr.status = 201;
+    xhr.responseText = JSON.stringify({
+      key: 'sushmita-ghosh/' + (i + 1) + '-hero-' + (i + 1) + '.jpg',
+      url: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/' + (i + 1) + '-hero-' + (i + 1) + '.jpg',
+      kind: 'image',
+    });
+    xhr.emit('load');
+    for (let wait = 0; wait < 10; wait++) await h.flush();
+  }
+
+  assert.equal(h.thumbnailUploads.length, 4, 'every uploaded cover generates and uploads a small WebP thumbnail');
+  h.doc.getElementById('save').dispatchEvent({ type: 'click', bubbles: true });
+  await h.flush();
+  await h.flush();
+  assert.equal(h.savedPayloads[0].model.cover.length, 4);
+  assert.ok(h.savedPayloads[0].model.cover.every((cover) => cover.thumbnail), 'all four saved cover entries include thumbnail URLs');
 });
 
 test('a newly uploaded portfolio photo gets a thumbnail uploaded and linked automatically', async () => {

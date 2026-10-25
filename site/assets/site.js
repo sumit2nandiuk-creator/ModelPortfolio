@@ -290,7 +290,7 @@
         var d = (i - index + n) % n;
         if (d > n / 2) d -= n;                              // nearest way round
         if (n === 2 && i !== index) d = dx < 0 ? 1 : -1;    // one neighbour: show it on the side being dragged
-        var near = Math.abs(d) <= (animate || dx !== 0 ? 2 : 1);
+        var near = Math.abs(d) <= 1;
         el.style.transition = animate ? 'transform ' + ms + 'ms ' + EASE : 'none';
         el.style.transform = 'translate3d(' + (d * stride + dx) + 'px, 0, 0)';
         el.style.visibility = near ? 'visible' : 'hidden';
@@ -298,14 +298,24 @@
         el.inert = i !== index;
         if (near) {
           var img = el.querySelector('img');
-          if (img && img.getAttribute('loading') === 'lazy') img.setAttribute('loading', 'eager');
+          var shouldPrefetch = i === index || d === 1 || (dx > 0 && d === -1);
+          if (img && shouldPrefetch && img.getAttribute('loading') === 'lazy') img.setAttribute('loading', 'eager');
         }
       });
     }
 
     // Decode the photos that are about to come on screen, so none of them flashes blank.
     function predecode() {
-      slides().forEach(function (el) {
+      var els = slides();
+      var n = els.length;
+      els.forEach(function (el, i) {
+        var distance = (i - index + n) % n;
+        if (distance > n / 2) distance -= n;
+        if (root.classList.contains('hero-carousel')) {
+          if (i !== index && i !== (index + 1) % n) return;
+        } else if (Math.abs(distance) > 1) {
+          return;
+        }
         var img = el.querySelector('img');
         if (img && img.decode && img.getAttribute('src')) img.decode().catch(function () { /* not ready yet */ });
       });
@@ -405,6 +415,7 @@
         }
       }
       if (drag.axis !== 'x') return; // vertical movement scrolls the page instead
+      if (e.cancelable) e.preventDefault();
       dx = moveX;
       scheduleLayout();
     });
@@ -420,7 +431,7 @@
       suppressUntil = Date.now() + 350; // a drag is not a tap; the click that follows it is ignored
       var distance = Math.abs(dx);
       var speed = distance / Math.max(1, Date.now() - finished.t); // px per ms
-      var commit = distance > width() * 0.22 || (distance > 40 && speed > 0.45);
+      var commit = distance > width() * 0.16 || (distance > 32 && speed > 0.3);
       if (commit) goTo(index + (dx < 0 ? 1 : -1), !reducedMotion);
       else snapBack();
     }
@@ -470,23 +481,25 @@
   var heroDots = heroSection
     ? Array.prototype.slice.call(heroSection.querySelectorAll('.carousel-dot'))
     : [];
+  var heroPrev = heroSection ? heroSection.querySelector('.carousel-prev') : null;
+  var heroNext = heroSection ? heroSection.querySelector('.carousel-next') : null;
   var hero = null;
   var viewerCarousel = null; // the photo viewer's carousel; set below when the viewer exists
 
   if (heroRoot) {
     var heroImgs = Array.prototype.slice.call(heroRoot.querySelectorAll('img'));
     heroImgs.forEach(function (img) {
-      img.setAttribute('loading', 'eager');
+      // Keep non-current hero images lazy; layout() promotes only adjacent slides.
       img.decoding = 'async';
-      if (img.decode && img.src) {
-        img.decode().catch(function () {});
-      }
     });
 
     hero = createCarousel(heroRoot, {
       autoplay: Number(heroRoot.getAttribute('data-autoplay')) || 0,
       onChange: function (i) {
         heroDots.forEach(function (dot, j) { dot.classList.toggle('is-active', j === i); });
+        var active = heroRoot.querySelectorAll('.carousel-slide')[i];
+        var activeImg = active && active.querySelector('img');
+        if (activeImg) loadFullImageAfterThumbnail(activeImg);
       },
     });
     heroDots.forEach(function (dot) {
@@ -494,6 +507,8 @@
         hero.goTo(Number(dot.getAttribute('data-goto')));
       });
     });
+    if (heroPrev) heroPrev.addEventListener('click', function () { hero.step(-1); });
+    if (heroNext) heroNext.addEventListener('click', function () { hero.step(1); });
     hero.reset(0);
     hero.resume();
   }
@@ -648,6 +663,9 @@
 
   function loadFullImageAfterThumbnail(img) {
     if (!img || img.tagName !== 'IMG') return;
+    var hero = img.closest && img.closest('.hero-carousel');
+    var heroSlide = hero && img.closest('.carousel-slide');
+    if (hero && (!heroSlide || !heroSlide.classList.contains('is-current'))) return;
     var fullUrl = typeof img.getAttribute === 'function' ? img.getAttribute('data-full-src') : '';
     if (!fullUrl || img._loadingFullImage || getMediaSrc(img) === fullUrl || img.src === fullUrl) return;
     if (typeof window.Image !== 'function') return;

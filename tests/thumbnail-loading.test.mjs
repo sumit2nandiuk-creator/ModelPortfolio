@@ -36,6 +36,25 @@ test('site markup starts with R2 thumbnails and retains full-size sources for pr
   assert.match(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-thumb\.webp" fetchpriority="high">/);
 });
 
+test('cover slideshow uses stored small thumbnails, loads only the first cover eagerly, and preloads only its thumbnail', () => {
+  const html = render({
+    ...profile,
+    cover: [
+      { file: 'cover-1.jpg', thumbnail: 'cover-1-thumb.webp', alt: 'First cover' },
+      { file: 'cover-2.jpg', thumbnail: 'cover-2-thumb.webp', alt: 'Second cover' },
+      { file: 'cover-3.jpg', thumbnail: 'cover-3-thumb.webp', alt: 'Third cover' },
+      { file: 'cover-4.jpg', thumbnail: 'cover-4-thumb.webp', alt: 'Fourth cover' },
+    ],
+  });
+  for (let i = 1; i <= 4; i++) {
+    assert.match(html, new RegExp(`src="/media/jane-doe/cover-${i}-thumb\\.webp" data-full-src="/media/jane-doe/cover-${i}\\.jpg"`));
+  }
+  assert.match(html, /cover-1-thumb\.webp" data-full-src[^>]*loading="eager" fetchpriority="high"/);
+  assert.match(html, /cover-2-thumb\.webp" data-full-src[^>]*loading="lazy"/);
+  assert.match(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-1-thumb\.webp" fetchpriority="high">/);
+  assert.doesNotMatch(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-[2-4]-thumb\.webp"/);
+});
+
 test('profiles without thumbnails retain their original image and video poster markup', () => {
   const html = render({
     ...profile,
@@ -53,6 +72,7 @@ test('admin exposes the Generate Thumbnails action and the site upgrades thumbna
   const siteJs = await fs.readFile(path.join(root, 'site', 'assets', 'site.js'), 'utf8');
   assert.match(admin, /id="generate-thumbnails"[^>]*aria-label="Generate thumbnails"/);
   assert.match(admin, /id="new-model"[^>]*aria-label="New profile"/);
+  assert.match(admin, /href="\.\.\/errors"[^>]*aria-label="Application errors"/);
   assert.match(admin, /id="view-site"[^>]*aria-label="View site"/);
   assert.match(siteJs, /function loadFullImageAfterThumbnail\(img\)/);
   assert.match(siteJs, /full\.onload = function \(\)[\s\S]*?img\.removeAttribute\('data-full-src'\)[\s\S]*?setMediaSrc\(img, fullUrl\)/);

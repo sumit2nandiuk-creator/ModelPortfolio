@@ -611,7 +611,8 @@
       var candidate = imgs[i];
       if (candidate.closest && candidate.closest('#lb-stage')) continue;
       var candidateSrc = candidate.getAttribute('src') || candidate.src || '';
-      if (candidateSrc === src || candidate.src === src) return candidate;
+      var candidateFull = candidate.getAttribute('data-full-src') || '';
+      if (candidateSrc === src || candidate.src === src || candidateFull === src) return candidate;
       if (candidateSrc && src && (candidateSrc.indexOf(src) !== -1 || src.indexOf(candidateSrc) !== -1)) {
         return candidate;
       }
@@ -643,6 +644,23 @@
     if (el.decode) {
       el.decode().then(check).catch(function () {});
     }
+  }
+
+  function loadFullImageAfterThumbnail(img) {
+    if (!img || img.tagName !== 'IMG') return;
+    var fullUrl = typeof img.getAttribute === 'function' ? img.getAttribute('data-full-src') : '';
+    if (!fullUrl || img._loadingFullImage || getMediaSrc(img) === fullUrl || img.src === fullUrl) return;
+    if (typeof window.Image !== 'function') return;
+    img._loadingFullImage = true;
+    var full = new window.Image();
+    full.onload = function () {
+      if (img.getAttribute('data-full-src') !== fullUrl) return;
+      img.removeAttribute('data-full-src');
+      img._loadingFullImage = false;
+      setMediaSrc(img, fullUrl);
+    };
+    full.onerror = function () { img._loadingFullImage = false; };
+    full.src = fullUrl;
   }
 
   function clearRetry(el) {
@@ -748,6 +766,22 @@
     }, delay);
   }
 
+  function loadFullPosterAfterThumbnail(video) {
+    if (!video || video.tagName !== 'VIDEO') return;
+    var fullUrl = video.getAttribute && video.getAttribute('data-full-poster');
+    if (!fullUrl || video._loadingFullPoster || typeof window.Image !== 'function') return;
+    video._loadingFullPoster = true;
+    var full = new window.Image();
+    full.onload = function () {
+      if (video.getAttribute('data-full-poster') !== fullUrl) return;
+      video.removeAttribute('data-full-poster');
+      video._loadingFullPoster = false;
+      video.setAttribute('poster', fullUrl);
+    };
+    full.onerror = function () { video._loadingFullPoster = false; };
+    full.src = fullUrl;
+  }
+
   function observeMedia(el) {
     if (!el || el._retryObserved) return;
     el._retryObserved = true;
@@ -755,7 +789,10 @@
     if (el.tagName === 'IMG') {
       el.addEventListener('error', function () { retryImage(el); });
       el.addEventListener('load', function () {
-        if ((el.naturalWidth || 0) > 0) clearRetry(el);
+        if ((el.naturalWidth || 0) > 0) {
+          clearRetry(el);
+          loadFullImageAfterThumbnail(el);
+        }
       });
       el.addEventListener('click', function () {
         if (el.classList && el.classList.contains('is-failed')) {
@@ -763,7 +800,9 @@
           retryImage(el);
         }
       });
+      if (el.complete && (el.naturalWidth || 0) > 0) loadFullImageAfterThumbnail(el);
     } else if (el.tagName === 'VIDEO') {
+      loadFullPosterAfterThumbnail(el);
       el.addEventListener('error', function () { retryVideo(el); });
       el.addEventListener('loadeddata', function () { clearRetry(el); });
       el.addEventListener('canplay', function () { clearRetry(el); });
@@ -936,9 +975,19 @@
     function readItem(btn) {
       return {
         src: btn.getAttribute('data-src'),
+        thumb: btn.getAttribute('data-thumb') || '',
         alt: btn.getAttribute('data-alt') || '',
         caption: btn.getAttribute('data-caption') || '',
       };
+    }
+
+    function setPopupImage(img, item) {
+      if (item.thumb && item.thumb !== item.src) {
+        img.setAttribute('data-full-src', item.src);
+        setMediaSrc(img, item.thumb);
+      } else {
+        setMediaSrc(img, item.src);
+      }
     }
 
     // Loads the photo on screen and its two neighbours; the rest load when reached.
@@ -956,7 +1005,7 @@
             img.width = existing.naturalWidth;
             img.height = existing.naturalHeight;
           }
-          setMediaSrc(img, item.src);
+          setPopupImage(img, item);
           if ((existing && existing.complete && (existing.naturalWidth || 0) > 0) || (img.complete && (img.naturalWidth || 0) > 0)) {
             updateMediaLoaded(img, true);
             syncAllFramesForUrl(item.src, true);
@@ -1007,7 +1056,7 @@
             img.width = existing.naturalWidth;
             img.height = existing.naturalHeight;
           }
-          setMediaSrc(img, item.src);
+          setPopupImage(img, item);
         }
 
         if (isPreloaded || (img.complete && (img.naturalWidth || 0) > 0)) {

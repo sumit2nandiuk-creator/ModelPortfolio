@@ -12,6 +12,7 @@ const adminJsPath = path.join(root, 'site', 'admin', 'admin.js');
 function createAdminUploadHarness(modelOverrides = {}) {
   const xhrs = [];
   const savedPayloads = [];
+  const thumbnailUploads = [];
   let putFailure = null;
   const storage = new Map([['admin.token', 'secret-token']]);
 
@@ -234,8 +235,21 @@ function createAdminUploadHarness(modelOverrides = {}) {
     }
   }
 
+  const canvases = [];
   const doc = {
-    createElement(tag) { return new MiniElement(tag, doc); },
+    createElement(tag) {
+      if (String(tag).toLowerCase() === 'canvas') {
+        const canvas = {
+          width: 0,
+          height: 0,
+          getContext: () => ({ drawImage() {} }),
+          toBlob(callback, type) { callback(new Blob(['thumbnail'], { type })); },
+        };
+        canvases.push(canvas);
+        return canvas;
+      }
+      return new MiniElement(tag, doc);
+    },
     addEventListener() {},
   };
 
@@ -253,6 +267,7 @@ function createAdminUploadHarness(modelOverrides = {}) {
     <div id="top-actions" hidden>
       <select id="model-picker"></select>
       <button id="new-model"></button>
+      <button id="generate-thumbnails">Generate Thumbnails</button>
       <a id="view-site"></a>
       <button id="sign-out"></button>
     </div>
@@ -330,6 +345,15 @@ function createAdminUploadHarness(modelOverrides = {}) {
         json: async () => ({ sha: 'v-1', model: JSON.parse(JSON.stringify(fakeModel)) }),
       };
     }
+    if (url.endsWith('/api/models/sushmita-ghosh/media') && opts.method === 'POST') {
+      thumbnailUploads.push(opts.body);
+      return {
+        status: 201,
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ url: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/thumb-cover.webp' }),
+      };
+    }
     if (url.endsWith('/api/models/sushmita-ghosh') && opts.method === 'PUT') {
       const parsed = JSON.parse(opts.body);
       if (putFailure) {
@@ -353,8 +377,17 @@ function createAdminUploadHarness(modelOverrides = {}) {
     throw new Error(`Unexpected fetch: ${url}`);
   }
 
+  class FakeImage {
+    constructor() { this.naturalWidth = 800; this.naturalHeight = 1200; this.width = 800; this.height = 1200; }
+    set src(value) { this._src = value; if (this.onload) this.onload(); }
+    get src() { return this._src || ''; }
+  }
+
   const win = {
     ADMIN_CONFIG: { apiBase: '' },
+    location: { href: 'https://modelportfolio.pages.dev/admin/' },
+    URL,
+    Image: FakeImage,
     addEventListener() {},
     confirm: () => true,
   };
@@ -363,6 +396,8 @@ function createAdminUploadHarness(modelOverrides = {}) {
     doc,
     xhrs,
     savedPayloads,
+    thumbnailUploads,
+    canvases,
     failNextSave(error, { status = 409, errors } = {}) {
       putFailure = { error, status, errors };
     },
@@ -392,6 +427,8 @@ function createAdminUploadHarness(modelOverrides = {}) {
         Error,
         RegExp,
         encodeURIComponent,
+        URL,
+        Blob,
       });
       vm.runInContext(code, ctx, { filename: 'admin.js' });
       await new Promise((r) => setImmediate(r));
@@ -727,6 +764,27 @@ test('admin panel moves measurement attributes up/down and adds newly uploaded p
     'https://modelportfolio.pages.dev/media/sushmita-ghosh/3-fresh-second.jpg',
     'bridal-old.jpg',
   ]);
+});
+
+test('Generate Thumbnails downsizes missing model images, uploads them to R2 and saves their references', async () => {
+  const h = await createAdminUploadHarness();
+  await h.boot();
+
+  h.doc.getElementById('generate-thumbnails').dispatchEvent({ type: 'click', bubbles: true });
+  for (let i = 0; i < 8; i++) await h.flush();
+
+  assert.equal(h.thumbnailUploads.length, 1, 'one thumbnail is uploaded for the cover image');
+  assert.equal(h.canvases[0].width, 240, 'thumbnail is resized to at most 360 pixels on its longest edge');
+  assert.equal(h.canvases[0].height, 360);
+  assert.equal(h.savedPayloads.length, 1, 'profile is saved after the thumbnail upload');
+  assert.equal(
+    h.savedPayloads[0].model.cover[0].thumbnail,
+    'https://modelportfolio.pages.dev/media/sushmita-ghosh/thumb-cover.webp',
+  );
+
+  h.doc.getElementById('generate-thumbnails').dispatchEvent({ type: 'click', bubbles: true });
+  await h.flush();
+  assert.equal(h.thumbnailUploads.length, 1, 'a second run skips images that already have thumbnails');
 });
 
 test('save success shows a green-tick popup and a success status', async () => {

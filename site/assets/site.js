@@ -502,6 +502,46 @@
   // ---- Automatic retry for photos and videos -------------------------------
   var MAX_MEDIA_RETRIES = 5;
 
+  function getMediaFrame(el) {
+    if (!el || !el.closest) return null;
+    return el.closest('.gallery-btn') || el.closest('.video-frame') || el.closest('.carousel-slide');
+  }
+
+  function updateMediaLoaded(el, loaded) {
+    var frame = getMediaFrame(el);
+    if (!frame || !frame.classList) return;
+    if (loaded) {
+      frame.classList.add('is-loaded');
+      frame.classList.remove('is-loading');
+    } else {
+      frame.classList.remove('is-loaded');
+      frame.classList.add('is-loading');
+    }
+  }
+
+  function setupMediaFrameState(el) {
+    if (!el) return;
+    if (el.tagName === 'IMG') {
+      var isReady = el.complete && (el.naturalWidth || 0) > 0;
+      updateMediaLoaded(el, isReady);
+      el.addEventListener('load', function () {
+        if ((el.naturalWidth || 0) > 0) updateMediaLoaded(el, true);
+      });
+      el.addEventListener('error', function () {
+        updateMediaLoaded(el, false);
+      });
+    } else if (el.tagName === 'VIDEO') {
+      var isVideoReady = (el.readyState || 0) >= 2 || Boolean(el.getAttribute && el.getAttribute('poster'));
+      updateMediaLoaded(el, isVideoReady);
+      el.addEventListener('loadeddata', function () { updateMediaLoaded(el, true); });
+      el.addEventListener('canplay', function () { updateMediaLoaded(el, true); });
+      el.addEventListener('playing', function () { updateMediaLoaded(el, true); });
+      el.addEventListener('error', function () {
+        updateMediaLoaded(el, false);
+      });
+    }
+  }
+
   function buildRetryUrl(url, attempt) {
     if (!url || typeof url !== 'string') return url;
     if (url.indexOf('data:') === 0 || url.indexOf('blob:') === 0) return url;
@@ -542,6 +582,7 @@
     el._retryTimer = null;
     el._retryAttempts = 0;
     el._waitingForOnline = false;
+    updateMediaLoaded(el, true);
     if (el.classList && typeof el.classList.remove === 'function') {
       el.classList.remove('is-retrying');
       el.classList.remove('is-failed');
@@ -560,6 +601,7 @@
 
     var attempts = (img._retryAttempts || 0) + 1;
     img._retryAttempts = attempts;
+    updateMediaLoaded(img, false);
 
     if (attempts > MAX_MEDIA_RETRIES) {
       if (img.classList) {
@@ -600,6 +642,7 @@
 
     var attempts = (video._retryAttempts || 0) + 1;
     video._retryAttempts = attempts;
+    updateMediaLoaded(video, false);
 
     if (attempts > MAX_MEDIA_RETRIES) {
       if (video.classList) {
@@ -638,6 +681,7 @@
   function observeMedia(el) {
     if (!el || el._retryObserved) return;
     el._retryObserved = true;
+    setupMediaFrameState(el);
     if (el.tagName === 'IMG') {
       el.addEventListener('error', function () { retryImage(el); });
       el.addEventListener('load', function () {
@@ -864,7 +908,7 @@
       stage.textContent = '';
       list.forEach(function (item) {
         var figure = document.createElement('figure');
-        figure.className = 'carousel-slide';
+        figure.className = 'carousel-slide is-loading';
         var img = document.createElement('img');
         img.alt = item.alt;
         img.decoding = 'async';
@@ -1326,11 +1370,14 @@
   function setupVideoPlayer(v) {
     syncVideoOrientation(v);
     v.addEventListener('loadedmetadata', function () { syncVideoOrientation(v); });
-    v.addEventListener('loadeddata', function () { syncVideoOrientation(v); });
+    v.addEventListener('loadeddata', function () { updateMediaLoaded(v, true); syncVideoOrientation(v); });
     v.addEventListener('resize', function () { syncVideoOrientation(v); });
 
     // When a custom poster image is already set, the browser displays it immediately.
-    if (v.getAttribute('poster')) return;
+    if (v.getAttribute('poster')) {
+      updateMediaLoaded(v, true);
+      return;
+    }
 
     var userInteracted = false;
     var posterCaptured = false;
@@ -1399,6 +1446,7 @@
           v.setAttribute('poster', dataUrl);
           posterCaptured = true;
           capturedRatio = targetRatio;
+          updateMediaLoaded(v, true);
         }
       } catch (_) {
         // Cross-origin videos without CORS cannot read canvas pixels; #t=0.1 still shows the frame.

@@ -50,7 +50,14 @@ function createLightboxHarness({ width = 390, height = 844, naturalWidth = 1200,
           if (!node) return false;
           if (part.startsWith('#')) return node.id === part.slice(1);
           if (part.startsWith('.')) return node.classList.contains(part.slice(1));
-          if (part === '[data-carousel]') return node.attributes.has('data-carousel');
+          if (part.startsWith('[') && part.endsWith(']')) {
+            const inner = part.slice(1, -1);
+            const eq = inner.indexOf('=');
+            if (eq === -1) return node.attributes.has(inner);
+            const attrName = inner.slice(0, eq);
+            const attrVal = inner.slice(eq + 1).replace(/^['"]|['"]$/g, '');
+            return node.getAttribute(attrName) === attrVal;
+          }
           return node.tagName.toLowerCase() === part.toLowerCase();
         };
         if (i === parts.length - 1) {
@@ -181,25 +188,23 @@ function createLightboxHarness({ width = 390, height = 844, naturalWidth = 1200,
   const documentRoot = new ElementNode('html');
   const body = documentRoot.appendChild(new ElementNode('body', { className: 'model-page' }));
 
-  // Build gallery with 3 items
-  const gallery = body.appendChild(new ElementNode('div', { className: 'gallery' }));
-  const galleryButtons = [0, 1, 2].map((i) => {
-    const fig = gallery.appendChild(new ElementNode('figure', { className: 'gallery-item', attrs: { 'data-category': 'Editorial' } }));
-    const btn = fig.appendChild(new ElementNode('button', {
-      className: 'gallery-btn',
-      attrs: {
-        'data-src': `/media/demo/photo-${i + 1}.jpg`,
-        'data-alt': `Photo ${i + 1}`,
-        'data-caption': `Caption ${i + 1}`,
-      },
-    }));
-    return btn;
-  });
+  // Build grouped horizontal rows with videos first followed by 3 gallery items
+  const portfolioGroups = body.appendChild(new ElementNode('div', { className: 'portfolio-groups' }));
+  const filterBar = body.appendChild(new ElementNode('div', { className: 'filters' }));
+  const filterAll = filterBar.appendChild(new ElementNode('button', { className: 'filter is-active', attrs: { 'data-filter': 'all' } }));
+  const filterBridal = filterBar.appendChild(new ElementNode('button', { className: 'filter', attrs: { 'data-filter': 'Bridal' } }));
 
-  // Build .video-grid with 2 videos (simulating existing R2 portrait videos without width/height in JSON)
-  const videoGrid = body.appendChild(new ElementNode('div', { className: 'video-grid' }));
-  const videoNodes = ['Bridal', 'Meesho'].map((title) => {
-    const card = videoGrid.appendChild(new ElementNode('figure', { className: 'video-card reveal' }));
+  const bridalGroup = portfolioGroups.appendChild(new ElementNode('section', { className: 'media-group', attrs: { 'data-group': 'Bridal' } }));
+  const bridalRow = bridalGroup.appendChild(new ElementNode('div', { className: 'media-row', attrs: { 'data-media-row': '' } }));
+
+  const meeshoGroup = portfolioGroups.appendChild(new ElementNode('section', { className: 'media-group', attrs: { 'data-group': 'Meesho' } }));
+  const meeshoRow = meeshoGroup.appendChild(new ElementNode('div', { className: 'media-row is-single', attrs: { 'data-media-row': '' } }));
+
+  const videoNodes = [
+    { title: 'Bridal', row: bridalRow },
+    { title: 'Meesho', row: meeshoRow },
+  ].map(({ title, row }) => {
+    const card = row.appendChild(new ElementNode('figure', { className: 'media-card media-card--video video-card', attrs: { 'data-category': title } }));
     const frame = card.appendChild(new ElementNode('div', { className: 'video-frame' }));
     const vid = frame.appendChild(new ElementNode('video', { attrs: { 'aria-label': title } }));
     vid.videoWidth = 0;
@@ -210,6 +215,19 @@ function createLightboxHarness({ width = 390, height = 844, naturalWidth = 1200,
     vid.duration = 32;
     vid.currentTime = 0;
     return { card, frame, vid };
+  });
+
+  const galleryButtons = [0, 1, 2].map((i) => {
+    const fig = bridalRow.appendChild(new ElementNode('figure', { className: 'media-card media-card--photo gallery-item', attrs: { 'data-category': 'Bridal' } }));
+    const btn = fig.appendChild(new ElementNode('button', {
+      className: 'gallery-btn',
+      attrs: {
+        'data-src': `/media/demo/photo-${i + 1}.jpg`,
+        'data-alt': `Photo ${i + 1}`,
+        'data-caption': `Caption ${i + 1}`,
+      },
+    }));
+    return btn;
   });
 
   // Build #lightbox dialog matching renderLightbox()
@@ -318,8 +336,11 @@ function createLightboxHarness({ width = 390, height = 844, naturalWidth = 1200,
     nextBtn,
     caption,
     galleryButtons,
-    videoGrid,
     videoNodes,
+    bridalGroup,
+    meeshoGroup,
+    filterAll,
+    filterBridal,
     makeEvent,
     advanceTime(ms) {
       clock += ms;
@@ -534,7 +555,7 @@ test('existing R2 portrait videos without saved dimensions switch to portrait vi
   await h.boot();
 
   const [bridal, meesho] = h.videoNodes;
-  assert.equal(h.videoGrid.classList.contains('is-all-portrait'), false);
+  assert.equal(bridal.card.classList.contains('is-portrait'), false);
 
   bridal.vid.videoWidth = 1080;
   bridal.vid.videoHeight = 1920;
@@ -542,8 +563,6 @@ test('existing R2 portrait videos without saved dimensions switch to portrait vi
 
   assert.equal(bridal.card.classList.contains('is-portrait'), true);
   assert.equal(bridal.vid.style.aspectRatio, '1080 / 1920');
-  // Second video has not reported dimensions yet, so grid waits before marking all-portrait
-  assert.equal(h.videoGrid.classList.contains('is-all-portrait'), false);
 
   meesho.vid.videoWidth = 720;
   meesho.vid.videoHeight = 1280;
@@ -551,7 +570,13 @@ test('existing R2 portrait videos without saved dimensions switch to portrait vi
 
   assert.equal(meesho.card.classList.contains('is-portrait'), true);
   assert.equal(meesho.vid.style.aspectRatio, '720 / 1280');
-  assert.equal(h.videoGrid.classList.contains('is-all-portrait'), true);
+
+  // Filtering to "Bridal" hides the "Meesho" group row while keeping "Bridal" visible
+  h.filterBridal.dispatchEvent(h.makeEvent('click'));
+  assert.equal(h.bridalGroup.hidden, false);
+  assert.equal(h.meeshoGroup.hidden, true);
+  h.filterAll.dispatchEvent(h.makeEvent('click'));
+  assert.equal(h.meeshoGroup.hidden, false);
 });
 
 test('videos without a custom poster show their thumbnail on load (skipping black intro frames and priming iOS Safari)', async () => {

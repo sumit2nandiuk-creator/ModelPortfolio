@@ -105,6 +105,12 @@ export async function validateModel(model, { folder, dir }) {
     if (!ok) fail('"stats" must be an array of { "label", "value" } objects');
   }
 
+  if (model.groups !== undefined) {
+    if (!Array.isArray(model.groups) || !model.groups.every(isNonEmptyString)) {
+      fail('"groups" must be an array of non-empty group title strings');
+    }
+  }
+
   // --- Media ---------------------------------------------------------------
   const mediaDir = path.join(dir, 'media');
 

@@ -821,10 +821,6 @@ main section {
     --card-basis: calc((100% - var(--row-gap)) / 1.1);
   }
 
-  .media-row.is-single .media-card {
-    --card-basis: 100%;
-  }
-
   .media-row-nav {
     display: none;
   }
@@ -940,6 +936,7 @@ main section {
   display: block;
   width: 100%;
   height: auto;
+  aspect-ratio: 2 / 3;
   border: 0;
   border-radius: 0;
   object-fit: cover;

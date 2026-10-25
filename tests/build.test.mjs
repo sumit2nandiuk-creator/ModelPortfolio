@@ -681,11 +681,12 @@ test('popup stage preserves pan-y swipe when unzoomed and switches to touch-acti
   assert.match(css, /\.lb-stage \.carousel-slide img \{[\s\S]*?transform-origin: 50% 50%;[\s\S]*?\}/);
 });
 
-test('photos and videos are grouped by title/category with videos first in horizontal rows showing 10% right peek', async () => {
+test('photos and videos are grouped by title/category with videos first and video frame size matching photo frame size', async () => {
   const css = await fs.readFile(path.join(siteDir, 'assets', 'site.css'), 'utf8');
   assert.doesNotMatch(css, /\.video-frame \{[^}]*aspect-ratio:\s*16\s*\/\s*9/);
+  assert.doesNotMatch(css, /\.media-row\.is-single \.media-card/);
   assert.match(css, /\.video-frame \{[\s\S]*?border: clamp\(6px, 0\.9vw, 10px\) solid var\(--white\);[\s\S]*?border-radius: 4px;/);
-  assert.match(css, /\.video-frame video \{[\s\S]*?width: 100%;[\s\S]*?height: auto;/);
+  assert.match(css, /\.video-frame video \{[\s\S]*?width: 100%;[\s\S]*?height: auto;[\s\S]*?aspect-ratio: 2 \/ 3;[\s\S]*?object-fit: cover;/);
 
   // Verify exact 10% right-peek horizontal flex geometry across desktop (N=3), tablet (N=2), and mobile (N=1):
   // N * cardWidth + N * gap + 0.1 * cardWidth = 100%  =>  cardWidth = (100% - N * gap) / (N + 0.1)
@@ -699,13 +700,14 @@ test('photos and videos are grouped by title/category with videos first in horiz
     await writeModel(ws.modelsDir, 'portrait-model', 'Portrait Model', {
       groups: ['Bridal', 'Traditional', 'Meesho'],
       photos: [
-        { file: 'portrait-model-photo.png', title: 'Bridal Look 1', category: 'Bridal' },
-        { file: 'portrait-model-cover.png', title: 'Bridal Look 2', category: 'bridal' },
-        { file: 'portrait-model-photo.png', title: 'Silk Saree', category: 'Traditional' },
+        { file: 'https://modelportfolio.pages.dev/media/portrait-model/bridal-1.jpg', title: 'Bridal Look 1', category: 'Bridal', width: 1362, height: 2048 },
+        { file: 'https://modelportfolio.pages.dev/media/portrait-model/bridal-2.jpg', title: 'Bridal Look 2', category: 'bridal', width: 1362, height: 2048 },
+        { file: 'https://modelportfolio.pages.dev/media/portrait-model/trad-1.jpg', title: 'Silk Saree', category: 'Traditional', width: 1201, height: 1800 },
       ],
       videos: [
-        // Legacy R2 video with title="Bridal" and no category still pairs with "Bridal" photos!
+        // Legacy R2 9:16 video (1080x1920) pairs with Bridal photos and matches their 1362x2048 (2:3) frame size!
         { file: 'https://modelportfolio.pages.dev/media/portrait-model/1-bridal.mov', title: 'Bridal', width: 1080, height: 1920 },
+        // Video-only group ("Meesho") also matches the portfolio's photo frame size!
         { file: 'https://modelportfolio.pages.dev/media/portrait-model/2-meesho.mp4', title: 'Meesho', width: 720, height: 1280 },
       ],
     });
@@ -716,7 +718,7 @@ test('photos and videos are grouped by title/category with videos first in horiz
     const groupHeadings = [...html.matchAll(/<h3 class="media-group-title">([^<]+)<\/h3>/g)].map((m) => m[1]);
     assert.deepEqual(groupHeadings, ['Bridal', 'Traditional', 'Meesho']);
 
-    // Inside the Bridal row, the portrait video appears BEFORE the Bridal photos
+    // Inside the Bridal row, the portrait video appears BEFORE the Bridal photos and matches their 1362 / 2048 frame size
     const bridalStart = html.indexOf('data-group="Bridal"');
     const traditionalStart = html.indexOf('data-group="Traditional"');
     const bridalHtml = html.slice(bridalStart, traditionalStart);
@@ -725,13 +727,13 @@ test('photos and videos are grouped by title/category with videos first in horiz
     assert.ok(firstVideoPos > 0 && firstPhotoPos > firstVideoPos, 'Bridal video is rendered before Bridal photos in the horizontal row');
 
     assert.match(bridalHtml, /class="media-card media-card--video video-card is-portrait"/);
-    assert.match(bridalHtml, /width="1080" height="1920" style="aspect-ratio: 1080 \/ 1920"/);
+    assert.match(bridalHtml, /width="1362" height="2048" style="aspect-ratio: 1362 \/ 2048"/);
     assert.match(bridalHtml, /preload="auto"/);
     assert.match(bridalHtml, /src="https:\/\/modelportfolio\.pages\.dev\/media\/portrait-model\/1-bridal\.mov#t=0\.1"/);
 
-    // Single-item group ("Meesho" has 1 video, 0 photos) gets .is-single
+    // Single-video group ("Meesho") also adopts the portfolio's photo frame aspect ratio (1362 / 2048)
     const meeshoHtml = html.slice(html.indexOf('data-group="Meesho"'));
-    assert.match(meeshoHtml, /class="media-row is-single"/);
+    assert.match(meeshoHtml, /width="1362" height="2048" style="aspect-ratio: 1362 \/ 2048"/);
   } finally {
     await ws.cleanup();
   }

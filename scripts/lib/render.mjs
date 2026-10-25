@@ -231,6 +231,21 @@ function videoDimensions(video, ctx) {
   return null;
 }
 
+function photoDimensions(photo, ctx) {
+  if (photo?.width && photo?.height) return { width: photo.width, height: photo.height };
+  const fromFile = photo?.file ? ctx.sizeOf(photo.file) : null;
+  if (fromFile?.width && fromFile?.height) return fromFile;
+  return null;
+}
+
+function firstPhotoDimensions(photos, ctx) {
+  for (const photo of photos ?? []) {
+    const dim = photoDimensions(photo, ctx);
+    if (dim) return dim;
+  }
+  return null;
+}
+
 // Groups a model's videos and photos by title/category (case-insensitively),
 // preserving explicit `model.groups` order first and placing all videos before
 // photos inside every group row.
@@ -282,19 +297,24 @@ function renderPortfolio(model, ctx) {
         </div>`
       : '';
 
+  const hasAnyPhotos = (model.photos ?? []).length > 0;
+  const fallbackPhotoDim = firstPhotoDimensions(model.photos, ctx) || (hasAnyPhotos ? { width: 2, height: 3 } : null);
+
   let photoIndex = 0;
   const groupSections = groups
     .map((group) => {
       const totalItems = group.videos.length + group.photos.length;
+      const targetPhotoDim = firstPhotoDimensions(group.photos, ctx) || fallbackPhotoDim;
 
       const videoCards = group.videos
         .map((video) => {
-          const dim = videoDimensions(video, ctx);
-          const isPortrait = dim ? dim.height > dim.width : false;
-          const isLandscape = dim ? dim.width >= dim.height : false;
+          const nativeDim = videoDimensions(video, ctx);
+          const frameDim = targetPhotoDim || nativeDim;
+          const isPortrait = frameDim ? frameDim.height > frameDim.width : false;
+          const isLandscape = frameDim ? frameDim.width >= frameDim.height : false;
           const cardClass = `media-card media-card--video video-card${isPortrait ? ' is-portrait' : isLandscape ? ' is-landscape' : ''}`;
-          const videoStyle = dim ? ` style="aspect-ratio: ${dim.width} / ${dim.height}"` : '';
-          const sizeAttrs = dim ? ` width="${dim.width}" height="${dim.height}"` : '';
+          const videoStyle = frameDim ? ` style="aspect-ratio: ${frameDim.width} / ${frameDim.height}"` : '';
+          const sizeAttrs = frameDim ? ` width="${frameDim.width}" height="${frameDim.height}"` : '';
           const poster = video.poster ? ` poster="${esc(ctx.mediaUrl(video.poster))}"` : '';
           const preload = video.poster ? 'metadata' : 'auto';
           const rawSrc = ctx.mediaUrl(video.file);

@@ -1215,12 +1215,13 @@
     var count = S.model.stats.length;
     if (!count) return '<p class="muted">No measurements yet.</p>';
     var statStyle = esc(boxInlineCss('stats'));
+    var labelStyle = esc(boxInlineCss('aboutLabel'));
     var head = '<div class="stats-head-row" aria-hidden="true">' +
-      '<span>Label</span><span>Value</span><span>Order</span>' +
+      '<span class="stats-head-label">Label</span><span>Value</span><span>Order</span>' +
     '</div>';
     var rows = S.model.stats.map(function (s, i) {
       return '<div class="stat-row">' +
-        '<input aria-label="Measurement label" placeholder="Label (e.g. Height)" data-list="stats" data-i="' + i + '" data-key="label" data-styled-slot="stats" style="' + statStyle + '" value="' + esc(s.label) + '">' +
+        '<input aria-label="Measurement label" placeholder="Label (e.g. Height)" data-list="stats" data-i="' + i + '" data-key="label" data-styled-slot="aboutLabel" style="' + labelStyle + '" value="' + esc(s.label) + '">' +
         '<input aria-label="Measurement value" placeholder="Value (e.g. 5′4″)" data-list="stats" data-i="' + i + '" data-key="value" data-styled-slot="stats" style="' + statStyle + '" value="' + esc(s.value) + '">' +
         '<div class="stat-row-actions">' +
           '<button type="button" class="btn small stat-icon-btn" data-action="move" data-list="stats" data-i="' + i + '" data-dir="-1"' + (i === 0 ? ' disabled' : '') + ' title="Move up" aria-label="Move measurement up">↑</button>' +

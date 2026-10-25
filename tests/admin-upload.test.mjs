@@ -627,6 +627,7 @@ test('admin panel moves measurement attributes up/down and adds newly uploaded p
   assert.equal(statRows.length, 3);
   assert.equal(statRows[0].querySelector('[data-dir="-1"]').disabled, true);
   assert.equal(statRows[2].querySelector('[data-dir="1"]').disabled, true);
+  assert.equal(statRows[0].querySelector('[data-key="label"]').getAttribute('data-styled-slot'), 'aboutLabel');
 
   // Move "Hair" (row 2) up to row 1, then move "Height" (row 0) down to row 1
   statRows[2].querySelector('[data-dir="-1"]').dispatchEvent({ type: 'click', bubbles: true });

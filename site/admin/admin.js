@@ -2454,50 +2454,57 @@
     ]).then(function (results) {
       var uploaded = results[0];
       var size = results[1];
-      if (kind === 'cover') {
-        var coverIdx = Math.min(insertPos, S.model.cover.length);
-        S.model.cover.splice(coverIdx, 0, withSize({ file: uploaded.url, alt: titleFrom(prep.uploadName, fallbackTitle) }, size));
-      } else if (kind === 'photo') {
-        var pEntry = withSize({
-          file: uploaded.url,
-          title: titleFrom(prep.uploadName, fallbackTitle),
-          category: grpTitle,
-          year: '',
-          alt: '',
-        }, size);
-        if (targetGrp) pEntry._gid = targetGrp.id;
-        var photoIdx = Math.min(insertPos, S.model.photos.length);
-        S.model.photos.splice(photoIdx, 0, pEntry);
-      } else if (kind === 'video') {
-        var vEntry = withSize({
-          file: uploaded.url,
-          title: grpTitle,
-          category: grpTitle,
-          description: '',
-        }, size);
-        if (targetGrp) vEntry._gid = targetGrp.id;
-        var videoIdx = Math.min(insertPos, S.model.videos.length);
-        shiftPosterUploadSlots(videoIdx);
-        S.model.videos.splice(videoIdx, 0, vEntry);
-      }
-      S.abortUpload = null;
-      var isLast = !(totalFiles > 1 && fileIndex + 1 < totalFiles);
-      if (isLast) {
-        S.activeUploadSlot = '';
-        S.uploads[slotId] = {
-          state: 'done',
-          title: (totalFiles > 1 ? 'Uploaded ' + totalFiles + ' files' : 'Uploaded ' + prep.displayName),
-          detail: '100% · Save changes to publish',
-          percent: 100,
-          indeterminate: false,
-          canCancel: false,
-        };
-        scheduleUploadAutoClear(slotId);
-      }
-      setStatus('Uploaded ' + prep.displayName + '. Save to publish it.', 'ok');
-      render();
-      paintSavebarProgress();
-      return { ok: true };
+      return (isVideo ? Promise.resolve({ url: '', error: '' }) : makeAndUploadThumbnail(file, fileIndex)).then(function (thumbnail) {
+        if (kind === 'cover') {
+          var coverIdx = Math.min(insertPos, S.model.cover.length);
+          var coverEntry = { file: uploaded.url, alt: titleFrom(prep.uploadName, fallbackTitle) };
+          if (thumbnail.url) coverEntry.thumbnail = thumbnail.url;
+          S.model.cover.splice(coverIdx, 0, withSize(coverEntry, size));
+        } else if (kind === 'photo') {
+          var pEntry = withSize({
+            file: uploaded.url,
+            title: titleFrom(prep.uploadName, fallbackTitle),
+            category: grpTitle,
+            year: '',
+            alt: '',
+          }, size);
+          if (thumbnail.url) pEntry.thumbnail = thumbnail.url;
+          if (targetGrp) pEntry._gid = targetGrp.id;
+          var photoIdx = Math.min(insertPos, S.model.photos.length);
+          S.model.photos.splice(photoIdx, 0, pEntry);
+        } else if (kind === 'video') {
+          var vEntry = withSize({
+            file: uploaded.url,
+            title: grpTitle,
+            category: grpTitle,
+            description: '',
+          }, size);
+          if (targetGrp) vEntry._gid = targetGrp.id;
+          var videoIdx = Math.min(insertPos, S.model.videos.length);
+          shiftPosterUploadSlots(videoIdx);
+          S.model.videos.splice(videoIdx, 0, vEntry);
+        }
+        S.abortUpload = null;
+        var isLast = !(totalFiles > 1 && fileIndex + 1 < totalFiles);
+        if (isLast) {
+          S.activeUploadSlot = '';
+          S.uploads[slotId] = {
+            state: 'done',
+            title: (totalFiles > 1 ? 'Uploaded ' + totalFiles + ' files' : 'Uploaded ' + prep.displayName),
+            detail: '100% · Save changes to publish',
+            percent: 100,
+            indeterminate: false,
+            canCancel: false,
+          };
+          scheduleUploadAutoClear(slotId);
+        }
+        var uploadStatus = 'Uploaded ' + prep.displayName + '. Save to publish it.';
+        if (!isVideo && thumbnail.error) uploadStatus += ' Thumbnail could not be generated; use Generate Thumbnails to retry.';
+        setStatus(uploadStatus, !isVideo && thumbnail.error ? 'error' : 'ok');
+        render();
+        paintSavebarProgress();
+        return { ok: true };
+      });
     }).catch(function (err) {
       S.abortUpload = null;
       S.activeUploadSlot = '';
@@ -2569,25 +2576,34 @@
     return Promise.all([uploadFile(file, prep.uploadName, hooks), imageSize(file)]).then(function (results) {
       var uploaded = results[0];
       var size = results[1];
-      if (video.poster && isHttp(video.poster) && S.pendingDeletes.indexOf(video.poster) === -1) {
-        S.pendingDeletes.push(video.poster);
-      }
-      video.poster = uploaded.url;
-      if (size) { video.posterWidth = size.width; video.posterHeight = size.height; }
-      S.abortUpload = null;
-      S.activeUploadSlot = '';
-      S.uploads[slotId] = {
-        state: 'done',
-        title: 'Poster uploaded',
-        detail: '100% · Save changes to publish',
-        percent: 100,
-        indeterminate: false,
-        canCancel: false,
-      };
-      scheduleUploadAutoClear(slotId);
-      setStatus('Poster uploaded. Save to publish it.', 'ok');
-      render();
-      paintSavebarProgress();
+      return makeAndUploadThumbnail(file, index).then(function (thumbnail) {
+        if (video.poster && isHttp(video.poster) && S.pendingDeletes.indexOf(video.poster) === -1) {
+          S.pendingDeletes.push(video.poster);
+        }
+        if (video.posterThumbnail && isHttp(video.posterThumbnail) && S.pendingDeletes.indexOf(video.posterThumbnail) === -1) {
+          S.pendingDeletes.push(video.posterThumbnail);
+        }
+        video.poster = uploaded.url;
+        if (thumbnail.url) video.posterThumbnail = thumbnail.url;
+        else delete video.posterThumbnail;
+        if (size) { video.posterWidth = size.width; video.posterHeight = size.height; }
+        S.abortUpload = null;
+        S.activeUploadSlot = '';
+        S.uploads[slotId] = {
+          state: 'done',
+          title: 'Poster uploaded',
+          detail: '100% · Save changes to publish',
+          percent: 100,
+          indeterminate: false,
+          canCancel: false,
+        };
+        scheduleUploadAutoClear(slotId);
+        setStatus(thumbnail.error
+          ? 'Poster uploaded, but its thumbnail could not be generated. Use Generate Thumbnails to retry.'
+          : 'Poster uploaded. Save to publish it.', thumbnail.error ? 'error' : 'ok');
+        render();
+        paintSavebarProgress();
+      });
     }).catch(function (err) {
       S.abortUpload = null;
       S.activeUploadSlot = '';
@@ -2728,11 +2744,28 @@
     });
   }
 
+  function makeThumbnailFromFile(file) {
+    if (!window.URL || typeof window.URL.createObjectURL !== 'function') {
+      return Promise.reject(new Error('This browser cannot read local image files.'));
+    }
+    var objectUrl = window.URL.createObjectURL(file);
+    return makeThumbnail(objectUrl).finally(function () {
+      if (typeof window.URL.revokeObjectURL === 'function') window.URL.revokeObjectURL(objectUrl);
+    });
+  }
+
   function uploadThumbnail(blob, index) {
     var form = new FormData();
     var ext = blob.type === 'image/png' ? 'png' : 'webp';
     form.append('file', blob, 'thumbnail-' + Date.now() + '-' + index + '.' + ext);
     return api('POST', profilePath(S.slug, '/media'), { form: form }).then(function (data) { return data.url; });
+  }
+
+  function makeAndUploadThumbnail(file, index) {
+    return makeThumbnailFromFile(file)
+      .then(function (blob) { return uploadThumbnail(blob, 'upload-' + index); })
+      .then(function (url) { return { url: url, error: '' }; })
+      .catch(function (err) { return { url: '', error: (err && err.message) || 'Thumbnail generation failed.' }; });
   }
 
   function generateThumbnails() {

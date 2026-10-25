@@ -296,7 +296,7 @@ function renderVideos(model, ctx) {
       const isPortrait = dim ? dim.height > dim.width : false;
       const isLandscape = dim ? dim.width >= dim.height : false;
       const cardClass = `video-card reveal${isPortrait ? ' is-portrait' : isLandscape ? ' is-landscape' : ''}`;
-      const frameStyle = dim ? ` style="aspect-ratio: ${dim.width} / ${dim.height}"` : '';
+      const videoStyle = dim ? ` style="aspect-ratio: ${dim.width} / ${dim.height}"` : '';
       const sizeAttrs = dim ? ` width="${dim.width}" height="${dim.height}"` : '';
       const poster = video.poster ? ` poster="${esc(ctx.mediaUrl(video.poster))}"` : '';
       const preload = video.poster ? 'metadata' : 'auto';
@@ -304,8 +304,8 @@ function renderVideos(model, ctx) {
       const videoSrc = !video.poster && !rawSrc.includes('#') ? `${rawSrc}#t=0.1` : rawSrc;
       return `
           <figure class="${cardClass}">
-            <div class="video-frame"${frameStyle}>
-              <video controls controlsList="nodownload noremoteplayback" disablePictureInPicture playsinline preload="${preload}"${poster}${sizeAttrs} src="${esc(videoSrc)}" aria-label="${esc(video.title)}"></video>
+            <div class="video-frame">
+              <video controls controlsList="nodownload noremoteplayback" disablePictureInPicture playsinline preload="${preload}"${poster}${sizeAttrs}${videoStyle} src="${esc(videoSrc)}" aria-label="${esc(video.title)}"></video>
             </div>
             <figcaption>
               ${video.category ? `<span class="tag">${esc(video.category)}</span>` : ''}

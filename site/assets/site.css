@@ -831,31 +831,39 @@ main section {
   }
 }
 
+/* Mounted like a framed print to match .gallery-btn in the photo portfolio. */
 .video-frame {
+  display: block;
   position: relative;
   width: 100%;
-  background: var(--ink);
-  border-radius: var(--radius);
+  padding: 0;
+  border: clamp(6px, 0.9vw, 10px) solid var(--white);
+  background: var(--stone);
+  border-radius: 4px;
   overflow: hidden;
-  box-shadow: var(--shadow-lift);
+  box-shadow: 0 0 0 1px rgba(21, 19, 15, 0.07), 0 26px 44px -30px rgba(21, 19, 15, 0.55);
+  transition: box-shadow 0.5s var(--ease);
+}
+
+.video-frame:hover {
+  box-shadow: 0 0 0 1px rgba(21, 19, 15, 0.1), 0 30px 52px -30px rgba(21, 19, 15, 0.6);
 }
 
 .video-frame video {
   display: block;
   width: 100%;
   height: auto;
+  border: 0;
+  border-radius: 0;
+  object-fit: cover;
   background: #000;
-}
-
-.video-frame[style*="aspect-ratio"] video {
-  height: 100%;
-  object-fit: contain;
 }
 
 .video-frame video:fullscreen,
 .video-frame video:-webkit-full-screen {
   width: 100%;
   height: 100%;
+  aspect-ratio: auto !important;
   object-fit: contain;
 }
 

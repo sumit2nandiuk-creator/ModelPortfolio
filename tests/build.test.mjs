@@ -681,9 +681,10 @@ test('popup stage preserves pan-y swipe when unzoomed and switches to touch-acti
   assert.match(css, /\.lb-stage \.carousel-slide img \{[\s\S]*?transform-origin: 50% 50%;[\s\S]*?\}/);
 });
 
-test('portrait videos render in portrait video players without forced 16:9 letterboxing', async () => {
+test('portrait videos render in portrait video players with the same framed-print border as photos', async () => {
   const css = await fs.readFile(path.join(siteDir, 'assets', 'site.css'), 'utf8');
   assert.doesNotMatch(css, /\.video-frame \{[^}]*aspect-ratio:\s*16\s*\/\s*9/);
+  assert.match(css, /\.video-frame \{[\s\S]*?border: clamp\(6px, 0\.9vw, 10px\) solid var\(--white\);[\s\S]*?border-radius: 4px;/);
   assert.match(css, /\.video-frame video \{[\s\S]*?width: 100%;[\s\S]*?height: auto;/);
 
   const ws = await tempWorkspace();
@@ -699,8 +700,7 @@ test('portrait videos render in portrait video players without forced 16:9 lette
     const html = await fs.readFile(path.join(ws.outDir, 'portrait-model', 'index.html'), 'utf8');
     assert.match(html, /<div class="video-grid is-all-portrait">/);
     assert.match(html, /<figure class="video-card reveal is-portrait">/);
-    assert.match(html, /<div class="video-frame" style="aspect-ratio: 1080 \/ 1920">/);
-    assert.match(html, /width="1080" height="1920"/);
+    assert.match(html, /width="1080" height="1920" style="aspect-ratio: 1080 \/ 1920"/);
     assert.match(html, /preload="auto"/);
     assert.match(html, /src="https:\/\/modelportfolio\.pages\.dev\/media\/portrait-model\/1-bridal\.mov#t=0\.1"/);
   } finally {

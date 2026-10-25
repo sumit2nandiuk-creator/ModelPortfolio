@@ -469,6 +469,15 @@
   var viewerCarousel = null; // the photo viewer's carousel; set below when the viewer exists
 
   if (heroRoot) {
+    var heroImgs = Array.prototype.slice.call(heroRoot.querySelectorAll('img'));
+    heroImgs.forEach(function (img) {
+      img.setAttribute('loading', 'eager');
+      img.decoding = 'async';
+      if (img.decode && img.src) {
+        img.decode().catch(function () {});
+      }
+    });
+
     hero = createCarousel(heroRoot, {
       autoplay: Number(heroRoot.getAttribute('data-autoplay')) || 0,
       onChange: function (i) {

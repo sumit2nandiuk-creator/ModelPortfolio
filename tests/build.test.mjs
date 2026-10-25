@@ -362,8 +362,9 @@ test('the header brand renders both names in one row', async () => {
 test('photos and videos are protected from easy saving', async () => {
   const ws = await tempWorkspace();
   try {
-    await build({ siteDir, outDir: ws.outDir });
-    const html = await fs.readFile(path.join(ws.outDir, 'sushmita-ghosh', 'index.html'), 'utf8');
+    await writeModel(ws.modelsDir, 'jane-doe', 'Jane Doe');
+    await build({ modelsDir: ws.modelsDir, siteDir, outDir: ws.outDir });
+    const html = await fs.readFile(path.join(ws.outDir, 'jane-doe', 'index.html'), 'utf8');
     // Every <img> is non-draggable.
     const imgs = html.match(/<img [^>]*>/g) ?? [];
     assert.ok(imgs.length > 0);

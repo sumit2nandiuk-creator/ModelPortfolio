@@ -124,7 +124,7 @@ function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-function isHttpUrl(value) {
+export function isHttpUrl(value) {
   try {
     const url = new URL(value);
     return url.protocol === 'https:' || url.protocol === 'http:';

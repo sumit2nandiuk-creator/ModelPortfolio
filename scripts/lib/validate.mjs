@@ -4,6 +4,10 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
+import { coverList } from './render.mjs';
+
+export { coverList };
+
 // URL slug = first path segment of the model's page, e.g. /sushmita-ghosh/
 export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -210,12 +214,6 @@ export async function validateModel(model, { folder, dir }) {
   }
 
   return errors;
-}
-
-// The hero slideshow photos, as a list. Accepts a list or a single {file, alt} object.
-export function coverList(model) {
-  if (Array.isArray(model.cover)) return model.cover;
-  return model.cover ? [model.cover] : [];
 }
 
 // Every media entry a model's page uses: covers, photos, videos and video posters.

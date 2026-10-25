@@ -73,6 +73,12 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(400);
       return res.end('Bad request');
     }
+    if (pathname === '/_seed' || pathname.startsWith('/_seed/')) {
+      const notFoundPage = path.join(root, '404.html');
+      if (await statOrNull(notFoundPage)) return await sendFile(req, res, notFoundPage, 404);
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      return res.end('Not found');
+    }
 
     let filePath = path.join(root, pathname);
     if (filePath !== root && !filePath.startsWith(root + path.sep)) {

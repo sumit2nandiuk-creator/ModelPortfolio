@@ -666,12 +666,12 @@ test('email-style text boxes support custom copy, inline rich-text runs, box fon
   }
 });
 
-test('sections use balanced vertical padding without extra bottom gaps after stats or gallery items', async () => {
+test('sections use balanced vertical padding without extra bottom gaps after stats or media rows', async () => {
   const css = await fs.readFile(path.join(siteDir, 'assets', 'site.css'), 'utf8');
   assert.match(css, /\.section \{\s*padding: clamp\(40px, 6vw, 84px\) 0;\s*\}/);
   assert.doesNotMatch(css, /clamp\(88px,\s*12vw,\s*160px\)/);
-  assert.match(css, /\.gallery \{[\s\S]*?margin-bottom: calc\(-1 \* clamp\(16px, 2vw, 28px\)\);/);
-  assert.match(css, /@media \(max-width: 560px\) \{[\s\S]*?\.gallery \{\s*display: grid;\s*gap: 20px;\s*margin-bottom: 0;\s*\}/);
+  assert.match(css, /\.media-row \{[\s\S]*?padding: 8px 2px 34px;\s*margin: -8px -2px -34px;/);
+  assert.match(css, /\.gallery-item \{\s*margin: 0;\s*\}/);
 });
 
 test('popup stage preserves pan-y swipe when unzoomed and switches to touch-action: none when zoomed', async () => {
@@ -681,28 +681,57 @@ test('popup stage preserves pan-y swipe when unzoomed and switches to touch-acti
   assert.match(css, /\.lb-stage \.carousel-slide img \{[\s\S]*?transform-origin: 50% 50%;[\s\S]*?\}/);
 });
 
-test('portrait videos render in portrait video players with the same framed-print border as photos', async () => {
+test('photos and videos are grouped by title/category with videos first in horizontal rows showing 10% right peek', async () => {
   const css = await fs.readFile(path.join(siteDir, 'assets', 'site.css'), 'utf8');
   assert.doesNotMatch(css, /\.video-frame \{[^}]*aspect-ratio:\s*16\s*\/\s*9/);
   assert.match(css, /\.video-frame \{[\s\S]*?border: clamp\(6px, 0\.9vw, 10px\) solid var\(--white\);[\s\S]*?border-radius: 4px;/);
   assert.match(css, /\.video-frame video \{[\s\S]*?width: 100%;[\s\S]*?height: auto;/);
 
+  // Verify exact 10% right-peek horizontal flex geometry across desktop (N=3), tablet (N=2), and mobile (N=1):
+  // N * cardWidth + N * gap + 0.1 * cardWidth = 100%  =>  cardWidth = (100% - N * gap) / (N + 0.1)
+  assert.match(css, /\.media-row \{[\s\S]*?--card-basis: calc\(\(100% - 3 \* var\(--row-gap\)\) \/ 3\.1\);[\s\S]*?overflow-x: auto;/);
+  assert.match(css, /@media \(max-width: 980px\) \{[\s\S]*?--card-basis: calc\(\(100% - 2 \* var\(--row-gap\)\) \/ 2\.1\);/);
+  assert.match(css, /@media \(max-width: 600px\) \{[\s\S]*?--card-basis: calc\(\(100% - var\(--row-gap\)\) \/ 1\.1\);/);
+
   const ws = await tempWorkspace();
   try {
     await fs.mkdir(ws.modelsDir, { recursive: true });
     await writeModel(ws.modelsDir, 'portrait-model', 'Portrait Model', {
+      groups: ['Bridal', 'Traditional', 'Meesho'],
+      photos: [
+        { file: 'portrait-model-photo.png', title: 'Bridal Look 1', category: 'Bridal' },
+        { file: 'portrait-model-cover.png', title: 'Bridal Look 2', category: 'bridal' },
+        { file: 'portrait-model-photo.png', title: 'Silk Saree', category: 'Traditional' },
+      ],
       videos: [
+        // Legacy R2 video with title="Bridal" and no category still pairs with "Bridal" photos!
         { file: 'https://modelportfolio.pages.dev/media/portrait-model/1-bridal.mov', title: 'Bridal', width: 1080, height: 1920 },
         { file: 'https://modelportfolio.pages.dev/media/portrait-model/2-meesho.mp4', title: 'Meesho', width: 720, height: 1280 },
       ],
     });
     await build({ modelsDir: ws.modelsDir, siteDir, outDir: ws.outDir });
     const html = await fs.readFile(path.join(ws.outDir, 'portrait-model', 'index.html'), 'utf8');
-    assert.match(html, /<div class="video-grid is-all-portrait">/);
-    assert.match(html, /<figure class="video-card reveal is-portrait">/);
-    assert.match(html, /width="1080" height="1920" style="aspect-ratio: 1080 \/ 1920"/);
-    assert.match(html, /preload="auto"/);
-    assert.match(html, /src="https:\/\/modelportfolio\.pages\.dev\/media\/portrait-model\/1-bridal\.mov#t=0\.1"/);
+
+    // Groups follow model.groups order: Bridal -> Traditional -> Meesho
+    const groupHeadings = [...html.matchAll(/<h3 class="media-group-title">([^<]+)<\/h3>/g)].map((m) => m[1]);
+    assert.deepEqual(groupHeadings, ['Bridal', 'Traditional', 'Meesho']);
+
+    // Inside the Bridal row, the portrait video appears BEFORE the Bridal photos
+    const bridalStart = html.indexOf('data-group="Bridal"');
+    const traditionalStart = html.indexOf('data-group="Traditional"');
+    const bridalHtml = html.slice(bridalStart, traditionalStart);
+    const firstVideoPos = bridalHtml.indexOf('media-card--video');
+    const firstPhotoPos = bridalHtml.indexOf('media-card--photo');
+    assert.ok(firstVideoPos > 0 && firstPhotoPos > firstVideoPos, 'Bridal video is rendered before Bridal photos in the horizontal row');
+
+    assert.match(bridalHtml, /class="media-card media-card--video video-card is-portrait"/);
+    assert.match(bridalHtml, /width="1080" height="1920" style="aspect-ratio: 1080 \/ 1920"/);
+    assert.match(bridalHtml, /preload="auto"/);
+    assert.match(bridalHtml, /src="https:\/\/modelportfolio\.pages\.dev\/media\/portrait-model\/1-bridal\.mov#t=0\.1"/);
+
+    // Single-item group ("Meesho" has 1 video, 0 photos) gets .is-single
+    const meeshoHtml = html.slice(html.indexOf('data-group="Meesho"'));
+    assert.match(meeshoHtml, /class="media-row is-single"/);
   } finally {
     await ws.cleanup();
   }

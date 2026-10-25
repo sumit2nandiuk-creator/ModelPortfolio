@@ -744,3 +744,40 @@ test('admin API validates email-style text boxes, richText runs, and live /:slug
   assert.match(html, /Work with <span style="font-family:&#39;Playfair Display&#39;, Georgia, serif;color:#c9a77d"><em><strong>Jane Doe\.<\/strong><\/em><\/span>/);
   assert.match(html, /<span style="text-decoration:underline"><strong>Editorial<\/strong><\/span> &amp; runway model\./);
 });
+
+test('R2 profile saves accept groups[] and live /:slug/ SSR renders videos before photos in each category row', async () => {
+  const env = fakeEnv();
+  const groupedModel = validModel({
+    groups: ['Bridal', 'Meesho'],
+    photos: [
+      { file: 'https://modelportfolio.pages.dev/media/jane-doe/2-bridal.jpg', title: 'Bridal Look', category: 'Bridal', width: 1080, height: 1350 },
+    ],
+    videos: [
+      { file: 'https://modelportfolio.pages.dev/media/jane-doe/1-bridal.mov', title: 'Bridal', width: 1080, height: 1920 },
+      { file: 'https://modelportfolio.pages.dev/media/jane-doe/3-meesho.mp4', title: 'Meesho', width: 720, height: 1280 },
+    ],
+  });
+  const okSave = await handleRequest(
+    apiRequest('PUT', '/api/models/jane-doe', {
+      origin: 'https://admin.example.test',
+      body: { model: groupedModel },
+    }),
+    env,
+  );
+  assert.equal(okSave.status, 200);
+
+  const liveRes = await onSlugPageRequest({
+    request: new Request('https://modelportfolio.pages.dev/jane-doe/'),
+    env,
+    params: { slug: 'jane-doe' },
+    next: async () => new Response('unused'),
+  });
+  assert.equal(liveRes.status, 200);
+  const html = await liveRes.text();
+  const bridalIdx = html.indexOf('data-group="Bridal"');
+  const meeshoIdx = html.indexOf('data-group="Meesho"');
+  assert.ok(bridalIdx > 0 && meeshoIdx > bridalIdx);
+  const bridalRow = html.slice(bridalIdx, meeshoIdx);
+  assert.ok(bridalRow.indexOf('media-card--video') < bridalRow.indexOf('media-card--photo'));
+});
+

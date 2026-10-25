@@ -189,6 +189,11 @@ export function validateModelShape(model, slug) {
     const ok = Array.isArray(model.stats) && model.stats.every((s) => s && nonEmpty(s.label) && nonEmpty(s.value));
     if (!ok) fail('"stats" must be a list of label and value pairs.');
   }
+  if (model.groups !== undefined) {
+    if (!Array.isArray(model.groups) || !model.groups.every(nonEmpty)) {
+      fail('"groups" must be a list of group titles.');
+    }
+  }
 
   const covers = Array.isArray(model.cover) ? model.cover : model.cover ? [model.cover] : [];
   if (!covers.length) fail('At least one cover photo is required.');

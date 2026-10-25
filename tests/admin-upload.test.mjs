@@ -9,8 +9,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const adminJsPath = path.join(root, 'site', 'admin', 'admin.js');
 
 // Lightweight DOM + XHR harness for site/admin/admin.js upload & preview progress flows.
-function createAdminUploadHarness() {
+function createAdminUploadHarness(modelOverrides = {}) {
   const xhrs = [];
+  const savedPayloads = [];
   const storage = new Map([['admin.token', 'secret-token']]);
 
   class ClassList {
@@ -308,9 +309,10 @@ function createAdminUploadHarness() {
     cover: [{ file: 'cover.jpg', alt: 'Cover' }],
     photos: [],
     videos: [],
+    ...modelOverrides,
   };
 
-  async function fakeFetch(url) {
+  async function fakeFetch(url, opts = {}) {
     if (url.endsWith('/api/models')) {
       return {
         status: 200,
@@ -319,12 +321,22 @@ function createAdminUploadHarness() {
         json: async () => ({ models: ['sushmita-ghosh'] }),
       };
     }
-    if (url.endsWith('/api/models/sushmita-ghosh')) {
+    if (url.endsWith('/api/models/sushmita-ghosh') && (!opts.method || opts.method === 'GET')) {
       return {
         status: 200,
         ok: true,
         headers: { get: () => 'application/json' },
         json: async () => ({ sha: 'v-1', model: JSON.parse(JSON.stringify(fakeModel)) }),
+      };
+    }
+    if (url.endsWith('/api/models/sushmita-ghosh') && opts.method === 'PUT') {
+      const parsed = JSON.parse(opts.body);
+      savedPayloads.push(parsed);
+      return {
+        status: 200,
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ sha: 'v-2', model: parsed.model }),
       };
     }
     throw new Error(`Unexpected fetch: ${url}`);
@@ -339,6 +351,7 @@ function createAdminUploadHarness() {
   return {
     doc,
     xhrs,
+    savedPayloads,
     async boot() {
       const code = await fs.readFile(adminJsPath, 'utf8');
       const ctx = vm.createContext({
@@ -381,6 +394,8 @@ test('selecting a phone gallery video (.MOV or extensionless mp4) shows live upl
   const videoInput = h.doc.querySelector('input[data-upload="video"]');
   assert.ok(videoInput, 'video file input rendered');
   assert.equal(videoInput.getAttribute('accept'), 'video/*', 'accept="video/*" enables native iOS/Android gallery video picker');
+  const groupId = videoInput.getAttribute('data-group-id');
+  assert.ok(groupId, 'video input belongs to a category/group card');
 
   // Simulate selecting an iPhone gallery .MOV video (40 MB)
   let valueClearedCount = 0;
@@ -399,8 +414,8 @@ test('selecting a phone gallery video (.MOV or extensionless mp4) shows live upl
   assert.equal(h.xhrs.length, 1, 'XHR upload started immediately');
   assert.equal(h.xhrs[0].sentForm.entries[0].filename, 'IMG_4821.MOV');
 
-  // 2. Both the inline Videos card progress slot AND sticky savebar show initial preparing state
-  const videoSlot = h.doc.querySelector('[data-upload-slot="video"]');
+  // 2. Both the inline group card progress slot AND sticky savebar show initial preparing state
+  const videoSlot = h.doc.querySelector(`[data-upload-slot="group-${groupId}"]`);
   const savebarProgress = h.doc.getElementById('savebar-progress');
   assert.match(videoSlot.textContent, /Uploading video: IMG_4821\.MOV/);
   assert.match(videoSlot.textContent, /Preparing 40\.0 MB/);
@@ -430,7 +445,7 @@ test('selecting a phone gallery video (.MOV or extensionless mp4) shows live upl
 
   assert.equal(valueClearedCount, 1, 'input.value reset after upload finishes');
   assert.equal(savebarProgress.hidden, true, 'savebar progress hides once finished');
-  assert.match(h.doc.querySelector('[data-upload-slot="video"]').textContent, /100% · Save changes to publish/);
+  assert.match(h.doc.querySelector(`[data-upload-slot="group-${groupId}"]`).textContent, /100% · Save changes to publish/);
 
   // 6. Newly added video item renders a <video> preview inside .thumb-box.is-loading until metadata loads
   const videoPreview = h.doc.querySelector('.item.video video');
@@ -446,13 +461,14 @@ test('oversize or extensionless Android gallery files handle errors and MIME fal
   const h = await createAdminUploadHarness();
   await h.boot();
 
-  // 1. Oversize 110 MB video shows persistent inline error right inside the Videos card
+  // 1. Oversize 110 MB video shows persistent inline error right inside the group card
   const videoInput = h.doc.querySelector('input[data-upload="video"]');
+  const groupId = videoInput.getAttribute('data-group-id');
   videoInput.files = [{ name: '4k-clip.mp4', size: 110 * 1024 * 1024, type: 'video/mp4' }];
   videoInput.dispatchEvent({ type: 'change', bubbles: true });
   await h.flush();
 
-  const videoSlot = h.doc.querySelector('[data-upload-slot="video"]');
+  const videoSlot = h.doc.querySelector(`[data-upload-slot="group-${groupId}"]`);
   assert.match(videoSlot.textContent, /95 MB or smaller/);
   assert.equal(h.xhrs.length, 0, 'oversize file rejected before network upload');
 
@@ -463,4 +479,53 @@ test('oversize or extensionless Android gallery files handle errors and MIME fal
 
   assert.equal(h.xhrs.length, 1);
   assert.equal(h.xhrs[0].sentForm.entries[0].filename, '1000048291.mp4');
+});
+
+test('redesigned admin groups videos first followed by photos per category/title and persists group order on save', async () => {
+  const h = await createAdminUploadHarness({
+    photos: [
+      { file: 'bridal-1.jpg', title: 'Bridal Look 1', category: 'Bridal' },
+      { file: 'trad-1.jpg', title: 'Traditional Look', category: 'Traditional' },
+    ],
+    videos: [
+      { file: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/1-bridal.mov', title: 'Bridal', category: '' },
+      { file: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/2-meesho.mp4', title: 'Meesho', category: '' },
+    ],
+  });
+  await h.boot();
+
+  // 1. Existing R2 profile automatically organises into Bridal, Meesho, Traditional group cards
+  const groupCards = h.doc.querySelectorAll('.group-card');
+  assert.equal(groupCards.length, 3);
+  const groupTitles = groupCards.map((c) => c.querySelector('[data-group-title]').value);
+  assert.deepEqual(groupTitles, ['Bridal', 'Meesho', 'Traditional']);
+
+  // 2. Inside Bridal group card, video appears first (#1 · Video) followed by photo (#2 · Photo)
+  const bridalCards = groupCards[0].querySelectorAll('.admin-media-card');
+  assert.equal(bridalCards.length, 2);
+  assert.equal(bridalCards[0].classList.contains('video'), true);
+  assert.match(bridalCards[0].textContent, /#1 · Video \(shown first\)/);
+  assert.equal(bridalCards[1].classList.contains('photo'), true);
+  assert.match(bridalCards[1].textContent, /#2 · Photo/);
+
+  // 3. Add a new group, rename it to "Editorial", and save -> persists groups & clean items without _gid/_groups
+  const addGroupBtn = h.doc.querySelector('[data-action="add-group"]');
+  addGroupBtn.dispatchEvent({ type: 'click', bubbles: true });
+  const newGroupInput = h.doc.querySelector('[data-group-title="3"]');
+  assert.ok(newGroupInput);
+  newGroupInput.value = 'Editorial';
+  newGroupInput.dispatchEvent({ type: 'input', bubbles: true });
+
+  const saveBtn = h.doc.getElementById('save');
+  saveBtn.dispatchEvent({ type: 'click', bubbles: true });
+  await h.flush();
+  await h.flush();
+
+  assert.equal(h.savedPayloads.length, 1);
+  const savedModel = h.savedPayloads[0].model;
+  assert.deepEqual(savedModel.groups, ['Bridal', 'Meesho', 'Traditional', 'Editorial']);
+  assert.equal('_groups' in savedModel, false);
+  assert.equal(savedModel.videos.some((v) => '_gid' in v), false);
+  assert.equal(savedModel.photos.some((p) => '_gid' in p), false);
+  assert.equal(savedModel.videos[0].category, 'Bridal');
 });

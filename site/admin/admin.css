@@ -278,9 +278,155 @@ label > input, label > textarea, label > select { color: var(--ink); }
 .thumb-box.is-error .thumb-loader-bar { display: none; }
 
 .item-fields { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
-.item-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.item-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 8px; }
 .stat-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; margin-bottom: 8px; }
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+
+/* Grouped portfolio rows (videos first, then photos horizontally) ---------- */
+
+.groups-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.group-card {
+  border: 1px solid #d9d0c1;
+  border-radius: 14px;
+  padding: 14px;
+  background: #fcfaf7;
+  display: grid;
+  gap: 12px;
+}
+
+.group-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.group-title-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: flex-end;
+  flex: 1 1 260px;
+}
+
+.group-title-label {
+  flex: 1 1 220px;
+  max-width: 340px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.group-title-input {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.group-count-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: #efe9de;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+
+.group-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.group-empty {
+  margin: 4px 0;
+  padding: 14px;
+  border: 1px dashed #d6ccbc;
+  border-radius: 10px;
+  background: #fff;
+  text-align: center;
+}
+
+.admin-media-row {
+  --admin-row-gap: 14px;
+  --admin-card-basis: calc((100% - 2 * var(--admin-row-gap)) / 2.1);
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: var(--admin-row-gap);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 2px 2px 8px;
+}
+
+.admin-media-card {
+  flex: 0 0 var(--admin-card-basis);
+  width: var(--admin-card-basis);
+  min-width: 0;
+  background: #fff;
+  grid-template-columns: 96px 1fr;
+}
+
+.admin-media-card.video {
+  grid-template-columns: 96px 1fr;
+  border-color: #d3bea3;
+  background: #fffdf9;
+}
+
+.admin-media-card .thumb-box {
+  width: 96px;
+}
+
+.admin-media-body {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.admin-media-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.media-kind-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.media-kind-badge.is-video {
+  background: #1d1a16;
+  color: #f7f4ef;
+}
+
+.media-kind-badge.is-photo {
+  background: #efe9de;
+  color: var(--ink);
+}
+
+.small-file {
+  font-size: 0.76rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 150px;
+}
 
 .savebar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
@@ -315,9 +461,18 @@ label > input, label > textarea, label > select { color: var(--ink); }
   max-width: calc(100vw - 32px);
 }
 
+@media (max-width: 680px) {
+  .admin-media-row {
+    --admin-card-basis: calc((100% - var(--admin-row-gap)) / 1.1);
+  }
+  .admin-media-row.is-single .admin-media-card {
+    --admin-card-basis: 100%;
+  }
+}
+
 @media (max-width: 600px) {
-  .item, .item.video { grid-template-columns: 1fr; }
-  .thumb-box { width: 100%; max-width: 220px; }
+  .item, .item.video, .admin-media-card, .admin-media-card.video { grid-template-columns: 1fr; }
+  .thumb-box, .admin-media-card .thumb-box { width: 100%; max-width: 200px; }
   .stat-row { grid-template-columns: 1fr 1fr; }
   .stat-row .btn { grid-column: 1 / -1; }
   .fmt-select { max-width: 145px; }

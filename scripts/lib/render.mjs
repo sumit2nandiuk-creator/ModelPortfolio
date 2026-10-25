@@ -44,8 +44,7 @@ function hasContact(model) {
 function sectionsFor(model) {
   return {
     about: (model.bio ?? []).length > 0 || (model.stats ?? []).length > 0,
-    portfolio: (model.photos ?? []).length > 0,
-    videos: (model.videos ?? []).length > 0,
+    portfolio: (model.photos ?? []).length > 0 || (model.videos ?? []).length > 0,
     contact: hasContact(model),
   };
 }
@@ -133,7 +132,6 @@ function renderHeader(model, available) {
   const links = [
     ['about', 'About'],
     ['portfolio', 'Portfolio'],
-    ['videos', 'Videos'],
     ['contact', 'Contact'],
   ]
     .filter(([key]) => available[key])
@@ -223,39 +221,144 @@ function renderAbout(model) {
     </section>`;
 }
 
-function renderPortfolio(model, ctx) {
-  const photos = model.photos ?? [];
-  if (!photos.length) return '';
+function videoDimensions(video, ctx) {
+  if (video.width && video.height) return { width: video.width, height: video.height };
+  const fromFile = video.file ? ctx.sizeOf(video.file) : null;
+  if (fromFile?.width && fromFile?.height) return fromFile;
+  if (video.posterWidth && video.posterHeight) return { width: video.posterWidth, height: video.posterHeight };
+  const fromPoster = video.poster ? ctx.sizeOf(video.poster) : null;
+  if (fromPoster?.width && fromPoster?.height) return fromPoster;
+  return null;
+}
 
-  const categories = uniqueInOrder(photos.map((p) => p.category));
+// Groups a model's videos and photos by title/category (case-insensitively),
+// preserving explicit `model.groups` order first and placing all videos before
+// photos inside every group row.
+export function groupPortfolioMedia(model) {
+  const byKey = new Map();
+  const order = [];
+
+  function ensureGroup(rawName) {
+    const label = String(rawName ?? '').trim() || 'Portfolio';
+    const key = label.toLowerCase();
+    let group = byKey.get(key);
+    if (!group) {
+      group = { key, title: label, videos: [], photos: [] };
+      byKey.set(key, group);
+      order.push(group);
+    }
+    return group;
+  }
+
+  for (const g of model?.groups ?? []) {
+    if (typeof g === 'string' && g.trim()) ensureGroup(g);
+  }
+  for (const video of model?.videos ?? []) {
+    if (!video || !video.file) continue;
+    const name = String(video.category || video.title || 'Portfolio').trim();
+    ensureGroup(name).videos.push(video);
+  }
+  for (const photo of model?.photos ?? []) {
+    if (!photo || !photo.file) continue;
+    const name = String(photo.category || photo.title || 'Portfolio').trim();
+    ensureGroup(name).photos.push(photo);
+  }
+
+  return order.filter((g) => g.videos.length > 0 || g.photos.length > 0);
+}
+
+function renderPortfolio(model, ctx) {
+  const groups = groupPortfolioMedia(model);
+  if (!groups.length) return '';
+
   const filters =
-    categories.length > 1
+    groups.length > 1
       ? `
-        <div class="filters" role="group" aria-label="Filter photos by category">
+        <div class="filters" role="group" aria-label="Filter portfolio by category">
           <button class="filter is-active" type="button" data-filter="all" aria-pressed="true">All</button>
-          ${categories
-            .map((c) => `<button class="filter" type="button" data-filter="${esc(c)}" aria-pressed="false">${esc(c)}</button>`)
+          ${groups
+            .map((g) => `<button class="filter" type="button" data-filter="${esc(g.title)}" aria-pressed="false">${esc(g.title)}</button>`)
             .join('\n          ')}
         </div>`
       : '';
 
-  const items = photos
-    .map((photo, i) => {
-      const src = ctx.mediaUrl(photo.file);
-      const alt = photo.alt || photo.title;
-      // Visible caption and viewer caption show only the category; the title stays in the accessible label.
-      const caption = photo.category ?? '';
-      const label = [photo.category, photo.title].filter(Boolean).join(' · ');
+  let photoIndex = 0;
+  const groupSections = groups
+    .map((group) => {
+      const totalItems = group.videos.length + group.photos.length;
+
+      const videoCards = group.videos
+        .map((video) => {
+          const dim = videoDimensions(video, ctx);
+          const isPortrait = dim ? dim.height > dim.width : false;
+          const isLandscape = dim ? dim.width >= dim.height : false;
+          const cardClass = `media-card media-card--video video-card${isPortrait ? ' is-portrait' : isLandscape ? ' is-landscape' : ''}`;
+          const videoStyle = dim ? ` style="aspect-ratio: ${dim.width} / ${dim.height}"` : '';
+          const sizeAttrs = dim ? ` width="${dim.width}" height="${dim.height}"` : '';
+          const poster = video.poster ? ` poster="${esc(ctx.mediaUrl(video.poster))}"` : '';
+          const preload = video.poster ? 'metadata' : 'auto';
+          const rawSrc = ctx.mediaUrl(video.file);
+          const videoSrc = !video.poster && !rawSrc.includes('#') ? `${rawSrc}#t=0.1` : rawSrc;
+          const vTitle = String(video.title ?? '').trim();
+          const showSubTitle = vTitle && vTitle.toLowerCase() !== group.title.toLowerCase();
+          const hasCaption = Boolean(showSubTitle || video.description);
+          return `
+              <figure class="${cardClass}" data-category="${esc(group.title)}">
+                <div class="video-frame">
+                  <video controls controlsList="nodownload noremoteplayback" disablePictureInPicture playsinline preload="${preload}"${poster}${sizeAttrs}${videoStyle} src="${esc(videoSrc)}" aria-label="${esc(vTitle || group.title)}"></video>
+                </div>${
+                  hasCaption
+                    ? `
+                <figcaption class="media-caption">
+                  ${showSubTitle ? `<h4 class="video-title">${esc(vTitle)}</h4>` : ''}
+                  ${video.description ? `<p class="video-desc">${esc(video.description)}</p>` : ''}
+                </figcaption>`
+                    : ''
+                }
+              </figure>`;
+        })
+        .join('');
+
+      const photoCards = group.photos
+        .map((photo) => {
+          const i = photoIndex++;
+          const src = ctx.mediaUrl(photo.file);
+          const alt = photo.alt || photo.title || group.title;
+          const caption = group.title;
+          const label = [group.title, photo.title].filter(Boolean).join(' · ');
+          return `
+              <figure class="media-card media-card--photo gallery-item" data-category="${esc(group.title)}">
+                <button class="gallery-btn" type="button" data-index="${i}" data-src="${esc(src)}" data-alt="${esc(alt)}" data-caption="${esc(caption)}" aria-label="Open photo: ${esc(label)}">
+                  <img src="${esc(src)}" alt="${esc(alt)}"${dimensionAttrs(ctx.sizeOf(photo.file))} loading="lazy" decoding="async" draggable="false">
+                </button>${
+                  photo.year
+                    ? `
+                <figcaption class="gallery-caption">
+                  <span class="gallery-year">${esc(photo.year)}</span>
+                </figcaption>`
+                    : ''
+                }
+              </figure>`;
+        })
+        .join('');
+
+      const navButtons =
+        totalItems > 1
+          ? `
+              <div class="media-row-nav">
+                <button class="row-arrow row-arrow--prev" type="button" data-row-dir="-1" aria-label="Scroll ${esc(group.title)} left">‹</button>
+                <button class="row-arrow row-arrow--next" type="button" data-row-dir="1" aria-label="Scroll ${esc(group.title)} right">›</button>
+              </div>`
+          : '';
+
       return `
-        <figure class="gallery-item reveal" data-category="${esc(photo.category)}">
-          <button class="gallery-btn" type="button" data-index="${i}" data-src="${esc(src)}" data-alt="${esc(alt)}" data-caption="${esc(caption)}" aria-label="Open photo: ${esc(label)}">
-            <img src="${esc(src)}" alt="${esc(alt)}"${dimensionAttrs(ctx.sizeOf(photo.file))} loading="lazy" decoding="async" draggable="false">
-          </button>
-          <figcaption class="gallery-caption">
-            <span class="tag">${esc(photo.category)}</span>
-            ${photo.year ? `<span class="gallery-year">${esc(photo.year)}</span>` : ''}
-          </figcaption>
-        </figure>`;
+          <section class="media-group reveal" data-group="${esc(group.title)}" aria-label="${esc(group.title)}">
+            <div class="media-group-head">
+              <h3 class="media-group-title">${esc(group.title)}</h3>${navButtons}
+            </div>
+            <div class="media-row${totalItems < 2 ? ' is-single' : ''}" data-media-row>${videoCards}${photoCards}
+            </div>
+          </section>`;
     })
     .join('\n');
 
@@ -267,63 +370,7 @@ function renderPortfolio(model, ctx) {
           <h2 id="portfolio-title" class="section-title">${renderTextOrRuns(model, 'portfolioHeading')}</h2>
         </header>
         ${filters}
-        <div class="gallery">${items}
-        </div>
-      </div>
-    </section>`;
-}
-
-function videoDimensions(video, ctx) {
-  if (video.width && video.height) return { width: video.width, height: video.height };
-  const fromFile = video.file ? ctx.sizeOf(video.file) : null;
-  if (fromFile?.width && fromFile?.height) return fromFile;
-  if (video.posterWidth && video.posterHeight) return { width: video.posterWidth, height: video.posterHeight };
-  const fromPoster = video.poster ? ctx.sizeOf(video.poster) : null;
-  if (fromPoster?.width && fromPoster?.height) return fromPoster;
-  return null;
-}
-
-function renderVideos(model, ctx) {
-  const videos = model.videos ?? [];
-  if (!videos.length) return '';
-
-  const dims = videos.map((video) => videoDimensions(video, ctx));
-  const allPortrait = dims.length > 0 && dims.every((d) => d && d.height > d.width);
-
-  const cards = videos
-    .map((video, idx) => {
-      const dim = dims[idx];
-      const isPortrait = dim ? dim.height > dim.width : false;
-      const isLandscape = dim ? dim.width >= dim.height : false;
-      const cardClass = `video-card reveal${isPortrait ? ' is-portrait' : isLandscape ? ' is-landscape' : ''}`;
-      const videoStyle = dim ? ` style="aspect-ratio: ${dim.width} / ${dim.height}"` : '';
-      const sizeAttrs = dim ? ` width="${dim.width}" height="${dim.height}"` : '';
-      const poster = video.poster ? ` poster="${esc(ctx.mediaUrl(video.poster))}"` : '';
-      const preload = video.poster ? 'metadata' : 'auto';
-      const rawSrc = ctx.mediaUrl(video.file);
-      const videoSrc = !video.poster && !rawSrc.includes('#') ? `${rawSrc}#t=0.1` : rawSrc;
-      return `
-          <figure class="${cardClass}">
-            <div class="video-frame">
-              <video controls controlsList="nodownload noremoteplayback" disablePictureInPicture playsinline preload="${preload}"${poster}${sizeAttrs}${videoStyle} src="${esc(videoSrc)}" aria-label="${esc(video.title)}"></video>
-            </div>
-            <figcaption>
-              ${video.category ? `<span class="tag">${esc(video.category)}</span>` : ''}
-              <h3 class="video-title">${esc(video.title)}</h3>
-              ${video.description ? `<p class="video-desc">${esc(video.description)}</p>` : ''}
-            </figcaption>
-          </figure>`;
-    })
-    .join('\n');
-
-  return `
-    <section id="videos" class="section" aria-labelledby="videos-title">
-      <div class="container">
-        <header class="section-head reveal">
-          <p class="eyebrow">${renderTextOrRuns(model, 'videosLabel')}</p>
-          <h2 id="videos-title" class="section-title">${renderTextOrRuns(model, 'videosHeading')}</h2>
-        </header>
-        <div class="video-grid${allPortrait ? ' is-all-portrait' : ''}">${cards}
+        <div class="portfolio-groups">${groupSections}
         </div>
       </div>
     </section>`;
@@ -458,7 +505,6 @@ export function renderModelPage(model, ctx) {
     ${renderHero(model, ctx)}
     ${renderAbout(model)}
     ${renderPortfolio(model, ctx)}
-    ${renderVideos(model, ctx)}
     ${renderContact(model)}
   </main>
   ${renderFooter(model, ctx.year)}

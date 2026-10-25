@@ -81,6 +81,7 @@
     uploads: {},         // slotId -> { state, title, detail, percent, indeterminate, canCancel }
     activeUploadSlot: '',
     abortUpload: null,
+    groupSeq: 1,
     busy: false,
   };
 
@@ -230,6 +231,49 @@
     };
   }
 
+  function nextGroupId() {
+    S.groupSeq = (S.groupSeq || 0) + 1;
+    return 'grp-' + S.groupSeq;
+  }
+
+  function buildEditorGroups(m) {
+    var groups = [];
+    var byLower = {};
+
+    function ensureGroup(rawTitle) {
+      var label = trimmed(rawTitle) || 'Portfolio';
+      var key = label.toLowerCase();
+      if (byLower[key]) return byLower[key];
+      var grp = { id: nextGroupId(), title: label };
+      byLower[key] = grp;
+      groups.push(grp);
+      return grp;
+    }
+
+    (Array.isArray(m.groups) ? m.groups : []).forEach(function (g) {
+      if (typeof g === 'string' && trimmed(g)) ensureGroup(g);
+    });
+
+    (m.videos || []).forEach(function (v) {
+      if (!v) return;
+      var g = ensureGroup(trimmed(v.category) || trimmed(v.title) || 'Portfolio');
+      v._gid = g.id;
+      v.category = g.title;
+    });
+
+    (m.photos || []).forEach(function (p) {
+      if (!p) return;
+      var g = ensureGroup(trimmed(p.category) || trimmed(p.title) || 'Portfolio');
+      p._gid = g.id;
+      p.category = g.title;
+    });
+
+    if (!groups.length) {
+      groups.push({ id: nextGroupId(), title: 'Portfolio' });
+    }
+    m._groups = groups;
+  }
+
   function normalise(model) {
     var m = JSON.parse(JSON.stringify(model));
     m.cover = Array.isArray(m.cover) ? m.cover : (m.cover ? [m.cover] : []);
@@ -246,12 +290,15 @@
     if (!m.richText.contactHeading && !m.texts.contactHeading) {
       m.richText.contactHeading = cloneRuns(DEFAULT_CONTACT_HEADING_RUNS);
     }
+    buildEditorGroups(m);
     return m;
   }
 
   function cleanEntry(entry, keys) {
     var out = {};
-    Object.keys(entry).forEach(function (k) { out[k] = entry[k]; });
+    Object.keys(entry).forEach(function (k) {
+      if (k.charAt(0) !== '_') out[k] = entry[k];
+    });
     keys.forEach(function (key) {
       var value = trimmed(out[key]);
       if (value === undefined || value === null || value === '') delete out[key];
@@ -267,7 +314,9 @@
 
   function cleanProfile(m) {
     var out = {};
-    Object.keys(m).forEach(function (k) { out[k] = m[k]; });
+    Object.keys(m).forEach(function (k) {
+      if (k.charAt(0) !== '_') out[k] = m[k];
+    });
     out.name = trimmed(m.name);
     setOrDelete(out, 'tagline', trimmed(m.tagline));
 
@@ -295,12 +344,68 @@
     }
 
     out.cover = m.cover.map(function (c) { return cleanEntry(c, ['file', 'alt', 'width', 'height']); });
-    out.photos = m.photos.map(function (p) {
-      return cleanEntry(p, ['file', 'title', 'category', 'year', 'alt', 'width', 'height']);
+
+    var editorGroups = Array.isArray(m._groups) && m._groups.length
+      ? m._groups
+      : [{ id: 'default', title: 'Portfolio' }];
+    var groupById = {};
+    var cleanGroupTitles = [];
+    var seenGroupLower = {};
+    editorGroups.forEach(function (g, idx) {
+      var title = trimmed(g.title) || ('Group ' + (idx + 1));
+      groupById[g.id] = title;
+      var lower = title.toLowerCase();
+      if (!seenGroupLower[lower]) {
+        seenGroupLower[lower] = true;
+        cleanGroupTitles.push(title);
+      }
     });
-    out.videos = m.videos.map(function (v) {
-      return cleanEntry(v, ['file', 'width', 'height', 'poster', 'posterWidth', 'posterHeight', 'title', 'category', 'description']);
+    var fallbackGroup = cleanGroupTitles[0] || 'Portfolio';
+
+    var orderedVideos = [];
+    var orderedPhotos = [];
+    editorGroups.forEach(function (g) {
+      var gTitle = groupById[g.id] || fallbackGroup;
+      (m.videos || []).forEach(function (v) {
+        if (v && v._gid === g.id) {
+          var vCopy = Object.assign({}, v, {
+            category: gTitle,
+            title: trimmed(v.title) || gTitle,
+          });
+          orderedVideos.push(cleanEntry(vCopy, ['file', 'width', 'height', 'poster', 'posterWidth', 'posterHeight', 'title', 'category', 'description']));
+        }
+      });
+      (m.photos || []).forEach(function (p) {
+        if (p && p._gid === g.id) {
+          var pCopy = Object.assign({}, p, {
+            category: gTitle,
+            title: trimmed(p.title) || gTitle,
+          });
+          orderedPhotos.push(cleanEntry(pCopy, ['file', 'title', 'category', 'year', 'alt', 'width', 'height']));
+        }
+      });
     });
+    // Include any item whose _gid was missing or unmatched.
+    (m.videos || []).forEach(function (v) {
+      if (v && (!v._gid || !groupById[v._gid])) {
+        var gTitle = trimmed(v.category) || trimmed(v.title) || fallbackGroup;
+        var vCopy = Object.assign({}, v, { category: gTitle, title: trimmed(v.title) || gTitle });
+        orderedVideos.push(cleanEntry(vCopy, ['file', 'width', 'height', 'poster', 'posterWidth', 'posterHeight', 'title', 'category', 'description']));
+      }
+    });
+    (m.photos || []).forEach(function (p) {
+      if (p && (!p._gid || !groupById[p._gid])) {
+        var gTitle = trimmed(p.category) || trimmed(p.title) || fallbackGroup;
+        var pCopy = Object.assign({}, p, { category: gTitle, title: trimmed(p.title) || gTitle });
+        orderedPhotos.push(cleanEntry(pCopy, ['file', 'title', 'category', 'year', 'alt', 'width', 'height']));
+      }
+    });
+
+    out.photos = orderedPhotos;
+    out.videos = orderedVideos;
+    var keepGroups = cleanGroupTitles.length > 1 ||
+      (cleanGroupTitles.length === 1 && (cleanGroupTitles[0] !== 'Portfolio' || orderedPhotos.length > 0 || orderedVideos.length > 0));
+    setOrDelete(out, 'groups', keepGroups ? cleanGroupTitles : null);
 
     var contact = cleanEntry(m.contact || {}, Object.keys(m.contact || {}));
     setOrDelete(out, 'contact', Object.keys(contact).length ? contact : null);
@@ -856,43 +961,127 @@
     }).join('') || '<p class="muted">No cover photos yet. The first one is shown first on the site.</p>';
   }
 
-  function photosHtml() {
-    var captionStyle = esc(boxInlineCss('captions'));
-    return S.model.photos.map(function (p, i) {
-      return '<div class="item">' +
-        thumbBoxHtml('<img class="thumb" alt="" src="' + esc(mediaSrc(p.file)) + '" loading="lazy">', 'Loading photo…') +
-        '<div><div class="item-fields">' +
-        '<label>Title<input data-list="photos" data-i="' + i + '" data-key="title" value="' + esc(p.title) + '"></label>' +
-        '<label>Category (filter &amp; caption)<input data-list="photos" data-i="' + i + '" data-key="category" data-styled-slot="captions" style="' + captionStyle + '" value="' + esc(p.category) + '"></label>' +
-        '<label>Year<input data-list="photos" data-i="' + i + '" data-key="year" data-styled-slot="captions" style="' + captionStyle + '" value="' + esc(p.year) + '"></label>' +
-        '<label>Alt text<input data-list="photos" data-i="' + i + '" data-key="alt" value="' + esc(p.alt) + '"></label>' +
-        '</div><div class="item-actions">' + moveButtons('photos', i, S.model.photos.length) + removeButton('photos', i) +
-        '</div></div></div>';
-    }).join('') || '<p class="muted">No portfolio photos yet.</p>';
+  function groupSelectOptionsHtml(groups, activeGroupId) {
+    return groups.map(function (g, idx) {
+      var label = trimmed(g.title) || ('Group ' + (idx + 1));
+      return '<option value="' + esc(g.id) + '"' + (g.id === activeGroupId ? ' selected' : '') + '>' + esc(label) + '</option>';
+    }).join('');
   }
 
-  function videosHtml() {
+  function groupMoveItemButtons(list, globalIndex, posInGroup, countInGroup) {
+    return '<button type="button" class="btn small" data-action="move-in-group" data-list="' + list + '" data-i="' + globalIndex + '" data-dir="-1"' +
+      (posInGroup === 0 ? ' disabled' : '') + ' title="Move earlier in row">← Left</button>' +
+      '<button type="button" class="btn small" data-action="move-in-group" data-list="' + list + '" data-i="' + globalIndex + '" data-dir="1"' +
+      (posInGroup === countInGroup - 1 ? ' disabled' : '') + ' title="Move later in row">Right →</button>';
+  }
+
+  function groupSummaryText(vCount, pCount) {
+    var parts = [];
+    parts.push(vCount + (vCount === 1 ? ' video' : ' videos'));
+    parts.push(pCount + (pCount === 1 ? ' photo' : ' photos'));
+    return parts.join(' · ') + ' (videos shown first)';
+  }
+
+  function portfolioGroupsHtml() {
+    var m = S.model;
+    var groups = Array.isArray(m._groups) && m._groups.length ? m._groups : [{ id: 'default', title: 'Portfolio' }];
     var videoStyle = esc(boxInlineCss('videoText'));
     var captionStyle = esc(boxInlineCss('captions'));
-    return S.model.videos.map(function (v, i) {
-      var isPortrait = (v.width && v.height && v.height > v.width) ||
-        (!v.width && v.posterWidth && v.posterHeight && v.posterHeight > v.posterWidth);
-      var ratioCls = isPortrait ? 'portrait' : 'wide';
-      var preview = v.poster
-        ? thumbBoxHtml('<img class="thumb ' + ratioCls + '" alt="" src="' + esc(mediaSrc(v.poster)) + '" loading="lazy">', 'Loading poster…')
-        : (v.file
-          ? thumbBoxHtml('<video class="thumb ' + ratioCls + '" data-video-index="' + i + '" preload="auto" muted playsinline src="' + esc(mediaSrc(v.file)) + '#t=0.1"></video>', 'Loading video…')
-          : '<div class="thumb-box"><div class="thumb wide" aria-hidden="true"></div></div>');
-      return '<div class="item video">' + preview +
-        '<div><div class="item-fields">' +
-        '<label>Title<input data-list="videos" data-i="' + i + '" data-key="title" data-styled-slot="videoText" style="' + videoStyle + '" value="' + esc(v.title) + '"></label>' +
-        '<label>Category<input data-list="videos" data-i="' + i + '" data-key="category" data-styled-slot="captions" style="' + captionStyle + '" value="' + esc(v.category) + '"></label>' +
-        '<label class="full">Description<input data-list="videos" data-i="' + i + '" data-key="description" data-styled-slot="videoText" style="' + videoStyle + '" value="' + esc(v.description) + '"></label>' +
-        '</div><p class="muted">Video: ' + esc(v.file ? (isHttp(v.file) ? 'hosted' : v.file) : '') + '</p>' +
-        uploadSlotHtml('poster-' + i) +
-        '<div class="item-actions">' + uploadButton(v.poster ? 'Replace poster image' : 'Add poster image', 'poster', ' accept="image/*" data-i="' + i + '"') +
-        moveButtons('videos', i, S.model.videos.length) + removeButton('videos', i) + '</div></div></div>';
-    }).join('') || '<p class="muted">No videos yet.</p>';
+
+    return groups.map(function (grp, gIdx) {
+      var groupVideos = [];
+      (m.videos || []).forEach(function (v, vIdx) {
+        if (v && v._gid === grp.id) groupVideos.push({ entry: v, index: vIdx });
+      });
+      var groupPhotos = [];
+      (m.photos || []).forEach(function (p, pIdx) {
+        if (p && p._gid === grp.id) groupPhotos.push({ entry: p, index: pIdx });
+      });
+
+      var totalItems = groupVideos.length + groupPhotos.length;
+      var groupTitleVal = grp.title == null ? '' : grp.title;
+
+      var videoCardsHtml = groupVideos.map(function (ref, vPos) {
+        var v = ref.entry;
+        var i = ref.index;
+        var isPortrait = (v.width && v.height && v.height > v.width) ||
+          (!v.width && v.posterWidth && v.posterHeight && v.posterHeight > v.posterWidth);
+        var ratioCls = isPortrait ? 'portrait' : 'wide';
+        var preview = v.poster
+          ? thumbBoxHtml('<img class="thumb ' + ratioCls + '" alt="" src="' + esc(mediaSrc(v.poster)) + '" loading="lazy">', 'Loading poster…')
+          : (v.file
+            ? thumbBoxHtml('<video class="thumb ' + ratioCls + '" data-video-index="' + i + '" preload="auto" muted playsinline src="' + esc(mediaSrc(v.file)) + '#t=0.1"></video>', 'Loading video…')
+            : '<div class="thumb-box"><div class="thumb wide" aria-hidden="true"></div></div>');
+        return '<div class="item video admin-media-card">' +
+          preview +
+          '<div class="admin-media-body">' +
+            '<div class="admin-media-badge-row">' +
+              '<span class="media-kind-badge is-video">#' + (vPos + 1) + ' · Video (shown first)</span>' +
+              '<span class="muted small-file">' + esc(v.file ? (isHttp(v.file) ? 'hosted video' : v.file) : '') + '</span>' +
+            '</div>' +
+            '<div class="item-fields">' +
+              '<label>Subtitle / Title<input data-list="videos" data-i="' + i + '" data-key="title" data-styled-slot="videoText" style="' + videoStyle + '" value="' + esc(v.title) + '" placeholder="Optional video title"></label>' +
+              '<label>Group<select data-move-item-group="videos" data-i="' + i + '">' + groupSelectOptionsHtml(groups, grp.id) + '</select></label>' +
+              '<label class="full">Description<input data-list="videos" data-i="' + i + '" data-key="description" data-styled-slot="videoText" style="' + videoStyle + '" value="' + esc(v.description) + '" placeholder="Optional caption"></label>' +
+            '</div>' +
+            uploadSlotHtml('poster-' + i) +
+            '<div class="item-actions">' +
+              uploadButton(v.poster ? 'Replace poster' : 'Add poster', 'poster', ' accept="image/*" data-i="' + i + '"') +
+              groupMoveItemButtons('videos', i, vPos, groupVideos.length) +
+              removeButton('videos', i) +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+
+      var photoCardsHtml = groupPhotos.map(function (ref, pPos) {
+        var p = ref.entry;
+        var i = ref.index;
+        var seqNum = groupVideos.length + pPos + 1;
+        return '<div class="item photo admin-media-card">' +
+          thumbBoxHtml('<img class="thumb" alt="" src="' + esc(mediaSrc(p.file)) + '" loading="lazy">', 'Loading photo…') +
+          '<div class="admin-media-body">' +
+            '<div class="admin-media-badge-row">' +
+              '<span class="media-kind-badge is-photo">#' + seqNum + ' · Photo</span>' +
+            '</div>' +
+            '<div class="item-fields">' +
+              '<label>Photo title<input data-list="photos" data-i="' + i + '" data-key="title" value="' + esc(p.title) + '"></label>' +
+              '<label>Group<select data-move-item-group="photos" data-i="' + i + '">' + groupSelectOptionsHtml(groups, grp.id) + '</select></label>' +
+              '<label>Year<input data-list="photos" data-i="' + i + '" data-key="year" data-styled-slot="captions" style="' + captionStyle + '" value="' + esc(p.year) + '" placeholder="Optional"></label>' +
+              '<label>Alt text<input data-list="photos" data-i="' + i + '" data-key="alt" value="' + esc(p.alt) + '" placeholder="Describe photo"></label>' +
+            '</div>' +
+            '<div class="item-actions">' +
+              groupMoveItemButtons('photos', i, pPos, groupPhotos.length) +
+              removeButton('photos', i) +
+            '</div>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+
+      var rowBody = totalItems > 0
+        ? '<div class="admin-media-row' + (totalItems < 2 ? ' is-single' : '') + '">' + videoCardsHtml + photoCardsHtml + '</div>'
+        : '<p class="muted group-empty">Empty group — use <b>Add video</b> (shown first) or <b>Add photo</b> above to populate this horizontal row.</p>';
+
+      return '<div class="group-card" data-group-card="' + esc(grp.id) + '">' +
+        '<div class="group-card-head">' +
+          '<div class="group-title-wrap">' +
+            '<label class="group-title-label">Category / Row Title' +
+              '<input class="group-title-input" data-group-title="' + gIdx + '" data-styled-slot="captions" style="' + captionStyle + '" value="' + esc(groupTitleVal) + '" placeholder="e.g. Bridal, Editorial, Traditional">' +
+            '</label>' +
+            '<span class="group-count-pill" data-group-counts="' + gIdx + '">' + esc(groupSummaryText(groupVideos.length, groupPhotos.length)) + '</span>' +
+          '</div>' +
+          '<div class="group-head-actions">' +
+            uploadButton('Add video', 'video', ' accept="video/*" multiple data-group-id="' + esc(grp.id) + '"') +
+            uploadButton('Add photo', 'photo', ' accept="image/*" multiple data-group-id="' + esc(grp.id) + '"') +
+            '<button type="button" class="btn small" data-action="move-group" data-group-index="' + gIdx + '" data-dir="-1"' + (gIdx === 0 ? ' disabled' : '') + ' title="Move row up">↑ Row up</button>' +
+            '<button type="button" class="btn small" data-action="move-group" data-group-index="' + gIdx + '" data-dir="1"' + (gIdx === groups.length - 1 ? ' disabled' : '') + ' title="Move row down">↓ Row down</button>' +
+            '<button type="button" class="btn small danger" data-action="remove-group" data-group-index="' + gIdx + '">Remove group</button>' +
+          '</div>' +
+        '</div>' +
+        uploadSlotHtml('group-' + grp.id) +
+        rowBody +
+      '</div>';
+    }).join('');
   }
 
   function statsHtml() {
@@ -996,9 +1185,10 @@
       listCard('Cover photos (hero slideshow)', uploadButton('Add cover photo', 'cover', ' accept="image/*" multiple'), '<div class="list">' + coverHtml() + '</div>', 'cover'),
 
       listCard(
-        'Portfolio photos',
-        uploadButton('Add photo', 'photo', ' accept="image/*" multiple'),
+        'Portfolio groups (videos first, then photos)',
+        '<button type="button" class="btn small primary" data-action="add-group">+ Add category / group</button>',
         '<div class="stack">' +
+          '<p class="muted" style="margin:0">Each group renders as a horizontal scrollable row on the website: its video(s) appear first on the left, followed by its photos (with 10% of the next item peeking on the right whenever more exist).</p>' +
           '<div class="grid">' +
             composerBoxHtml({
               richKey: 'portfolioLabel',
@@ -1021,42 +1211,12 @@
               placeholder: DEFAULT_TEXTS.portfolioHeading,
             }) +
           '</div>' +
-          groupFormatBarHtml('captions', 'Captions & filters font:') +
-          '<div class="list">' + photosHtml() + '</div>' +
-        '</div>',
-        'photo'
-      ),
-
-      listCard(
-        'Videos',
-        uploadButton('Add video', 'video', ' accept="video/*" multiple'),
-        '<div class="stack">' +
           '<div class="grid">' +
-            composerBoxHtml({
-              richKey: 'videosLabel',
-              slot: 'videosLabel',
-              label: 'Section label',
-              multiline: false,
-              alignable: true,
-              editorClass: 'composer-editor--label',
-              baseRem: 0.82,
-              placeholder: DEFAULT_TEXTS.videosLabel,
-            }) +
-            composerBoxHtml({
-              richKey: 'videosHeading',
-              slot: 'videosHeading',
-              label: 'Section heading',
-              multiline: false,
-              alignable: true,
-              editorClass: 'composer-editor--heading',
-              baseRem: 1.45,
-              placeholder: DEFAULT_TEXTS.videosHeading,
-            }) +
+            groupFormatBarHtml('captions', 'Filters & photo captions font:') +
+            groupFormatBarHtml('videoText', 'Video titles & descriptions font:') +
           '</div>' +
-          groupFormatBarHtml('videoText', 'Video titles & descriptions font:') +
-          '<div class="list">' + videosHtml() + '</div>' +
-        '</div>',
-        'video'
+          '<div class="groups-stack">' + portfolioGroupsHtml() + '</div>' +
+        '</div>'
       ),
     ].join('');
     syncMediaLoadStates();
@@ -1486,6 +1646,23 @@
       }
       return;
     }
+    if (t.hasAttribute('data-group-title')) {
+      var gIdx = Number(t.getAttribute('data-group-title'));
+      var grp = S.model._groups && S.model._groups[gIdx];
+      if (grp) {
+        grp.title = t.value;
+        var nextLabel = trimmed(t.value) || ('Group ' + (gIdx + 1));
+        (S.model.videos || []).forEach(function (v) { if (v && v._gid === grp.id) v.category = nextLabel; });
+        (S.model.photos || []).forEach(function (p) { if (p && p._gid === grp.id) p.category = nextLabel; });
+        var root = $('editor-body');
+        if (root) {
+          var opts = root.querySelectorAll('select[data-move-item-group] option[value="' + grp.id + '"]');
+          for (var o = 0; o < opts.length; o++) opts[o].textContent = nextLabel;
+        }
+      }
+      updateDirtyNote();
+      return;
+    }
     if (t.hasAttribute('data-field')) {
       var value = t.type === 'checkbox' ? t.checked : t.value;
       setPath(S.model, t.getAttribute('data-field'), value);
@@ -1550,6 +1727,52 @@
     render();
   }
 
+  function moveInGroup(listName, index, dir) {
+    var items = S.model[listName];
+    var cur = items && items[index];
+    if (!cur) return;
+    var gid = cur._gid;
+    var j = index + dir;
+    while (j >= 0 && j < items.length) {
+      if (items[j] && items[j]._gid === gid) {
+        var tmp = items[index];
+        items[index] = items[j];
+        items[j] = tmp;
+        render();
+        return;
+      }
+      j += dir;
+    }
+  }
+
+  function removeGroupAt(gIdx) {
+    var groups = S.model._groups || [];
+    var grp = groups[gIdx];
+    if (!grp) return;
+    var vInGroup = (S.model.videos || []).filter(function (v) { return v && v._gid === grp.id; });
+    var pInGroup = (S.model.photos || []).filter(function (p) { return p && p._gid === grp.id; });
+    var total = vInGroup.length + pInGroup.length;
+    var msg = total > 0
+      ? 'Remove group "' + (trimmed(grp.title) || 'Untitled') + '" and its ' + total + ' item(s)? Hosted files are deleted when you save.'
+      : 'Remove empty group "' + (trimmed(grp.title) || 'Untitled') + '"?';
+    if (!window.confirm(msg)) return;
+
+    vInGroup.forEach(function (v) {
+      if (v.file && isHttp(v.file) && S.pendingDeletes.indexOf(v.file) === -1) S.pendingDeletes.push(v.file);
+      if (v.poster && isHttp(v.poster) && S.pendingDeletes.indexOf(v.poster) === -1) S.pendingDeletes.push(v.poster);
+    });
+    pInGroup.forEach(function (p) {
+      if (p.file && isHttp(p.file) && S.pendingDeletes.indexOf(p.file) === -1) S.pendingDeletes.push(p.file);
+    });
+    S.model.videos = (S.model.videos || []).filter(function (v) { return !v || v._gid !== grp.id; });
+    S.model.photos = (S.model.photos || []).filter(function (p) { return !p || p._gid !== grp.id; });
+    groups.splice(gIdx, 1);
+    if (!groups.length) {
+      groups.push({ id: nextGroupId(), title: 'Portfolio' });
+    }
+    render();
+  }
+
   function onClick(e) {
     var fmtBtn = e.target.closest ? e.target.closest('button[data-fmt]') : null;
     if (fmtBtn) {
@@ -1571,6 +1794,34 @@
       }
       return;
     }
+    if (action === 'add-group') {
+      if (!Array.isArray(S.model._groups)) S.model._groups = [];
+      var newIdx = S.model._groups.length;
+      S.model._groups.push({ id: nextGroupId(), title: 'Category ' + (newIdx + 1) });
+      render();
+      var titleInput = $('editor-body') && $('editor-body').querySelector('[data-group-title="' + newIdx + '"]');
+      if (titleInput && typeof titleInput.focus === 'function') {
+        titleInput.focus();
+        if (typeof titleInput.select === 'function') titleInput.select();
+      }
+      return;
+    }
+    if (action === 'move-group') {
+      var gIdx = Number(btn.getAttribute('data-group-index'));
+      var gDir = Number(btn.getAttribute('data-dir'));
+      var groups = S.model._groups || [];
+      var gTarget = gIdx + gDir;
+      if (gTarget < 0 || gTarget >= groups.length) return;
+      var tmpGrp = groups[gIdx];
+      groups[gIdx] = groups[gTarget];
+      groups[gTarget] = tmpGrp;
+      render();
+      return;
+    }
+    if (action === 'remove-group') {
+      removeGroupAt(Number(btn.getAttribute('data-group-index')));
+      return;
+    }
     var list = btn.getAttribute('data-list');
     var i = Number(btn.getAttribute('data-i'));
     if (action === 'remove') {
@@ -1582,6 +1833,8 @@
       if (j < 0 || j >= items.length) return;
       var tmp = items[i]; items[i] = items[j]; items[j] = tmp;
       render();
+    } else if (action === 'move-in-group') {
+      moveInGroup(list, i, Number(btn.getAttribute('data-dir')));
     } else if (action === 'add-stat') {
       S.model.stats.push({ label: '', value: '' });
       render();
@@ -1816,10 +2069,30 @@
     toast(message);
   }
 
+  function findEditorGroup(groupId) {
+    var groups = (S.model && S.model._groups) || [];
+    for (var i = 0; i < groups.length; i++) {
+      if (groups[i].id === groupId) return groups[i];
+    }
+    return groups[0] || null;
+  }
+
   function onChange(e) {
     var input = e.target;
     if (input.hasAttribute('data-fmt') && (input.tagName === 'SELECT' || input.type === 'color')) {
       handleFormatControl(input, input.value);
+      return;
+    }
+    if (input.hasAttribute('data-move-item-group')) {
+      var listName = input.getAttribute('data-move-item-group');
+      var itemIdx = Number(input.getAttribute('data-i'));
+      var targetGrp = findEditorGroup(input.value);
+      var targetItem = S.model && S.model[listName] && S.model[listName][itemIdx];
+      if (targetGrp && targetItem) {
+        targetItem._gid = targetGrp.id;
+        targetItem.category = trimmed(targetGrp.title) || 'Portfolio';
+        render();
+      }
       return;
     }
     var kind = input.getAttribute('data-upload');
@@ -1832,6 +2105,7 @@
     // revoke temporary gallery file handles before FormData/XHR reads them.
     var files = Array.prototype.slice.call(input.files);
     var index = Number(input.getAttribute('data-i'));
+    var groupId = input.getAttribute('data-group-id') || '';
     var doneReset = function () {
       try { input.value = ''; } catch (_) {}
     };
@@ -1845,16 +2119,17 @@
     files.reduce(function (chain, file, idx) {
       return chain.then(function () {
         if (cancelled) return;
-        return addMedia(kind, file, idx, files.length).then(function (res) {
+        return addMedia(kind, file, idx, files.length, groupId).then(function (res) {
           if (res && res.aborted) cancelled = true;
         });
       });
     }, Promise.resolve()).then(doneReset, doneReset);
   }
 
-  function addMedia(kind, file, fileIndex, totalFiles) {
+  function addMedia(kind, file, fileIndex, totalFiles, groupId) {
     var isVideo = kind === 'video';
-    var slotId = kind;
+    var targetGrp = (kind === 'photo' || kind === 'video') ? findEditorGroup(groupId) : null;
+    var slotId = targetGrp ? ('group-' + targetGrp.id) : kind;
     var prep = prepareUploadFile(file, isVideo);
     if (!prep.ok) {
       showUploadError(slotId, 'Cannot add ' + prep.displayName, prep.error);
@@ -1902,7 +2177,8 @@
       },
     };
 
-    var fallbackTitle = isVideo ? 'Video ' + (S.model.videos.length + 1) : (kind === 'cover' ? 'Cover photo' : 'Photo ' + (S.model.photos.length + 1));
+    var grpTitle = targetGrp ? (trimmed(targetGrp.title) || 'Portfolio') : 'Portfolio';
+    var fallbackTitle = isVideo ? grpTitle : (kind === 'cover' ? 'Cover photo' : 'Photo ' + (S.model.photos.length + 1));
 
     return Promise.all([
       uploadFile(file, prep.uploadName, hooks),
@@ -1913,9 +2189,24 @@
       if (kind === 'cover') {
         S.model.cover.push(withSize({ file: uploaded.url, alt: titleFrom(prep.uploadName, fallbackTitle) }, size));
       } else if (kind === 'photo') {
-        S.model.photos.push(withSize({ file: uploaded.url, title: titleFrom(prep.uploadName, fallbackTitle), category: 'Portfolio', year: '', alt: '' }, size));
+        var pEntry = withSize({
+          file: uploaded.url,
+          title: titleFrom(prep.uploadName, fallbackTitle),
+          category: grpTitle,
+          year: '',
+          alt: '',
+        }, size);
+        if (targetGrp) pEntry._gid = targetGrp.id;
+        S.model.photos.push(pEntry);
       } else if (kind === 'video') {
-        S.model.videos.push(withSize({ file: uploaded.url, title: titleFrom(prep.uploadName, fallbackTitle), category: '', description: '' }, size));
+        var vEntry = withSize({
+          file: uploaded.url,
+          title: grpTitle,
+          category: grpTitle,
+          description: '',
+        }, size);
+        if (targetGrp) vEntry._gid = targetGrp.id;
+        S.model.videos.push(vEntry);
       }
       S.abortUpload = null;
       var isLast = !(totalFiles > 1 && fileIndex + 1 < totalFiles);

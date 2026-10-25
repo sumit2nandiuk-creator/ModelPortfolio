@@ -2914,10 +2914,12 @@
     return pending.reduce(function (chain, group, index) {
       return chain.then(function () {
         setStatus('Generating image thumbnails ' + (index + 1) + ' of ' + pending.length + '…');
-        var jobs = [];
-        if (!group.preview && group.previewRefs.length) jobs.push({ tier: 'preview', refs: group.previewRefs });
-        if (!group.thumbnail && group.thumbnailRefs.length) jobs.push({ tier: 'thumbnail', refs: group.thumbnailRefs });
-        return resolveThumbnailSource(group.source).then(function (resolved) {
+        // Yield to browser between groups to keep UI responsive for large batches
+        return Promise.resolve().then(function () {
+          var jobs = [];
+          if (!group.preview && group.previewRefs.length) jobs.push({ tier: 'preview', refs: group.previewRefs });
+          if (!group.thumbnail && group.thumbnailRefs.length) jobs.push({ tier: 'thumbnail', refs: group.thumbnailRefs });
+          return resolveThumbnailSource(group.source).then(function (resolved) {
           return jobs.reduce(function (jobChain, job) {
             return jobChain.then(function () {
               return makeThumbnail(resolved.url, job.tier)
@@ -2934,11 +2936,12 @@
                   if (window.__appErrorReporter) window.__appErrorReporter.report('frontend-thumbnail', message, { resource: group.source, name: 'manual-thumbnail-generation' });
                 });
             });
-          }, Promise.resolve()).finally(function () { if (resolved.revoke) resolved.revoke(); });
-        }).catch(function (err) {
-          var message = err.message || 'An image could not be processed.';
-          failures.push(message);
-          if (window.__appErrorReporter) window.__appErrorReporter.report('frontend-thumbnail', message, { resource: group.source, name: 'manual-thumbnail-generation' });
+            }, Promise.resolve()).finally(function () { if (resolved.revoke) resolved.revoke(); });
+          }).catch(function (err) {
+            var message = err.message || 'An image could not be processed.';
+            failures.push(message);
+            if (window.__appErrorReporter) window.__appErrorReporter.report('frontend-thumbnail', message, { resource: group.source, name: 'manual-thumbnail-generation' });
+          });
         });
       });
     }, Promise.resolve()).then(function () {

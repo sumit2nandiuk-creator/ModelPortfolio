@@ -182,7 +182,7 @@ function renderHero(model, ctx) {
       const label = many ? `Open cover photo ${i + 1} of ${covers.length}` : 'Open cover photo';
       return `
         <button class="carousel-slide" type="button" data-src="${esc(src)}"${(source.thumb || source.preview) ? ` data-thumb="${esc(source.thumb || source.preview)}"` : ''} data-alt="${esc(cover.alt)}" data-caption="" aria-label="${esc(label)}">
-          <img class="hero-media" src="${esc(source.src)}"${progressiveAttrs(source)} alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} loading="eager"${i === 0 ? ' fetchpriority="high"' : ''} decoding="async" draggable="false">
+          <img class="hero-media" src="${esc(source.src)}"${progressiveAttrs(source)} alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} loading="${i < 2 ? 'eager' : 'lazy'}"${i === 0 ? ' fetchpriority="high"' : ''} decoding="async" draggable="false">
         </button>`;
     })
     .join('');

@@ -494,7 +494,10 @@
         heroDots.forEach(function (dot, j) { dot.classList.toggle('is-active', j === i); });
         var active = heroRoot.querySelectorAll('.carousel-slide')[i];
         var activeImg = active && active.querySelector('img');
-        if (activeImg && activeImg.complete && (activeImg.naturalWidth || 0) > 0) loadFullImageAfterThumbnail(activeImg);
+        if (activeImg) {
+          if (typeof progressiveObserver !== 'undefined' && progressiveObserver) try { progressiveObserver.unobserve(activeImg); } catch (_) {}
+          if (activeImg.complete && (activeImg.naturalWidth || 0) > 0) loadFullImageAfterThumbnail(activeImg);
+        }
       },
     });
     heroDots.forEach(function (dot) {
@@ -657,6 +660,15 @@
 
   function loadFullImageAfterThumbnail(img) {
     if (!img || img.tagName !== 'IMG') return;
+    // Hero slideshow: only upgrade the current slide eagerly to avoid hanging
+    // the browser with N concurrent high-res downloads. Adjacent slides are
+    // already eager for preview (tiny 64px) so no black flash, and full
+    // upgrades when they become current via onChange.
+    var heroCarousel = img.closest && img.closest('.hero-carousel');
+    if (heroCarousel) {
+      var heroSlide = img.closest('.carousel-slide');
+      if (!heroSlide || !heroSlide.classList.contains('is-current')) return;
+    }
     var currentUrl = getMediaSrc(img);
     var mediumUrl = typeof img.getAttribute === 'function' ? img.getAttribute('data-medium-src') : '';
     var fullUrl = typeof img.getAttribute === 'function' ? img.getAttribute('data-full-src') : '';
@@ -836,6 +848,45 @@
     full.src = fullUrl;
   }
 
+  // Progressive upgrade observer: only upgrade portfolio images when near viewport
+  // to avoid N concurrent high-res downloads hanging the browser.
+  var progressiveObserver = null;
+  if ('IntersectionObserver' in window && !reducedMotion) {
+    progressiveObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          var img = entry.target;
+          try { progressiveObserver.unobserve(img); } catch (_) {}
+          if (img.getAttribute('data-medium-src') || img.getAttribute('data-full-src')) {
+            loadFullImageAfterThumbnail(img);
+          }
+        }
+      });
+    }, { rootMargin: '400px 0px', threshold: 0.01 });
+  }
+
+  function queueProgressiveUpgrade(img) {
+    if (!img || img.tagName !== 'IMG') return;
+    if (!img.getAttribute('data-medium-src') && !img.getAttribute('data-full-src')) return;
+    var hero = img.closest && img.closest('.hero-carousel');
+    if (hero) {
+      var slide = img.closest('.carousel-slide');
+      if (slide && slide.classList.contains('is-current')) {
+        loadFullImageAfterThumbnail(img);
+      } else if (progressiveObserver) {
+        try { progressiveObserver.observe(img); } catch (_) { loadFullImageAfterThumbnail(img); }
+      } else {
+        setTimeout(function () { loadFullImageAfterThumbnail(img); }, 600);
+      }
+      return;
+    }
+    if (progressiveObserver) {
+      try { progressiveObserver.observe(img); } catch (_) { loadFullImageAfterThumbnail(img); }
+    } else {
+      loadFullImageAfterThumbnail(img);
+    }
+  }
+
   function observeMedia(el) {
     if (!el || el._retryObserved) return;
     el._retryObserved = true;
@@ -847,7 +898,7 @@
       el.addEventListener('load', function () {
         if ((el.naturalWidth || 0) > 0) {
           clearRetry(el);
-          loadFullImageAfterThumbnail(el);
+          queueProgressiveUpgrade(el);
         }
       });
       el.addEventListener('click', function () {
@@ -856,7 +907,7 @@
           retryImage(el);
         }
       });
-      if (el.complete && (el.naturalWidth || 0) > 0) loadFullImageAfterThumbnail(el);
+      if (el.complete && (el.naturalWidth || 0) > 0) queueProgressiveUpgrade(el);
     } else if (el.tagName === 'VIDEO') {
       loadFullPosterAfterThumbnail(el);
       el.addEventListener('error', function () { retryVideo(el); });

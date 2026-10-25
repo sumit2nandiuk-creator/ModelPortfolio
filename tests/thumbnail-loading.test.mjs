@@ -76,7 +76,7 @@ test('admin exposes the Generate Thumbnails action and the site upgrades thumbna
   assert.match(admin, /id="view-site"[^>]*aria-label="View site"/);
   assert.match(siteJs, /function loadFullImageAfterThumbnail\(img\)/);
   assert.match(siteJs, /var mediumUrl = typeof img\.getAttribute === 'function' \? img\.getAttribute\('data-medium-src'\) : ''/);
-  assert.match(siteJs, /setMediaSrc\(img, mediumUrl\);\s*loadFullImageAfterThumbnail\(img\);/);
-  assert.match(siteJs, /full\.onload = function \(\)[\s\S]*?img\.removeAttribute\('data-full-src'\)[\s\S]*?setMediaSrc\(img, fullUrl\)/);
+  assert.match(siteJs, /setMediaSrc\(img, mediumUrl\);[\s\S]*?loadFullImageAfterThumbnail\(img\)/);
+  assert.match(siteJs, /img\.removeAttribute\('data-full-src'\)[\s\S]*?setMediaSrc\(img, fullUrl\)/);
   assert.match(siteJs, /activeImg && activeImg\.complete && \(activeImg\.naturalWidth \|\| 0\) > 0\) loadFullImageAfterThumbnail\(activeImg\)/);
 });

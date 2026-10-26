@@ -1932,3 +1932,5 @@ video.is-failed {
 }
 .video-play-button[hidden] { display: none; }
 .video-play-button:focus-visible { outline: 3px solid white; outline-offset: 4px; }
+
+.gallery-btn > picture, .lb-stage .carousel-slide > picture { display: contents; }

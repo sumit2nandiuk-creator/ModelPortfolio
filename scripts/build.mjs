@@ -86,6 +86,16 @@ export async function build({
   const adminSrc = path.join(siteDir, 'admin');
   if (await fs.stat(adminSrc).then((s) => s.isDirectory(), () => false)) {
     await fs.cp(adminSrc, path.join(outDir, 'admin'), { recursive: true });
+    const encoderSource = path.join(adminSrc, 'image-variants-worker.js');
+    if (await fs.stat(encoderSource).then(() => true, () => false)) {
+      const { build: bundle } = await import('esbuild');
+      await bundle({ entryPoints: [encoderSource], bundle: true, format: 'esm', platform: 'browser',
+        outfile: path.join(outDir, 'admin/image-variants-worker.js'), minify: true });
+      await fs.copyFile(path.join(repoRoot, 'node_modules/@jsquash/avif/codec/enc/avif_enc.wasm'),
+        path.join(outDir, 'admin/avif_enc.wasm'));
+      await fs.copyFile(path.join(repoRoot, 'node_modules/@jsquash/avif/LICENSE'),
+        path.join(outDir, 'admin/avif-LICENSE.txt'));
+    }
   }
 
   const notFound = renderNotFoundPage({ base });

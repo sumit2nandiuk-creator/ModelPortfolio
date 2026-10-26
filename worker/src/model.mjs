@@ -1,6 +1,8 @@
 // Pure helpers for the admin Worker: validation, upload rules, storage keys and
 // base64 helpers. No Cloudflare or network APIs here, so they are easy to test.
 
+import { variantErrors } from '../../scripts/lib/image-variants.mjs';
+
 import { validateTypography } from '../../scripts/lib/fonts.mjs';
 
 export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -199,6 +201,7 @@ export function validateModelShape(model, slug) {
   if (!covers.length) fail('At least one cover photo is required.');
   covers.forEach((c, i) => {
     if (!c || !validMediaRef(c.file)) fail(`Cover photo ${i + 1} needs a file.`);
+    variantErrors(c, validMediaRef).forEach(message => fail(`Cover photo ${i + 1}: ${message}`));
     if (!nonEmpty(c?.alt)) fail(`Cover photo ${i + 1} needs alt text.`);
   });
 
@@ -207,6 +210,7 @@ export function validateModelShape(model, slug) {
     else {
       model.photos.forEach((p, i) => {
         if (!p || !validMediaRef(p.file)) fail(`Photo ${i + 1} needs a file.`);
+        variantErrors(p, validMediaRef).forEach(message => fail(`Photo ${i + 1}: ${message}`));
         if (!nonEmpty(p?.title)) fail(`Photo ${i + 1} needs a title.`);
         if (!nonEmpty(p?.category)) fail(`Photo ${i + 1} needs a category.`);
       });

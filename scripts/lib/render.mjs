@@ -27,14 +27,44 @@ function dimensionAttrs(size) {
   return size ? ` width="${size.width}" height="${size.height}"` : '';
 }
 
+function imageVariants(entry, ctx, format) {
+  return (Array.isArray(entry.variants) ? entry.variants : [])
+    .filter(v => v && v.format === format && v.file && v.width > 0)
+    .sort((a, b) => a.width - b.width)
+    .map(v => ({ ...v, url: ctx.mediaUrl(v.file) }));
+}
+
 function imageSource(entry, ctx) {
+  const webp = imageVariants(entry, ctx, 'webp');
+  const avif = imageVariants(entry, ctx, 'avif');
+  if (webp.length) {
+    const initial = webp.find(v => v.width >= 960) || webp.at(-1);
+    return { src: initial.url, full: webp.at(-1).url, thumb: '', preview: '', webp, avif };
+  }
   const full = ctx.mediaUrl(entry.file);
   const thumb = entry.thumbnail ? ctx.mediaUrl(entry.thumbnail) : '';
   const preview = entry.preview ? ctx.mediaUrl(entry.preview) : '';
   return { src: preview || thumb || full, full, thumb, preview };
 }
 
+function variantSet(variants) {
+  return variants.map(v => `${v.url} ${v.width}w`).join(', ');
+}
+
+function responsiveImage(source, markup, hero = false) {
+  if (!source.webp?.length) return markup;
+  const sizes = hero ? '100vw' : '(max-width: 600px) 75vw, (max-width: 1000px) 45vw, 360px';
+  const img = markup.replace('<img ', `<img srcset="${esc(variantSet(source.webp))}" sizes="${sizes}" `);
+  return `<picture>${source.avif.length ? `<source type="image/avif" srcset="${esc(variantSet(source.avif))}" sizes="${sizes}">` : ''}${img}</picture>`;
+}
+
+function viewerAttrs(source) {
+  if (!source.webp?.length) return '';
+  return ` data-viewer-webp="${esc(variantSet(source.webp))}" data-viewer-avif="${esc(variantSet(source.avif))}"`;
+}
+
 function progressiveAttrs(source) {
+  if (source.webp?.length) return '';
   const attrs = [];
   if (source.preview && source.thumb) attrs.push(`data-medium-src="${esc(source.thumb)}"`);
   if (source.preview || source.thumb) attrs.push(`data-full-src="${esc(source.full)}"`);
@@ -181,8 +211,8 @@ function renderHero(model, ctx) {
       const src = source.full;
       const label = many ? `Open cover photo ${i + 1} of ${covers.length}` : 'Open cover photo';
       return `
-        <button class="carousel-slide" type="button" data-src="${esc(src)}"${(source.thumb || source.preview) ? ` data-thumb="${esc(source.thumb || source.preview)}"` : ''} data-alt="${esc(cover.alt)}" data-caption="" aria-label="${esc(label)}">
-          <img class="hero-media" src="${esc(source.src)}"${progressiveAttrs(source)} alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} loading="${i < 2 ? 'eager' : 'lazy'}"${i === 0 ? ' fetchpriority="high"' : ''} decoding="async" draggable="false">
+        <button class="carousel-slide" type="button" data-src="${esc(src)}"${viewerAttrs(source)}${(source.thumb || source.preview) ? ` data-thumb="${esc(source.thumb || source.preview)}"` : ''} data-alt="${esc(cover.alt)}" data-caption="" aria-label="${esc(label)}">
+          ${responsiveImage(source, `<img class="hero-media" src="${esc(source.src)}"${progressiveAttrs(source)} alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} loading="${(source.webp ? i === 0 : i < 2) ? 'eager' : 'lazy'}"${i === 0 ? ' fetchpriority="high"' : ''} decoding="async" draggable="false">`, true)}
         </button>`;
     })
     .join('');
@@ -412,8 +442,8 @@ function renderPortfolio(model, ctx) {
           const label = [group.title, photo.title].filter(Boolean).join(' · ');
           return `
               <figure class="media-card media-card--photo gallery-item" data-category="${esc(group.title)}">
-                <button class="gallery-btn" type="button" data-index="${i}" data-src="${esc(src)}"${(source.thumb || source.preview) ? ` data-thumb="${esc(source.thumb || source.preview)}"` : ''} data-alt="${esc(alt)}" data-caption="${esc(caption)}" aria-label="Open photo: ${esc(label)}">
-                  <img src="${esc(source.src)}"${progressiveAttrs(source)} alt="${esc(alt)}"${dimensionAttrs(pDim)} loading="lazy" decoding="async" draggable="false">
+                <button class="gallery-btn" type="button" data-index="${i}" data-src="${esc(src)}"${viewerAttrs(source)}${(source.thumb || source.preview) ? ` data-thumb="${esc(source.thumb || source.preview)}"` : ''} data-alt="${esc(alt)}" data-caption="${esc(caption)}" aria-label="Open photo: ${esc(label)}">
+                  ${responsiveImage(source, `<img src="${esc(source.src)}"${progressiveAttrs(source)} alt="${esc(alt)}"${dimensionAttrs(pDim)} loading="lazy" decoding="async" draggable="false">`)}
                 </button>${
                   photo.year
                     ? `
@@ -624,6 +654,13 @@ export function renderModelPage(model, ctx) {
   const coverPreloads = covers
     .slice(0, 1)
     .map((c, i) => {
+      const responsive = imageSource(c, ctx);
+      if (responsive.webp?.length) {
+        // Preload AVIF only: WebP browsers discover their fallback in <picture>.
+        const variants = responsive.avif;
+        if (!variants.length) return '';
+        return `<link rel="preload" as="image" type="image/avif" href="${esc(variants.at(-1).url)}" imagesrcset="${esc(variantSet(variants))}" imagesizes="100vw" fetchpriority="high">`;
+      }
       const url = ctx.mediaUrl(c.preview || c.thumbnail || c.file);
       if (!url) return '';
       return `<link rel="preload" as="image" href="${esc(url)}"${i === 0 ? ' fetchpriority="high"' : ''}>`;

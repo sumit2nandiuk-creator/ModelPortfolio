@@ -1290,12 +1290,31 @@
       return {
         src: btn.getAttribute('data-src'),
         thumb: btn.getAttribute('data-thumb') || '',
+        webp: btn.getAttribute('data-viewer-webp') || '',
+        avif: btn.getAttribute('data-viewer-avif') || '',
         alt: btn.getAttribute('data-alt') || '',
         caption: btn.getAttribute('data-caption') || '',
       };
     }
 
     function setPopupImage(img, item) {
+      if (item.webp) {
+        // Viewer-sized candidates are selected only when this slide is opened.
+        img.setAttribute('sizes', '100vw');
+        img.setAttribute('srcset', item.webp);
+        if (item.avif && img.parentNode && img.parentNode.tagName !== 'PICTURE') {
+          var picture = document.createElement('picture');
+          var source = document.createElement('source');
+          source.setAttribute('type', 'image/avif');
+          source.setAttribute('srcset', item.avif);
+          source.setAttribute('sizes', '100vw');
+          img.parentNode.insertBefore(picture, img);
+          picture.appendChild(source);
+          picture.appendChild(img);
+        }
+        setMediaSrc(img, item.src);
+        return;
+      }
       if (item.thumb && item.thumb !== item.src) {
         img.setAttribute('data-full-src', item.src);
         setMediaSrc(img, item.thumb);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 const source = await readFile(new URL('../site/assets/site.js', import.meta.url), 'utf8');
-const helper = source.slice(source.indexOf('  var cachedOriginalChecks ='), source.indexOf('  function loadFullImageAfterThumbnail('));
+const helper = source.slice(source.indexOf('  var cachedOriginalChecks;'), source.indexOf('  function loadFullImageAfterThumbnail('));
 function harness(candidates = [], hit = true) {
   const attrs = new Map([['src', 'preview.webp'], ['data-medium-src', 'thumb.webp'], ['data-full-src', '/full.jpg']]);
   const requests = [];
@@ -69,4 +69,24 @@ test('uncached photos download originals directly and display them without a thu
   assert.equal(attrs.has('data-medium-src'), false);
   assert.equal(attrs.has('data-full-src'), false);
   assert.equal(finished, 1);
+});
+
+test('early carousel startup initializes cache checks before their declaration executes', async () => {
+  const attrs = new Map([['data-full-src', '/full.jpg']]);
+  let requests = 0;
+  const image = { tagName: 'IMG', getAttribute: key => attrs.get(key), removeAttribute: key => attrs.delete(key) };
+  const context = vm.createContext({
+    image,
+    document: { querySelectorAll: () => [] },
+    window: { URL, location: { href: 'https://example.test/profile', origin: 'https://example.test' },
+      fetch: async () => { requests++; return { ok: true, headers: new Map([['Content-Type', 'image/jpeg']]) }; } },
+    setMediaSrc: (_, url) => attrs.set('src', url), finishPortfolioUpgrade() {}
+  });
+  // Function declarations are hoisted, but variable initializers have not run
+  // when hero.reset() invokes onChange near the start of site.js.
+  assert.doesNotThrow(() => vm.runInContext('useAvailableOriginal(image);\n' + helper, context));
+  context.useAvailableOriginal(image);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requests, 1, 'later declaration must not reset the early cache map');
+  assert.equal(attrs.get('src'), '/full.jpg');
 });

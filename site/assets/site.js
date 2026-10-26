@@ -700,7 +700,7 @@
 
   // Cache-only requests never download an uncached original. Also recognize full
   // images already displayed elsewhere (including the lightbox).
-  var cachedOriginalChecks = Object.create(null);
+  var cachedOriginalChecks;
   function useAvailableOriginal(img) {
     if (!img || img.tagName !== 'IMG') return false;
     var url = img.getAttribute('data-full-src');
@@ -731,6 +731,9 @@
       absolute = new window.URL(url, window.location.href);
       if (absolute.origin !== window.location.origin) return false;
     } catch (_) { return false; }
+    // Carousel reset can call this hoisted function before execution reaches
+    // the declaration above. Initialize lazily and never reset pending checks.
+    if (!cachedOriginalChecks) cachedOriginalChecks = Object.create(null);
     if (!cachedOriginalChecks[absolute.href]) {
       cachedOriginalChecks[absolute.href] = window.fetch(absolute.href, {
         cache: 'only-if-cached', mode: 'same-origin'

@@ -47,6 +47,13 @@ function imageSource(entry, ctx) {
   return { src: preview || thumb || full, full, thumb, preview };
 }
 
+// Hero slides skip both tiny previews and normal thumbnails: start at the
+// largest available display variant, or the untouched original for old data.
+function heroImageSource(entry, ctx) {
+  const source = imageSource({ ...entry, preview: undefined, thumbnail: undefined }, ctx);
+  return { ...source, src: source.full, thumb: '', preview: '' };
+}
+
 function variantSet(variants) {
   return variants.map(v => `${v.url} ${v.width}w`).join(', ');
 }
@@ -102,6 +109,7 @@ function documentShell({
   bodyStyle = '',
   fontsHref = googleFontsHrefFor(),
   extraHead = '',
+  priorityHead = '',
   robots = 'index,follow',
   base = '/',
 }) {
@@ -110,6 +118,7 @@ function documentShell({
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  ${priorityHead}
   <title>${esc(title)}</title>
   ${description ? `<meta name="description" content="${esc(description)}">` : ''}
   <meta name="robots" content="${esc(robots)}">
@@ -207,18 +216,13 @@ function renderHero(model, ctx) {
   // One slide per cover photo. A tap opens the viewer; a drag moves the slides instead.
   const slides = covers
     .map((cover, i) => {
-      // Never use the tiny preview for an above-the-fold hero.
-      const source = imageSource({ ...cover, preview: undefined }, ctx);
-      const thumb = cover.thumbnail ? ctx.mediaUrl(cover.thumbnail) : '';
-      const display = thumb ? { src: thumb, full: source.full, thumb, preview: '' } : source;
-      const upgrade = thumb && source.webp?.length
-        ? ` data-full-webp="${esc(variantSet(source.webp))}" data-full-avif="${esc(variantSet(source.avif))}"`
-        : '';
-      const src = source.full;
+      // Hero slides load their full-size display source directly; no thumbnail
+      // or preview is requested and there is no progressive src swap.
+      const source = heroImageSource(cover, ctx);
       const label = many ? `Open cover photo ${i + 1} of ${covers.length}` : 'Open cover photo';
       return `
-        <button class="carousel-slide" type="button" data-src="${esc(src)}"${viewerAttrs(source)}${(source.thumb || source.preview) ? ` data-thumb="${esc(source.thumb || source.preview)}"` : ''} data-alt="${esc(cover.alt)}" data-caption="" aria-label="${esc(label)}">
-          ${responsiveImage(display, `<img class="hero-media" src="${esc(display.src)}"${progressiveAttrs(display)}${upgrade} alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} loading="eager" fetchpriority="high" decoding="async" draggable="false">`, true)}
+        <button class="carousel-slide" type="button" data-src="${esc(source.full)}"${viewerAttrs(source)} data-alt="${esc(cover.alt)}" data-caption="" aria-label="${esc(label)}">
+          ${responsiveImage(source, `<img class="hero-media" src="${esc(source.src)}" alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} loading="eager" fetchpriority="high" decoding="async" draggable="false">`, true)}
         </button>`;
     })
     .join('');
@@ -639,7 +643,7 @@ export function renderModelPage(model, ctx) {
     }
   };
   for (const coverEntry of covers) {
-    if (coverEntry?.file) registerRemoteOrigin(ctx.mediaUrl(coverEntry.thumbnail || coverEntry.file));
+    if (coverEntry?.file) registerRemoteOrigin(heroImageSource(coverEntry, ctx).src);
   }
   for (const p of model.photos ?? []) {
     if (p.file) registerRemoteOrigin(ctx.mediaUrl(p.file));
@@ -656,34 +660,30 @@ export function renderModelPage(model, ctx) {
     )
     .join('\n  ');
 
-  // Preload the first hero image from <head>; all slides are eager/high in markup.
+  // Preload the first full-size hero image before the title, fonts and CSS.
+  // Matching the <picture> type/srcset avoids a duplicate preload download.
   const coverPreloads = covers
     .slice(0, 1)
-    .map((c, i) => {
-      if (c.thumbnail) {
-        return `<link rel="preload" as="image" href="${esc(ctx.mediaUrl(c.thumbnail))}" fetchpriority="high">`;
-      }
-      const responsive = imageSource({ ...c, preview: undefined }, ctx);
-      if (responsive.webp?.length) {
-        // Preload AVIF only: WebP browsers discover their fallback in <picture>.
-        const variants = responsive.avif;
-        if (!variants.length) return '';
+    .map((c) => {
+      const source = heroImageSource(c, ctx);
+      if (source.avif?.length) {
+        const variants = source.avif;
         return `<link rel="preload" as="image" type="image/avif" href="${esc(variants.at(-1).url)}" imagesrcset="${esc(variantSet(variants))}" imagesizes="100vw" fetchpriority="high">`;
       }
-      const url = ctx.mediaUrl(c.file);
-      if (!url) return '';
-      return `<link rel="preload" as="image" href="${esc(url)}"${i === 0 ? ' fetchpriority="high"' : ''}>`;
+      if (source.webp?.length) {
+        return `<link rel="preload" as="image" type="image/webp" href="${esc(source.src)}" imagesrcset="${esc(variantSet(source.webp))}" imagesizes="100vw" fetchpriority="high">`;
+      }
+      return source.src ? `<link rel="preload" as="image" href="${esc(source.src)}" fetchpriority="high">` : '';
     })
-    .filter(Boolean)
     .join('\n  ');
 
+  // Earliest hints: connect to the media origin, then request the LCP image.
+  const priorityHead = [preconnectTags, coverPreloads].filter(Boolean).join('\n  ');
   const extraHead = [
     `<meta property="og:title" content="${esc(title)}">`,
     `<meta property="og:description" content="${esc(description)}">`,
     `<meta property="og:type" content="profile">`,
     cover ? `<meta property="og:image" content="${esc(cover)}">` : '',
-    preconnectTags,
-    coverPreloads,
   ]
     .filter(Boolean)
     .join('\n  ');
@@ -712,6 +712,7 @@ export function renderModelPage(model, ctx) {
     bodyStyle: fontStyleVarsFor(model.fonts),
     fontsHref: googleFontsHrefFor(model.fonts, model.richText),
     extraHead,
+    priorityHead,
     body,
   });
 }

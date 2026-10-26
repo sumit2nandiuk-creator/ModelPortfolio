@@ -484,8 +484,8 @@
   if (heroRoot) {
     var heroImgs = Array.prototype.slice.call(heroRoot.querySelectorAll('img'));
     heroImgs.forEach(function (img) {
-      // Markup already makes every slide eager/high so the first-screen
-      // thumbnails outrank below-the-fold images; decode off the main thread.
+      // Markup already makes every full-size slide eager/high so first-screen
+      // images outrank below-the-fold media; decode off the main thread.
       img.decoding = 'async';
       img.fetchPriority = 'high';
     });
@@ -657,7 +657,7 @@
     return fallback || declared;
   }
 
-  // Preserve actual painted pixels across a viewer or hero quality upgrade. A
+  // Preserve actual painted pixels across viewer upgrades and hero retries. A
   // decoded preload alone does not prevent WebKit clearing the visible <img> on
   // src change.
   function holdPopupImage(img) {
@@ -827,18 +827,6 @@
       return;
     }
     if (useAvailableOriginal(img)) return;
-    // Hero slideshow: only upgrade the current slide eagerly to avoid hanging
-    // the browser with N concurrent high-res downloads. Every slide already
-    // starts with an eager, high-priority normal thumbnail, so there is no
-    // black flash; full upgrades happen when the slide becomes current.
-    var heroCarousel = img.closest && img.closest('.hero-carousel');
-    if (heroCarousel) {
-      var heroSlide = img.closest('.carousel-slide');
-      if (!heroSlide || !heroSlide.classList.contains('is-current')) {
-        finishPortfolioUpgrade(img);
-        return;
-      }
-    }
     var currentUrl = getMediaSrc(img);
     var fullUrl = img.getAttribute('data-full-src');
     if (!fullUrl || currentUrl === fullUrl || img.src === fullUrl) {
@@ -856,32 +844,10 @@
     }
     img._loadingFullImage = true;
     img._loadingFullUrl = fullUrl;
-    // Hero upgrades wait for the normal thumbnail to paint first and stay low
-    // priority, so all eager/high hero thumbnails win the network race.
-    if (heroCarousel && (!img.complete || !img.naturalWidth)) {
-      img._loadingFullImage = false;
-      img._loadingFullUrl = '';
-      finishPortfolioUpgrade(img);
-      return;
-    }
+    // Gallery upgrades stay low priority so full-size hero/LCP images win.
     var full = new window.Image();
     full.fetchPriority = 'low';
     if (typeof full.setAttribute === 'function') full.setAttribute('fetchpriority', 'low');
-    var webpSet = img.getAttribute('data-full-webp');
-    var avifSet = img.getAttribute('data-full-avif');
-    if (webpSet) {
-      if (avifSet) {
-        var picture = document.createElement('picture');
-        var source = document.createElement('source');
-        source.setAttribute('type', 'image/avif');
-        source.setAttribute('sizes', '100vw');
-        source.setAttribute('srcset', avifSet);
-        picture.appendChild(source);
-        picture.appendChild(full);
-      }
-      full.sizes = '100vw';
-      full.srcset = webpSet;
-    }
     // Keep the current preview visible while downloading. Never wait for an
     // intermediate thumbnail before downloading or displaying the original.
     function showOriginal() {
@@ -890,9 +856,7 @@
       img.removeAttribute('data-full-src');
       img._loadingFullImage = false;
       img._loadingFullUrl = '';
-      img.removeAttribute('data-full-webp');
-      img.removeAttribute('data-full-avif');
-      setMediaSrc(img, full.currentSrc || fullUrl);
+      setMediaSrc(img, fullUrl);
       finishPortfolioUpgrade(img);
     }
     full.onload = function () {
@@ -1119,7 +1083,7 @@
   // to avoid N concurrent high-res downloads hanging the browser.
   // Portfolio uses a concurrency-limited queue (max 2) so a model with 30 photos
   // still loads preview first (tiny 64px, no hang) and upgrades medium->full smoothly
-  // with blur fade, same as hero.
+  // with blur fade.
   var portfolioUpgradeQueue = [];
   var portfolioUpgrading = 0;
   var MAX_PORTFOLIO_CONCURRENT = 2;
@@ -1140,7 +1104,7 @@
     // Attach completion hook so we know when this img's upgrade chain finished
     next._portfolioDone = onPortfolioUpgradeDone;
     loadFullImageAfterThumbnail(next);
-    // Fallback: if upgrade never starts (e.g., hero guard), release slot after tick
+    // Fallback: if an upgrade never starts, release its queue slot after a tick
     setTimeout(function () {
       if (next._upgradeQueued && !next._loadingFullImage) {
         next._upgradeQueued = false;
@@ -1163,6 +1127,7 @@
           var img = entry.target;
           try { progressiveObserver.unobserve(img); } catch (_) {}
           if (img.getAttribute('data-medium-src') || img.getAttribute('data-full-src')) {
+            // New heroes have no progressive attrs; this supports cached old markup.
             var isHero = img.closest && img.closest('.hero-carousel');
             if (isHero) loadFullImageAfterThumbnail(img);
             else enqueuePortfolioUpgrade(img);
@@ -1175,6 +1140,7 @@
   function queueProgressiveUpgrade(img) {
     if (!img || img.tagName !== 'IMG') return;
     if (!img.getAttribute('data-medium-src') && !img.getAttribute('data-full-src')) return;
+    // New heroes load full-size directly; retain this for cached old markup.
     var hero = img.closest && img.closest('.hero-carousel');
     if (hero) {
       var slide = img.closest('.carousel-slide');

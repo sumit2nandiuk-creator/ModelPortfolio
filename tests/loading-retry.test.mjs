@@ -59,6 +59,7 @@ test('website loading speed: preloads LCP cover image, preconnects origins, and 
 
     // 1. Only the LCP cover is preloaded; preloading every full-size cover delays first paint.
     assert.match(html, /<link rel="preload" as="image" href="https:\/\/media\.example\.test\/speed-test\/hero-1\.jpg" fetchpriority="high">/);
+    assert.ok(html.indexOf('<link rel="preload" as="image"') < html.indexOf('<title>'), 'first hero image is requested before page metadata');
     assert.doesNotMatch(html, /<link rel="preload" as="image" href="https:\/\/media\.example\.test\/speed-test\/hero-2\.jpg">/);
 
     // 2. <head> optimizations: Preconnect and dns-prefetch to remote media CDN origin

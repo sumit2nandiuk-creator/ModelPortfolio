@@ -846,3 +846,18 @@ label { gap: 4px; font-size: 0.8rem; }
 .generation-progress.is-done .upload-fill { background: #27834d; }
 .generation-progress.is-error .upload-fill { background: #b34535; }
 .generation-progress.is-error .generation-detail { color: #b34535; }
+
+/* Photos still published as their originals (no AVIF/WebP variants yet). */
+.variant-notice {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 14px;
+  margin: 0 0 12px; padding: 11px 13px;
+  background: #fbf4ea; border: 1px solid #ead7bd; border-left: 3px solid var(--accent); border-radius: 10px;
+}
+.variant-notice-text { display: grid; gap: 2px; flex: 1 1 260px; min-width: 0; font-size: 0.84rem; line-height: 1.4; }
+.variant-notice-text strong { font-size: 0.9rem; color: var(--ink); }
+.variant-notice-text span { color: var(--muted); }
+.variant-notice .btn { flex: 0 0 auto; }
+@media (max-width: 600px) {
+  .variant-notice { padding: 10px 11px; }
+  .variant-notice .btn { width: 100%; }
+}

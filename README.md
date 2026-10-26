@@ -230,6 +230,11 @@ for cover and portfolio photos. New photo uploads generate these automatically
 before the upload is marked complete. Save new uploads to publish as usual; the
 backfill button saves the profile automatically.
 
+A photo without variants is published as its original file (often a multi-MB
+camera JPEG), so the editor shows a notice with a **Create AVIF/WebP versions**
+button whenever any cover or portfolio photo is missing them, for example photos
+added before variants existed or uploads whose encoding failed.
+
 - AVIF (quality 55, jSquash/libavif WASM worker) and WebP (quality 82) at
   **480, 960, 1600 and 2400 pixels wide**, preserving aspect ratio. For smaller
   originals, widths are capped at the native width and duplicates are omitted.

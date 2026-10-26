@@ -1051,3 +1051,56 @@ test('generation progress reports profile save failures without claiming 100 per
   assert.match(panel.textContent, /profile save failed/);
   assert.equal(h.doc.getElementById('generate-thumbnails').disabled, false, 'action is restored');
 });
+
+const HOSTED = 'https://modelportfolio.pages.dev/media/sushmita-ghosh/';
+const fullVariants = (widths = [480, 800]) => widths.flatMap((width) => ['webp', 'avif'].map((format) => (
+  { file: `${HOSTED}variant-${width}.${format}`, width, height: width * 1.5, format }
+)));
+
+test('admin flags photos still published as originals and creates their AVIF/WebP versions from the notice', async () => {
+  const h = await createAdminUploadHarness({
+    // Uploaded before responsive variants existed: no variants, thumbnails or size.
+    cover: [{ file: 'cover.jpg', alt: 'Cover' }],
+    photos: [
+      { file: 'cover.jpg', title: 'Cover again', category: 'Bridal', alt: '' },
+      { file: `${HOSTED}1792918212830-bf0994bd-food-mandi-4-6-susmita.jpeg`, title: 'Banner', category: 'Banner Shoot', alt: '' },
+    ],
+  });
+  await h.boot();
+
+  const notice = h.doc.querySelector('[data-variant-notice]');
+  assert.ok(notice, 'editor warns about photos without AVIF/WebP versions');
+  assert.match(notice.textContent, /2 photos are published as full-size originals/, 'a file used as cover and photo is counted once');
+  assert.match(notice.textContent, /visitors download the original files/);
+  const action = h.doc.getElementById('variant-notice-generate');
+  assert.equal(action.textContent, 'Create AVIF/WebP versions', 'the action is labelled, not icon-only');
+
+  action.dispatchEvent({ type: 'click', bubbles: true });
+  for (let i = 0; i < 16; i++) await h.flush();
+
+  assert.equal(h.savedPayloads.length, 1, 'the profile is saved with the generated versions');
+  const saved = h.savedPayloads[0].model;
+  for (const entry of [saved.cover[0], ...saved.photos]) {
+    assert.deepEqual(entry.variants.map((v) => `${v.format}:${v.width}`).sort(), ['avif:480', 'avif:800', 'webp:480', 'webp:800']);
+  }
+  assert.equal(h.doc.querySelector('[data-variant-notice]'), null, 'the notice disappears once every photo has its versions');
+});
+
+test('admin notice reports photos missing only some sizes, and stays hidden when every photo is complete', async () => {
+  const partial = await createAdminUploadHarness({
+    cover: [{ file: 'cover.jpg', alt: 'Cover', width: 800, height: 1200, variants: fullVariants().filter((v) => v.format === 'webp') }],
+  });
+  await partial.boot();
+  const notice = partial.doc.querySelector('[data-variant-notice]');
+  assert.ok(notice, 'AVIF failures are surfaced for a retry');
+  assert.match(notice.textContent, /1 photo is missing some AVIF\/WebP sizes/);
+  assert.doesNotMatch(notice.textContent, /full-size originals/, 'WebP is already served, so originals are not claimed');
+
+  const complete = await createAdminUploadHarness({
+    cover: [{ file: 'cover.jpg', alt: 'Cover', width: 800, height: 1200, variants: fullVariants() }],
+    photos: [{ file: `${HOSTED}photo.jpeg`, title: 'Photo', category: 'Bridal', alt: '', width: 800, height: 1200, variants: fullVariants() }],
+  });
+  await complete.boot();
+  assert.ok(complete.doc.getElementById('editor-body').innerHTML.length > 0, 'editor rendered');
+  assert.equal(complete.doc.querySelector('[data-variant-notice]'), null);
+});

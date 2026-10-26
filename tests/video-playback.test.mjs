@@ -123,7 +123,22 @@ test('the poster carries one white play triangle and no round button', async () 
   assert.match(mark, /left:\s*50%;/);
   assert.match(mark, /transform:\s*translate\(-50%,\s*-50%\)/, 'the mark sits in the centre');
   assert.match(mark, /pointer-events:\s*none/, 'taps go through to the poster');
-  assert.match(mark, /clamp\(42px,\s*21%,\s*104px\)/, 'the mark scales with the card');
+  // Sized like a native control-bar glyph: a fixed, small height, never a big overlay.
+  assert.match(mark, /height:\s*var\(--video-play-mark,\s*20px\)/, 'the mark uses the control-glyph size');
+  assert.match(mark, /width:\s*calc\(var\(--video-play-mark,\s*20px\)\s*\*\s*7\s*\/\s*9\)/, 'the mark keeps its 7:9 shape');
+  // Only the two size declarations matter here; translate(-50%, -50%) is centring.
+  const widthDecl = mark.match(/\bwidth:\s*([^;]+);/)[1];
+  const heightDecl = mark.match(/\bheight:\s*([^;]+);/)[1];
+  assert.doesNotMatch(widthDecl, /%|clamp\(/, 'the mark does not scale with the card width');
+  assert.doesNotMatch(heightDecl, /%|clamp\(/, 'the mark height is fixed, like a control glyph');
+  assert.doesNotMatch(mark, /aspect-ratio/, 'both edges are set from the same size');
+
+  // The size lives on the frame rule, so every card follows one number.
+  assert.match(css, /\.video-frame\s*\{[^}]*--video-play-mark:\s*\d+px/);
+  const size = css.match(/--video-play-mark:\s*(\d+)px/);
+  assert.ok(size, 'the frame defines the mark size');
+  const height = Number(size[1]);
+  assert.ok(height >= 14 && height <= 24, `the mark stays at control-glyph size, got ${height}px`);
 
   // It is scoped to an idle frame, so it disappears while the video plays.
   assert.match(css, /\.video-frame\.is-playing\s*\{\s*cursor:\s*default;\s*\}/);

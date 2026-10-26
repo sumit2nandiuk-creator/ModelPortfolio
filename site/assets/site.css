@@ -2051,11 +2051,11 @@ video.is-failed {
 .video-frame {
   position: relative;
   cursor: pointer;
-  /* Height of the play mark on an idle poster. Kept at the size of the play
-     glyph the native control bar shows when a video is paused, so the mark reads
-     as a control icon rather than a big overlay. Change this one number to tune
-     it. */
-  --video-play-mark: 20px;
+  /* Height of the play mark on an idle poster. Matches the play glyph the native
+     player shows in the middle of a paused video (measured at ~33px on a phone),
+     so an idle poster and a paused video look the same. Change this one number
+     to tune it. */
+  --video-play-mark: 34px;
 }
 .video-frame.is-playing { cursor: default; }
 .video-frame:not(.is-playing) video:focus-visible { outline: 3px solid white; outline-offset: -3px; }
@@ -2076,16 +2076,18 @@ video.is-failed {
    the poster so the photo itself stays visible. It is display only — the tap
    target is the poster underneath, which starts playback. It disappears as soon
    as the video plays and the native controls take over. Sized like the native
-   control-bar glyph (fixed, independent of the card size), not like an overlay. */
+   centre glyph of a paused video (fixed, independent of the card size), not like
+   an overlay. */
 .video-frame:not(.is-playing)::after {
   content: '';
   position: absolute;
   top: 50%;
   left: 50%;
-  width: calc(var(--video-play-mark, 20px) * 7 / 9);
-  height: var(--video-play-mark, 20px);
+  /* The glyph is 84 x 96, so it fills the box exactly at the native proportions. */
+  width: calc(var(--video-play-mark, 34px) * 7 / 8);
+  height: var(--video-play-mark, 34px);
   transform: translate(-50%, -50%);
-  background: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2070%2090'%3E%3Cpath%20d='M8%208%20L62%2045%20L8%2082%20Z'%20fill='%23fff'%20stroke='%23fff'%20stroke-width='16'%20stroke-linejoin='round'%20stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  background: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2084%2096'%3E%3Cpath%20d='M9%209%20L76%2048%20L9%2087%20Z'%20fill='%23fff'%20stroke='%23fff'%20stroke-width='18'%20stroke-linejoin='round'%20stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55)) drop-shadow(0 0 6px rgba(0, 0, 0, 0.35));
   pointer-events: none;
   z-index: 2;

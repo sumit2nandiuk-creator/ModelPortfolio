@@ -115,7 +115,7 @@ test('the poster carries one white play triangle and no round button', async () 
   const mark = css.slice(markStart, css.indexOf('}', markStart) + 1);
   assert.match(mark, /content:\s*''/, 'the mark is a CSS pseudo-element, not markup');
   assert.match(mark, /data:image\/svg\+xml/, 'the glyph is an inline SVG triangle');
-  assert.match(mark, /%3Cpath%20d='M8%208%20L62%2045%20L8%2082%20Z'/, 'a closed path draws the triangle');
+  assert.match(mark, /%3Cpath%20d='M9%209%20L76%2048%20L9%2087%20Z'/, 'a closed path draws the triangle');
   assert.match(mark, /fill='%23fff'/, 'the triangle is white');
   assert.doesNotMatch(mark, /border-radius|circle/, 'no circle around the glyph');
   assert.match(mark, /position:\s*absolute;/);
@@ -123,9 +123,11 @@ test('the poster carries one white play triangle and no round button', async () 
   assert.match(mark, /left:\s*50%;/);
   assert.match(mark, /transform:\s*translate\(-50%,\s*-50%\)/, 'the mark sits in the centre');
   assert.match(mark, /pointer-events:\s*none/, 'taps go through to the poster');
-  // Sized like a native control-bar glyph: a fixed, small height, never a big overlay.
-  assert.match(mark, /height:\s*var\(--video-play-mark,\s*20px\)/, 'the mark uses the control-glyph size');
-  assert.match(mark, /width:\s*calc\(var\(--video-play-mark,\s*20px\)\s*\*\s*7\s*\/\s*9\)/, 'the mark keeps its 7:9 shape');
+  // Sized to the centre glyph a paused video shows: a fixed height, never a big
+  // overlay, and an 84:96 box that matches the glyph's own proportions.
+  assert.match(mark, /height:\s*var\(--video-play-mark,\s*34px\)/, 'the mark uses the paused-glyph size');
+  assert.match(mark, /width:\s*calc\(var\(--video-play-mark,\s*34px\)\s*\*\s*7\s*\/\s*8\)/, 'the mark keeps the native 7:8 proportions');
+  assert.match(mark, /viewBox='0%200%2084%2096'/, 'the glyph is 84x96, so it fills the box at its native aspect');
   // Only the two size declarations matter here; translate(-50%, -50%) is centring.
   const widthDecl = mark.match(/\bwidth:\s*([^;]+);/)[1];
   const heightDecl = mark.match(/\bheight:\s*([^;]+);/)[1];
@@ -138,7 +140,10 @@ test('the poster carries one white play triangle and no round button', async () 
   const size = css.match(/--video-play-mark:\s*(\d+)px/);
   assert.ok(size, 'the frame defines the mark size');
   const height = Number(size[1]);
-  assert.ok(height >= 14 && height <= 24, `the mark stays at control-glyph size, got ${height}px`);
+  // Measured against the native paused-state glyph (89x100 device px at 3x = 29.7x33.3
+  // css px), so the mark has to stay in that range — bigger reads as an overlay.
+  assert.ok(height >= 30 && height <= 38, `the mark stays at paused-glyph size, got ${height}px`);
+  assert.ok(Math.abs((height * 7 / 8) / height - 0.875) < 0.001, 'width follows the native 7:8 aspect');
 
   // It is scoped to an idle frame, so it disappears while the video plays.
   assert.match(css, /\.video-frame\.is-playing\s*\{\s*cursor:\s*default;\s*\}/);

@@ -2046,8 +2046,8 @@ video.is-failed {
 }
 
 /* Source-free idle videos only fetch their media after the poster is played.
-   Nothing is drawn over the poster: the photo itself starts playback, and the
-   native controls appear with the playing video. */
+   The poster itself is the play target, and the native controls appear with the
+   playing video. */
 .video-frame {
   position: relative;
   cursor: pointer;
@@ -2055,10 +2055,9 @@ video.is-failed {
 .video-frame.is-playing { cursor: default; }
 .video-frame:not(.is-playing) video:focus-visible { outline: 3px solid white; outline-offset: -3px; }
 
-/* No play glyph on the poster either. iOS Safari paints its own large translucent
-   "start playback" circle over a video, and other WebKit builds add an overlay play
-   button; both are hidden while the frame is idle, so a video card reads as a clean
-   photo until it is played. */
+/* A browser paints its own large play circle over a video showing a poster
+   (iOS Safari does), so the native glyphs are hidden while the frame is idle. The
+   poster gets our own mark instead: one solid white triangle, no circle. */
 .video-frame:not(.is-playing) video::-webkit-media-controls,
 .video-frame:not(.is-playing) video::-webkit-media-controls-panel,
 .video-frame:not(.is-playing) video::-webkit-media-controls-play-button,
@@ -2066,6 +2065,24 @@ video.is-failed {
 .video-frame:not(.is-playing) video::-webkit-media-controls-overlay-play-button {
   display: none !important;
   -webkit-appearance: none;
+}
+
+/* Play mark on an idle video: a white triangle with softened corners, drawn over
+   the poster so the photo itself stays visible. It is display only — the tap
+   target is the poster underneath, which starts playback. It disappears as soon
+   as the video plays and the native controls take over. */
+.video-frame:not(.is-playing)::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: clamp(42px, 21%, 104px);
+  aspect-ratio: 7 / 9;
+  transform: translate(-50%, -50%);
+  background: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2070%2090'%3E%3Cpath%20d='M8%208%20L62%2045%20L8%2082%20Z'%20fill='%23fff'%20stroke='%23fff'%20stroke-width='16'%20stroke-linejoin='round'%20stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.35));
+  pointer-events: none;
+  z-index: 2;
 }
 
 .gallery-btn > picture, .lb-stage .carousel-slide > picture { display: contents; }

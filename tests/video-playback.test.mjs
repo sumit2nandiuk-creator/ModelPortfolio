@@ -47,7 +47,7 @@ function createHarness({ playback = 'ok' } = {}) {
   };
 }
 
-test('an idle video poster carries no play button, no glyph and no native controls', () => {
+test('an idle video poster carries no button markup and no native controls', () => {
   const h = createHarness();
   assert.equal(h.loads, 0);
   assert.equal(h.plays, 0);
@@ -104,10 +104,32 @@ test('blocked playback restores the playable poster', async () => {
   }
 });
 
-test('no round play button is rendered or styled anywhere', async () => {
+test('the poster carries one white play triangle and no round button', async () => {
   const css = await readFile(new URL('../site/assets/site.css', import.meta.url), 'utf8');
-  assert.doesNotMatch(css, /\.video-play-button/, 'the round play button styles are gone');
-  // WebKit's own poster glyphs stay hidden while the frame is idle.
+  assert.doesNotMatch(css, /\.video-play-button/, 'the old round button styles are gone');
+
+  // The mark on an idle poster: a triangle drawn as an inline SVG, centred, and
+  // display-only so the poster underneath stays the tap target.
+  const markStart = css.indexOf('.video-frame:not(.is-playing)::after {');
+  assert.notEqual(markStart, -1, 'an idle video poster draws a play mark');
+  const mark = css.slice(markStart, css.indexOf('}', markStart) + 1);
+  assert.match(mark, /content:\s*''/, 'the mark is a CSS pseudo-element, not markup');
+  assert.match(mark, /data:image\/svg\+xml/, 'the glyph is an inline SVG triangle');
+  assert.match(mark, /%3Cpath%20d='M8%208%20L62%2045%20L8%2082%20Z'/, 'a closed path draws the triangle');
+  assert.match(mark, /fill='%23fff'/, 'the triangle is white');
+  assert.doesNotMatch(mark, /border-radius|circle/, 'no circle around the glyph');
+  assert.match(mark, /position:\s*absolute;/);
+  assert.match(mark, /top:\s*50%;/);
+  assert.match(mark, /left:\s*50%;/);
+  assert.match(mark, /transform:\s*translate\(-50%,\s*-50%\)/, 'the mark sits in the centre');
+  assert.match(mark, /pointer-events:\s*none/, 'taps go through to the poster');
+  assert.match(mark, /clamp\(42px,\s*21%,\s*104px\)/, 'the mark scales with the card');
+
+  // It is scoped to an idle frame, so it disappears while the video plays.
+  assert.match(css, /\.video-frame\.is-playing\s*\{\s*cursor:\s*default;\s*\}/);
+  assert.doesNotMatch(css, /\.video-frame\.is-playing::after/, 'no mark is drawn once playback starts');
+
+  // WebKit's own poster glyphs stay hidden, so only our triangle shows.
   const guardStart = css.indexOf('.video-frame:not(.is-playing) video::-webkit-media-controls,');
   assert.notEqual(guardStart, -1, 'the idle-poster control guard exists');
   const guard = css.slice(guardStart, css.indexOf('}', guardStart));
@@ -116,7 +138,8 @@ test('no round play button is rendered or styled anywhere', async () => {
   assert.match(guard, /display:\s*none\s*!important/);
   assert.match(guard, /-webkit-appearance:\s*none/);
 
+  // The mark lives in CSS only: the video card markup stays a plain poster.
   const render = await readFile(new URL('../scripts/lib/render.mjs', import.meta.url), 'utf8');
-  assert.doesNotMatch(render, /video-play-button/, 'the video card no longer renders a play button');
-  assert.doesNotMatch(render, /▶/, 'the video card no longer renders a play glyph');
+  assert.doesNotMatch(render, /video-play-button/, 'the video card renders no play button');
+  assert.doesNotMatch(render, /▶/, 'the video card renders no play glyph in its markup');
 });

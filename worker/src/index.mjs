@@ -391,6 +391,17 @@ async function renderModelPageRequest(context, { trailingSlash = true } = {}) {
 
   const url = new URL(request.url);
   const base = normalizeBasePath(env.SITE_BASE_PATH);
+  // A page view needs the profile state, the profile and the seed image sizes.
+  // Each is its own round trip (the R2 bucket can be on another continent from
+  // the visitor), so start all three together instead of one after another
+  // before the first byte. The decisions below are unchanged.
+  const isPageRead = trailingSlash && (request.method === 'GET' || request.method === 'HEAD');
+  const storedRead = isPageRead ? env.MEDIA.get(profileKeyFor(slug)) : null;
+  const seedRead = isPageRead
+    ? fetchAssetJson(url, env, `/_seed/${encodeURIComponent(slug)}.json`).catch(() => null)
+    : null;
+  // Not awaited when an early return wins; a failure is still raised where it is awaited.
+  if (storedRead) storedRead.catch(() => {});
   const state = await profileState(env.MEDIA, slug);
   if (state === 'archived' || state === 'deleted' || state === 'recreated-archived') {
     return new Response('This profile is not available.', {
@@ -413,7 +424,7 @@ async function renderModelPageRequest(context, { trailingSlash = true } = {}) {
     return new Response('Method not allowed.', { status: 405, headers: { Allow: 'GET, HEAD' } });
   }
 
-  const stored = await env.MEDIA.get(profileKeyFor(slug));
+  const stored = await storedRead;
   if (!stored) {
     if (state === 'recreated') return new Response('This profile is not available.', { status: 404, headers: { 'Cache-Control': 'no-store' } });
     return context.next();
@@ -433,7 +444,7 @@ async function renderModelPageRequest(context, { trailingSlash = true } = {}) {
   }
 
   const model = JSON.parse(await readObjectText(stored));
-  const seed = await fetchAssetJson(url, env, `/_seed/${encodeURIComponent(slug)}.json`);
+  const seed = await seedRead;
   const sizes = buildSizeMap(model, seed?.sizes);
   const html = renderModelPage(model, {
     year: new Date().getUTCFullYear(),

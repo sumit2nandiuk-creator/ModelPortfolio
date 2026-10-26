@@ -66,13 +66,15 @@ test('website loading speed: preloads LCP cover image, preconnects origins, and 
     assert.match(html, /<link rel="preconnect" href="https:\/\/media\.example\.test" crossorigin>/);
     assert.match(html, /<link rel="dns-prefetch" href="https:\/\/media\.example\.test">/);
 
-    // 3. <head> optimizations: dns-prefetch for Google Fonts
-    assert.match(html, /<link rel="dns-prefetch" href="https:\/\/fonts\.googleapis\.com">/);
-    assert.match(html, /<link rel="dns-prefetch" href="https:\/\/fonts\.gstatic\.com">/);
+    // 3. Fonts are self-hosted: no render-blocking third-party stylesheet or connection.
+    assert.doesNotMatch(html, /fonts\.googleapis\.com|fonts\.gstatic\.com/);
+    assert.match(html, /<link rel="preload" href="\/assets\/fonts\/cormorant-garamond-latin-400-italic\.woff2" as="font"/);
 
-    // 4. All hero slides load eagerly.
+    // 4. The first slide loads eagerly at high priority; later slides request
+    //    nothing until site.js activates them after the page has loaded.
     assert.match(html, /<img class="hero-media" src="https:\/\/media\.example\.test\/speed-test\/hero-1\.jpg" alt="Hero 1"[^>]*loading="eager" fetchpriority="high" decoding="async"/);
-    assert.match(html, /<img class="hero-media" src="https:\/\/media\.example\.test\/speed-test\/hero-2.jpg" alt="Hero 2"[^>]*loading="eager" fetchpriority="high" decoding="async"/);
+    assert.match(html, /<img class="hero-media" data-deferred-src="https:\/\/media\.example\.test\/speed-test\/hero-2.jpg" alt="Hero 2"[^>]*loading="lazy" fetchpriority="low" decoding="async"/);
+    assert.doesNotMatch(html, /\ssrc="https:\/\/media\.example\.test\/speed-test\/hero-2\.jpg"/);
 
     // 5. Portfolio gallery photos: loading="lazy" decoding="async"
     assert.match(html, /<img src="https:\/\/media\.example\.test\/speed-test\/photo-1\.jpg" alt="Photo 1"[^>]*loading="lazy" decoding="async"/);

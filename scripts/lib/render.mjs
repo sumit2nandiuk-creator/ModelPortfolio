@@ -47,6 +47,12 @@ function imageSource(entry, ctx) {
   return { src: preview || thumb || full, full, thumb, preview };
 }
 
+// Moves an <img>/<picture>'s src and srcset attributes to data-deferred-*, so
+// the browser requests nothing until site.js copies them back.
+function deferImageSources(markup) {
+  return markup.replace(/ (srcset|src)="/g, ' data-deferred-$1="');
+}
+
 // Hero slides skip both tiny previews and normal thumbnails: start at the
 // largest available display variant, or the untouched original for old data.
 function heroImageSource(entry, ctx) {
@@ -100,6 +106,16 @@ function sectionsFor(model) {
   };
 }
 
+// Extra Google Fonts families (only when a profile picks fonts that are not
+// self-hosted). Loaded without blocking the first paint: the families already
+// use display=swap, so text shows in the fallback font until they arrive.
+function googleFontsLinks(href) {
+  if (!href) return '';
+  return `<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="${esc(href)}" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="${esc(href)}"></noscript>`;
+}
+
 // Shared <head> pieces for every generated page.
 function documentShell({
   title,
@@ -123,15 +139,11 @@ function documentShell({
   ${description ? `<meta name="description" content="${esc(description)}">` : ''}
   <meta name="robots" content="${esc(robots)}">
   <link rel="icon" href="data:,">
+  <script>if('scrollRestoration' in history)history.scrollRestoration='manual';if(location.hash)history.replaceState(null,'',location.pathname+location.search);</script>
   ${extraHead}
   <link rel="preload" href="${esc(base)}assets/fonts/cormorant-garamond-latin-400-italic.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="dns-prefetch" href="https://fonts.googleapis.com">
-  <link rel="dns-prefetch" href="https://fonts.gstatic.com">
-  <link rel="stylesheet" href="${esc(fontsHref)}">
-  <script>if('scrollRestoration' in history)history.scrollRestoration='manual';if(location.hash)history.replaceState(null,'',location.pathname+location.search);</script>
   <link rel="stylesheet" href="${esc(base)}assets/site.css">
+  ${googleFontsLinks(fontsHref)}
   <style id="page-loader-critical">#page-loader{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;background:#f7f4ef;background:radial-gradient(ellipse 80% 70% at 50% 35%, #fffdf9 0%, #f7f4ef 55%, #efe9e0 100%);transition:opacity .6s cubic-bezier(0.22,0.61,0.36,1),visibility .6s;opacity:1;visibility:visible}#page-loader.is-hidden{opacity:0;visibility:hidden;pointer-events:none}.page-loader-inner{display:flex;flex-direction:column;align-items:center;gap:26px}.page-loader-spinner{position:relative;width:64px;height:64px;display:flex;align-items:center;justify-content:center}.page-loader-ring{position:absolute;inset:0;border:1.5px solid rgba(21,19,15,.11);border-top-color:#9a6a3c;border-radius:50%;animation:page-loader-spin .9s linear infinite}.page-loader-ring-inner{position:absolute;inset:9px;border:1.5px solid rgba(21,19,15,.08);border-top-color:#c9a77d;border-radius:50%;animation:page-loader-spin .72s linear infinite reverse}.page-loader-dot{width:7px;height:7px;background:#9a6a3c;border-radius:50%;box-shadow:0 0 0 6px rgba(154,106,60,.12);animation:page-loader-pulse 1.6s ease-in-out infinite}.page-loader-brand{font-family:'Cormorant Garamond','Iowan Old Style',Georgia,serif;font-style:italic;font-weight:500;font-size:1.35rem;letter-spacing:.06em;color:#2a2620;margin:0;opacity:.9;animation:page-loader-fade 1.8s ease-in-out infinite alternate}.page-loader-brand::after{content:'';display:inline-block;width:1.1em;text-align:left;animation:page-loader-dots 1.4s steps(4,end) infinite}@keyframes page-loader-spin{to{transform:rotate(360deg)}}@keyframes page-loader-pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.88);opacity:.85}}@keyframes page-loader-fade{from{opacity:.55}to{opacity:1}}@keyframes page-loader-dots{0%{content:''}25%{content:'.'}50%{content:'..'}75%{content:'...'}100%{content:''}}@media(prefers-reduced-motion:reduce){#page-loader{transition:none}.page-loader-ring,.page-loader-ring-inner,.page-loader-dot,.page-loader-brand{animation:none!important}}</style>
 </head>
 <body class="${esc(bodyClass)}"${bodyStyle ? ` style="${esc(bodyStyle)}"` : ''}>
@@ -232,9 +244,15 @@ function renderHero(model, ctx) {
       // or preview is requested and there is no progressive src swap.
       const source = heroImageSource(cover, ctx);
       const label = many ? `Open cover photo ${i + 1} of ${covers.length}` : 'Open cover photo';
+      // Only the first slide downloads with the page (preloaded, high priority).
+      // The others would otherwise share the connection with it and the fonts on
+      // slow phones; site.js activates them as soon as the page has loaded, or
+      // straight away when a visitor swipes, long before autoplay reaches them.
+      const priority = i === 0 ? 'loading="eager" fetchpriority="high"' : 'loading="lazy" fetchpriority="low"';
+      const media = responsiveImage(source, `<img class="hero-media" src="${esc(source.src)}" alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} ${priority} decoding="async" draggable="false">`, true);
       return `
         <button class="carousel-slide" type="button" data-src="${esc(source.full)}"${viewerAttrs(source)} data-alt="${esc(cover.alt)}" data-caption="" aria-label="${esc(label)}">
-          ${responsiveImage(source, `<img class="hero-media" src="${esc(source.src)}" alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} loading="eager" fetchpriority="high" decoding="async" draggable="false">`, true)}
+          ${i === 0 ? media : deferImageSources(media)}
         </button>`;
     })
     .join('');

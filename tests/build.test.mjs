@@ -561,10 +561,12 @@ test('a cover list builds a slideshow with dots and autoplay; a single cover has
     assert.match(manyHero, /data-autoplay="6000"/);
     assert.match(manyHero, /aria-label="Open cover photo 2 of 3"/);
     assert.doesNotMatch(manyHero, /carousel-control|Previous cover photo|Next cover photo/);
-    // Hero slideshow images take priority over below-the-fold media.
-    assert.match(manyHero, /fetchpriority="high"/);
-    assert.equal((manyHero.match(/loading="eager"/g) ?? []).length, 3);
-    assert.equal((manyHero.match(/loading="lazy"/g) ?? []).length, 0);
+    // Only the first slide downloads with the page; later slides start after
+    // load so they never compete with the first screen.
+    assert.equal((manyHero.match(/loading="eager" fetchpriority="high"/g) ?? []).length, 1);
+    assert.equal((manyHero.match(/loading="lazy" fetchpriority="low"/g) ?? []).length, 2);
+    assert.equal((manyHero.match(/<img class="hero-media" src="/g) ?? []).length, 1);
+    assert.equal((manyHero.match(/<img class="hero-media" data-deferred-src="/g) ?? []).length, 2);
     assert.doesNotMatch(many, /<link rel="preload" as="image" href="\/slides-check\/media\/slides-check-photo\.png"/);
 
     const single = await fs.readFile(path.join(ws.outDir, 'single-check', 'index.html'), 'utf8');

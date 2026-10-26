@@ -170,7 +170,6 @@ export const FONT_SIZE_EM = { sm: '0.86em', md: '1em', lg: '1.2em', xl: '1.42em'
 export const FONT_ALIGNS = new Set(['left', 'center', 'right']);
 export const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 
-const DEFAULT_INTER_HREF = 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap';
 const SELF_HOSTED_CORMORANT_VARIANTS = new Set(['normal:400', 'normal:500', 'normal:600', 'italic:400']);
 
 const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -397,17 +396,16 @@ export function splitNameRuns(runs) {
 }
 
 // Builds the Google Fonts stylesheet URL needed for both box-level `model.fonts`
-// and any inline word-level font choices inside `model.richText`.
+// and any inline word-level font choices inside `model.richText`. Inter (all
+// weights, upright and italic) and the common Cormorant Garamond variants are
+// self-hosted, so the default profile needs no Google Fonts request at all and
+// this returns ''.
 export function googleFontsHrefFor(fonts, richText) {
   const extraFamilies = new Set();
-  let needsInterItalic = false;
 
   const registerFontUse = (familyId, style, weight) => {
     if (!familyId || !FONT_BY_ID.has(familyId)) return;
-    if (familyId === 'inter') {
-      if (style === 'italic') needsInterItalic = true;
-      return;
-    }
+    if (familyId === 'inter') return;
     if (familyId === 'cormorant-garamond') {
       if (!SELF_HOSTED_CORMORANT_VARIANTS.has(`${style}:${weight}`)) {
         extraFamilies.add(FONT_BY_ID.get('cormorant-garamond').google);
@@ -435,8 +433,6 @@ export function googleFontsHrefFor(fonts, richText) {
       if (!run || typeof run !== 'object') continue;
       if (run.family && FONT_BY_ID.has(run.family)) {
         registerFontUse(run.family, run.italic ? 'italic' : 'normal', run.bold ? '700' : '400');
-      } else if (run.italic) {
-        needsInterItalic = true;
       }
     }
   };
@@ -448,13 +444,8 @@ export function googleFontsHrefFor(fonts, richText) {
     }
   }
 
-  if (!extraFamilies.size && !needsInterItalic) return DEFAULT_INTER_HREF;
-
-  const interSpec = needsInterItalic
-    ? FONT_BY_ID.get('inter').google
-    : 'Inter:wght@300;400;500;600;700';
-  const allSpecs = [interSpec, ...extraFamilies];
-  return `https://fonts.googleapis.com/css2?${allSpecs.map((s) => `family=${s}`).join('&')}&display=swap`;
+  if (!extraFamilies.size) return '';
+  return `https://fonts.googleapis.com/css2?${[...extraFamilies].map((s) => `family=${s}`).join('&')}&display=swap`;
 }
 
 const SLOT_CSS_PREFIX = {

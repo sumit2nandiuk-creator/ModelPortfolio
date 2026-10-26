@@ -26,7 +26,25 @@ code { background: #efe9e0; padding: 1px 5px; border-radius: 4px; }
   display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;
   padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--line);
 }
-.brand { font-size: 1rem; }
+.brand { font-size: 1rem; white-space: nowrap; }
+.brand-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.brand-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.brand-picker select {
+  width: min(220px, 38vw);
+  min-width: 120px;
+}
 .top-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 select, input, textarea {
   font: inherit; color: inherit; width: 100%; padding: 9px 10px;

@@ -698,11 +698,58 @@
     }
   }
 
+  // Cache-only requests never download an uncached original. Also recognize full
+  // images already displayed elsewhere (including the lightbox).
+  var cachedOriginalChecks = Object.create(null);
+  function useAvailableOriginal(img) {
+    if (!img || img.tagName !== 'IMG') return false;
+    var url = img.getAttribute('data-full-src');
+    if (!url) return false;
+    function promote() {
+      if (img.getAttribute('data-full-src') !== url) return;
+      img.removeAttribute('data-medium-src');
+      img.removeAttribute('data-full-src');
+      img._loadingFullImage = false;
+      img._loadingFullUrl = '';
+      setMediaSrc(img, url);
+      finishPortfolioUpgrade(img);
+    }
+    var images = document.querySelectorAll('img');
+    for (var i = 0; i < images.length; i++) {
+      var candidate = images[i];
+      if (candidate.complete && candidate.naturalWidth > 0 &&
+          (candidate.getAttribute('src') === url || candidate.src === url)) {
+        promote();
+        return true;
+      }
+    }
+    // only-if-cached requires same-origin mode; cross-origin originals retain
+    // progressive loading unless already displayed above.
+    if (typeof window.fetch !== 'function' || typeof window.URL !== 'function') return false;
+    var absolute;
+    try {
+      absolute = new window.URL(url, window.location.href);
+      if (absolute.origin !== window.location.origin) return false;
+    } catch (_) { return false; }
+    if (!cachedOriginalChecks[absolute.href]) {
+      cachedOriginalChecks[absolute.href] = window.fetch(absolute.href, {
+        cache: 'only-if-cached', mode: 'same-origin'
+      }).then(function (response) {
+        return response.ok && /^image\//i.test(response.headers.get('Content-Type') || '');
+      }).catch(function () { return false; });
+    }
+    cachedOriginalChecks[absolute.href].then(function (available) {
+      if (available) promote();
+    });
+    return false;
+  }
+
   function loadFullImageAfterThumbnail(img) {
     if (!img || img.tagName !== 'IMG') {
       finishPortfolioUpgrade(img);
       return;
     }
+    if (useAvailableOriginal(img)) return;
     // Hero slideshow: only upgrade the current slide eagerly to avoid hanging
     // the browser with N concurrent high-res downloads. Adjacent slides are
     // already eager for preview (tiny 64px) so no black flash, and full
@@ -716,75 +763,45 @@
       }
     }
     var currentUrl = getMediaSrc(img);
-    var mediumUrl = typeof img.getAttribute === 'function' ? img.getAttribute('data-medium-src') : '';
-    var fullUrl = typeof img.getAttribute === 'function' ? img.getAttribute('data-full-src') : '';
-    var targetUrl = mediumUrl && currentUrl !== mediumUrl ? mediumUrl : fullUrl;
-    if (!targetUrl || !fullUrl || currentUrl === fullUrl || img.src === fullUrl) {
+    var fullUrl = img.getAttribute('data-full-src');
+    if (!fullUrl || currentUrl === fullUrl || img.src === fullUrl) {
+      if (fullUrl) {
+        img.removeAttribute('data-medium-src');
+        img.removeAttribute('data-full-src');
+      }
       finishPortfolioUpgrade(img);
       return;
     }
-    if (img._loadingFullImage && img._loadingFullUrl === targetUrl) return;
+    if (img._loadingFullImage && img._loadingFullUrl === fullUrl) return;
     if (typeof window.Image !== 'function') {
       finishPortfolioUpgrade(img);
       return;
     }
     img._loadingFullImage = true;
-    img._loadingFullUrl = targetUrl;
+    img._loadingFullUrl = fullUrl;
     var full = new window.Image();
-    // Wait for decode so swap is smooth with no blink; filter blur fades out via CSS.
-    var isPortfolio = !heroCarousel;
-    var swapToTarget = function () {
-      if (targetUrl === mediumUrl) {
-        if (img.getAttribute('data-medium-src') !== mediumUrl) {
-          finishPortfolioUpgrade(img);
-          return;
-        }
-        img.removeAttribute('data-medium-src');
-        img._loadingFullImage = false;
-        img._loadingFullUrl = '';
-        setMediaSrc(img, mediumUrl);
-        // Chain to full after medium paints; rAF avoids layout thrash.
-        // Medium done – now queue the full upgrade; keep portfolio slot occupied until full finishes
-        if (isPortfolio) {
-          // Keep upgrading counted; the next load will re-enter with same portfolio slot
-          // So don't finish yet – let the chained call handle final done
-          img._portfolioDone = img._portfolioDone || onPortfolioUpgradeDone;
-        }
-        if (typeof requestFrame === 'function') requestFrame(function () { loadFullImageAfterThumbnail(img); });
-        else loadFullImageAfterThumbnail(img);
-        return;
-      }
-      if (img.getAttribute('data-full-src') !== fullUrl) {
-        finishPortfolioUpgrade(img);
-        return;
-      }
+    // Keep the current preview visible while downloading. Never wait for an
+    // intermediate thumbnail before downloading or displaying the original.
+    function showOriginal() {
+      if (img.getAttribute('data-full-src') !== fullUrl) return;
+      img.removeAttribute('data-medium-src');
       img.removeAttribute('data-full-src');
       img._loadingFullImage = false;
       img._loadingFullUrl = '';
       setMediaSrc(img, fullUrl);
       finishPortfolioUpgrade(img);
-    };
+    }
     full.onload = function () {
-      if (full.decode) {
-        full.decode().then(swapToTarget).catch(swapToTarget);
-      } else {
-        swapToTarget();
-      }
+      if (full.decode) full.decode().then(showOriginal).catch(showOriginal);
+      else showOriginal();
     };
     full.onerror = function () {
-      var failedMedium = targetUrl === mediumUrl && img.getAttribute('data-medium-src') === mediumUrl;
-      if (failedMedium) img.removeAttribute('data-medium-src');
       img._loadingFullImage = false;
       img._loadingFullUrl = '';
-      if (failedMedium) {
-        // Keep portfolio slot for retry to full
-        if (isPortfolio) img._portfolioDone = img._portfolioDone || onPortfolioUpgradeDone;
-        loadFullImageAfterThumbnail(img);
-      } else {
-        finishPortfolioUpgrade(img);
-      }
+      // Preserve the visible preview and source attributes for a later retry.
+      finishPortfolioUpgrade(img);
     };
-    full.src = targetUrl;
+    full.src = fullUrl;
   }
 
   function advanceImageSourceAfterFailure(img) {
@@ -1076,6 +1093,7 @@
   function observeMedia(el) {
     if (!el || el._retryObserved) return;
     el._retryObserved = true;
+    if (el.tagName === 'IMG') useAvailableOriginal(el);
     setupMediaFrameState(el);
     if (el.tagName === 'IMG') {
       el.addEventListener('error', function () {

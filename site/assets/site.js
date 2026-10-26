@@ -484,8 +484,10 @@
   if (heroRoot) {
     var heroImgs = Array.prototype.slice.call(heroRoot.querySelectorAll('img'));
     heroImgs.forEach(function (img) {
-      // Keep non-current hero images lazy; layout() promotes only adjacent slides.
+      // Markup already makes every slide eager/high so the first-screen
+      // thumbnails outrank below-the-fold images; decode off the main thread.
       img.decoding = 'async';
+      img.fetchPriority = 'high';
     });
 
     hero = createCarousel(heroRoot, {
@@ -655,10 +657,12 @@
     return fallback || declared;
   }
 
-  // Preserve actual painted pixels across a popup quality upgrade. A decoded
-  // preload alone does not prevent WebKit clearing the visible <img> on src change.
+  // Preserve actual painted pixels across a viewer or hero quality upgrade. A
+  // decoded preload alone does not prevent WebKit clearing the visible <img> on
+  // src change.
   function holdPopupImage(img) {
-    if (!img || img.tagName !== 'IMG' || !img.closest || !img.closest('#lb-stage') ||
+    if (!img || img.tagName !== 'IMG' || !img.closest ||
+        !(img.closest('#lb-stage') || img.closest('.hero-carousel')) ||
         !img.complete || !img.naturalWidth || !img.naturalHeight) return null;
     if (img._popupCover) return img._popupCover;
     try {
@@ -671,7 +675,12 @@
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       canvas.className = 'lb-image-cover';
       canvas.setAttribute('aria-hidden', 'true');
-      canvas.style.transform = img.style.transform || '';
+      var computed = typeof window !== 'undefined' && window.getComputedStyle
+        ? window.getComputedStyle(img) : null;
+      canvas.style.transform = computed && computed.transform && computed.transform !== 'none'
+        ? computed.transform : (img.style.transform || '');
+      canvas.style.transformOrigin = computed && computed.transformOrigin
+        ? computed.transformOrigin : '50% 50%';
       var slide = img.closest('.carousel-slide');
       if (!slide) return null;
       slide.appendChild(canvas);
@@ -782,7 +791,8 @@
     for (var i = 0; i < images.length; i++) {
       var candidate = images[i];
       if (candidate.complete && candidate.naturalWidth > 0 &&
-          (candidate.getAttribute('src') === url || candidate.src === url)) {
+          (candidate.getAttribute('src') === url || candidate.src === url ||
+           candidate.currentSrc === url)) {
         promote();
         return true;
       }
@@ -818,9 +828,9 @@
     }
     if (useAvailableOriginal(img)) return;
     // Hero slideshow: only upgrade the current slide eagerly to avoid hanging
-    // the browser with N concurrent high-res downloads. Adjacent slides are
-    // already eager for preview (tiny 64px) so no black flash, and full
-    // upgrades when they become current via onChange.
+    // the browser with N concurrent high-res downloads. Every slide already
+    // starts with an eager, high-priority normal thumbnail, so there is no
+    // black flash; full upgrades happen when the slide becomes current.
     var heroCarousel = img.closest && img.closest('.hero-carousel');
     if (heroCarousel) {
       var heroSlide = img.closest('.carousel-slide');
@@ -846,7 +856,32 @@
     }
     img._loadingFullImage = true;
     img._loadingFullUrl = fullUrl;
+    // Hero upgrades wait for the normal thumbnail to paint first and stay low
+    // priority, so all eager/high hero thumbnails win the network race.
+    if (heroCarousel && (!img.complete || !img.naturalWidth)) {
+      img._loadingFullImage = false;
+      img._loadingFullUrl = '';
+      finishPortfolioUpgrade(img);
+      return;
+    }
     var full = new window.Image();
+    full.fetchPriority = 'low';
+    if (typeof full.setAttribute === 'function') full.setAttribute('fetchpriority', 'low');
+    var webpSet = img.getAttribute('data-full-webp');
+    var avifSet = img.getAttribute('data-full-avif');
+    if (webpSet) {
+      if (avifSet) {
+        var picture = document.createElement('picture');
+        var source = document.createElement('source');
+        source.setAttribute('type', 'image/avif');
+        source.setAttribute('sizes', '100vw');
+        source.setAttribute('srcset', avifSet);
+        picture.appendChild(source);
+        picture.appendChild(full);
+      }
+      full.sizes = '100vw';
+      full.srcset = webpSet;
+    }
     // Keep the current preview visible while downloading. Never wait for an
     // intermediate thumbnail before downloading or displaying the original.
     function showOriginal() {
@@ -855,7 +890,9 @@
       img.removeAttribute('data-full-src');
       img._loadingFullImage = false;
       img._loadingFullUrl = '';
-      setMediaSrc(img, fullUrl);
+      img.removeAttribute('data-full-webp');
+      img.removeAttribute('data-full-avif');
+      setMediaSrc(img, full.currentSrc || fullUrl);
       finishPortfolioUpgrade(img);
     }
     full.onload = function () {

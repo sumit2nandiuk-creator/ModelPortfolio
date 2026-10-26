@@ -90,24 +90,26 @@ function variants() {
   return [480, 960, 1600, 2400].flatMap(width => ['avif', 'webp'].map(format => ({ file: `photo-${width}.${format}`, width, height: width * 1.5, format })));
 }
 
-test('hero, cards and viewer use responsive candidates without progressive thumbnail attributes', () => {
+test('hero starts with normal thumbnail while cards and viewer retain responsive candidates', () => {
   const photo = { file: 'original.jpg', width: 4000, height: 6000, thumbnail: 'thumb.webp', preview: 'tiny.webp', variants: variants(), title: 'Look', category: 'Fashion', alt: 'Photo' };
   const html = renderModelPage({ slug: 'test-model', name: 'Test Model', cover: [photo], photos: [photo] }, {
     base: '/', year: 2026, mediaUrl: file => '/media/test-model/' + file,
     sizeOf: () => ({ width: 4000, height: 6000 })
   });
   const pictures = html.match(/<picture>[\s\S]*?<\/picture>/g);
-  assert.equal(pictures.length, 2);
+  assert.equal(pictures.length, 1);
   for (const picture of pictures) {
     assert.match(picture, /type="image\/avif"/);
     assert.match(picture, /photo-480.avif 480w/);
     assert.match(picture, /photo-2400.webp 2400w/);
     assert.doesNotMatch(picture, /original.jpg|tiny.webp|thumb.webp|data-full-src|data-medium-src/);
   }
-  assert.match(html, /sizes="100vw"/);
+  assert.match(html, /<img class="hero-media" src="\/media\/test-model\/thumb.webp" data-full-src=/);
+  assert.match(html, /data-full-webp="[^"]*photo-480.webp/);
+  assert.match(html, /data-full-avif="[^"]*photo-2400.avif/);
   assert.match(html, /sizes="\(max-width: 600px\)/);
   assert.match(html, /data-viewer-avif=/);
-  assert.match(html, /imagesrcset="[^"]*photo-480.avif/);
+  assert.match(html, /rel="preload" as="image" href="\/media\/test-model\/thumb.webp" fetchpriority="high"/);
   assert.match(html, /data-src="\/media\/test-model\/photo-2400.webp"/);
 });
 

@@ -71,7 +71,7 @@ test('website loading speed: preloads LCP cover image, preconnects origins, and 
 
     // 4. All hero slides load eagerly.
     assert.match(html, /<img class="hero-media" src="https:\/\/media\.example\.test\/speed-test\/hero-1\.jpg" alt="Hero 1"[^>]*loading="eager" fetchpriority="high" decoding="async"/);
-    assert.match(html, /<img class="hero-media" src="https:\/\/media\.example\.test\/speed-test\/hero-2.jpg" alt="Hero 2"[^>]*loading="eager" decoding="async"/);
+    assert.match(html, /<img class="hero-media" src="https:\/\/media\.example\.test\/speed-test\/hero-2.jpg" alt="Hero 2"[^>]*loading="eager" fetchpriority="high" decoding="async"/);
 
     // 5. Portfolio gallery photos: loading="lazy" decoding="async"
     assert.match(html, /<img src="https:\/\/media\.example\.test\/speed-test\/photo-1\.jpg" alt="Photo 1"[^>]*loading="lazy" decoding="async"/);

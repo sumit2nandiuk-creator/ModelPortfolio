@@ -561,10 +561,10 @@ test('a cover list builds a slideshow with dots and autoplay; a single cover has
     assert.match(manyHero, /data-autoplay="6000"/);
     assert.match(manyHero, /aria-label="Open cover photo 2 of 3"/);
     assert.doesNotMatch(manyHero, /carousel-control|Previous cover photo|Next cover photo/);
-    // First two cover slides are eager (fixes black hero for 2 covers without hanging on many).
+    // Hero slideshow images take priority over below-the-fold media.
     assert.match(manyHero, /fetchpriority="high"/);
-    assert.equal((manyHero.match(/loading="eager"/g) ?? []).length, 2);
-    assert.equal((manyHero.match(/loading="lazy"/g) ?? []).length, 1);
+    assert.equal((manyHero.match(/loading="eager"/g) ?? []).length, 3);
+    assert.equal((manyHero.match(/loading="lazy"/g) ?? []).length, 0);
     assert.doesNotMatch(many, /<link rel="preload" as="image" href="\/slides-check\/media\/slides-check-photo\.png"/);
 
     const single = await fs.readFile(path.join(ws.outDir, 'single-check', 'index.html'), 'utf8');
@@ -600,7 +600,7 @@ test('local tiny previews and normal thumbnails are copied into the profile medi
     assert.equal(await exists(path.join(outMedia, 'preview-check-tiny.webp')), true);
     assert.equal(await exists(path.join(outMedia, 'preview-check-thumb.webp')), true);
     const html = await fs.readFile(path.join(ws.outDir, 'preview-check', 'index.html'), 'utf8');
-    assert.match(html, /src="\/preview-check\/media\/preview-check-tiny\.webp" data-medium-src="\/preview-check\/media\/preview-check-thumb\.webp" data-full-src="\/preview-check\/media\/preview-check-cover\.png"/);
+    assert.match(html, /src="\/preview-check\/media\/preview-check-thumb\.webp" data-full-src="\/preview-check\/media\/preview-check-cover\.png"/);
   } finally {
     await ws.cleanup();
   }

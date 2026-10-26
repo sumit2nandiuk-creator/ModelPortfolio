@@ -816,3 +816,11 @@ label { gap: 4px; font-size: 0.8rem; }
   .section-chevron,
   .group-chevron { transition: none !important; }
 }
+
+/* Batch generation stays visible in the sticky savebar, even after editor rerenders. */
+.generation-progress { display: grid; gap: 7px; padding: 10px 0; border-bottom: 1px solid var(--line, #ddd); }
+.generation-progress[hidden] { display: none; }
+.generation-detail { font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.generation-progress.is-done .upload-fill { background: #27834d; }
+.generation-progress.is-error .upload-fill { background: #b34535; }
+.generation-progress.is-error .generation-detail { color: #b34535; }

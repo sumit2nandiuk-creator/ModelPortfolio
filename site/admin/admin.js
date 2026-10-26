@@ -3092,6 +3092,18 @@
       });
   }
 
+  function paintGenerationProgress(percent, detail, outcome) {
+    var panel = $('generation-progress');
+    if (!panel) return;
+    var pct = Math.max(0, Math.min(100, Math.round(percent)));
+    panel.hidden = false;
+    panel.className = 'generation-progress' + (outcome ? ' is-' + outcome : '');
+    panel.innerHTML = '<div class="savebar-progress-head"><strong>Thumbnails &amp; variants</strong><span>' + pct + '%</span></div>' +
+      '<div class="upload-track" role="progressbar" aria-label="Thumbnail and variant generation" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '" aria-valuetext="' + esc(detail) + '">' +
+      '<div class="upload-fill" style="width:' + pct + '%"></div></div>' +
+      '<div class="generation-detail" role="status" aria-live="polite">' + esc(detail) + '</div>';
+  }
+
   function generateThumbnails() {
     if (!S.model || S.busy) return;
     if (isDirty() && !window.confirm('Generating thumbnails will also save your current profile changes. Continue?')) return;
@@ -3101,6 +3113,7 @@
       return (!group.thumbnail && group.thumbnailRefs.length) || (!group.preview && group.previewRefs.length) || group.imageRefs.some(function (entry) { return !hasAllVariants(entry); });
     });
     if (!pending.length) {
+      paintGenerationProgress(100, 'Nothing to generate — all thumbnails and variants are ready.', 'done');
       setStatus('All model images and videos already have thumbnails and responsive variants.', 'ok');
       toast('All model images and videos already have thumbnails and responsive variants.', 'ok');
       return;
@@ -3110,8 +3123,16 @@
     var failures = [];
     var generated = 0;
     var metadataChanged = false;
+    var progressPercent = 0;
+    function progress(index, fraction, text) {
+      progressPercent = Math.max(progressPercent, 95 * (index + fraction) / pending.length);
+      paintGenerationProgress(progressPercent, text);
+    }
+    paintGenerationProgress(0, 'Preparing ' + pending.length + ' media item(s)…');
     return pending.reduce(function (chain, group, index) {
       return chain.then(function () {
+        var itemLabel = 'Media ' + (index + 1) + ' of ' + pending.length + ' · ';
+        progress(index, 0, itemLabel + 'Loading original…');
         setStatus('Generating media thumbnails ' + (index + 1) + ' of ' + pending.length + '…');
         // Yield to browser between groups to keep UI responsive for large batches
         return Promise.resolve().then(function () {
@@ -3119,10 +3140,14 @@
           if (!group.preview && group.previewRefs.length) jobs.push({ tier: 'preview', refs: group.previewRefs });
           if (!group.thumbnail && group.thumbnailRefs.length) jobs.push({ tier: 'thumbnail', refs: group.thumbnailRefs });
           return resolveThumbnailSource(group.source).then(function (resolved) {
-          return jobs.reduce(function (jobChain, job) {
+          return jobs.reduce(function (jobChain, job, jobIndex) {
             return jobChain.then(function () {
+              progress(index, 0.35 * jobIndex / Math.max(1, jobs.length), itemLabel + 'Generating ' + job.tier + '…');
               return (group.isVideo ? makeVideoThumbnail(resolved.url) : makeThumbnail(resolved.url, job.tier))
-                .then(function (blob) { return uploadThumbnail(blob, (index + 1) + '-' + job.tier, job.tier); })
+                .then(function (blob) {
+                  progress(index, 0.35 * (jobIndex + 0.5) / Math.max(1, jobs.length), itemLabel + 'Uploading ' + job.tier + '…');
+                  return uploadThumbnail(blob, (index + 1) + '-' + job.tier, job.tier);
+                })
                 .then(function (url) {
                   job.refs.forEach(function (ref) { ref.entry[ref.key] = url; });
                   if (job.tier === 'preview') group.preview = url;
@@ -3138,7 +3163,8 @@
             }, Promise.resolve()).then(function () {
               if (!group.imageRefs.length) return;
               var before = JSON.stringify(group.imageRefs);
-              return generateImageVariants(resolved.url, group.imageRefs, function (text) {
+              return generateImageVariants(resolved.url, group.imageRefs, function (text, done, total) {
+                progress(index, 0.35 + 0.65 * done / Math.max(1, total), itemLabel + text);
                 setStatus('Photo ' + (index + 1) + '/' + pending.length + ' · ' + text);
                 // Save even partial successful variants if a later encode fails.
                 generated += text.indexOf('Saved ') === 0 ? 1 : 0;
@@ -3152,7 +3178,7 @@
             if (window.__appErrorReporter) window.__appErrorReporter.report('frontend-thumbnail', message, { resource: group.source, name: 'manual-thumbnail-generation' });
           });
         });
-      });
+      }).finally(function () { progress(index, 1, 'Processed media ' + (index + 1) + ' of ' + pending.length); });
     }, Promise.resolve()).then(function () {
       if (generated || metadataChanged) {
         render();
@@ -3162,13 +3188,24 @@
           ? 'Generated ' + generated + ' image variant' + (generated === 1 ? '' : 's') + ' and saved them to R2.'
           : 'Updated responsive image references and saved the profile.';
         if (failures.length) message += ' ' + failures.length + ' media file' + (failures.length === 1 ? ' could' : 's could') + ' not be processed.';
-        return save(message);
+        paintGenerationProgress(98, 'Saving profile and generated image references…');
+        return save(message).then(function (saved) {
+          paintGenerationProgress(saved ? 100 : 98, saved
+            ? (failures.length ? 'Finished with errors. Some variants failed; rerun to retry missing variants.' : 'Complete — all generated images and profile changes saved.')
+            : 'Images generated, but profile save failed. Use Save to retry before leaving.',
+            saved && !failures.length ? 'done' : 'error');
+        });
       } else {
         setBusy(false);
         var errorMessage = failures.length ? failures[0] : 'No thumbnails were generated.';
+        paintGenerationProgress(100, 'Generation failed: ' + errorMessage + ' Rerun to retry.', 'error');
         setStatus(errorMessage, 'error');
         toast(errorMessage, 'error');
       }
+    }).catch(function (err) {
+      setBusy(false);
+      paintGenerationProgress(progressPercent, 'Generation stopped: ' + (err.message || 'Unexpected error') + '. Rerun to retry.', 'error');
+      setStatus(err.message || 'Generation failed.', 'error');
     }).finally(function () {
       if (btn) { btn.disabled = false; btn.classList.remove('is-working'); }
     });
@@ -3227,6 +3264,7 @@
     if (!S.model || S.busy) return;
     hideToast();
     var model = cleanProfile(S.model);
+    var savedSuccessfully = false;
     setBusy(true, 'Saving…');
     var path = profilePath(S.slug);
     return api('PUT', path, { json: { sha: S.sha, model: model } }).then(function (data) {
@@ -3245,12 +3283,13 @@
       setStatus(okMessage, 'ok');
       toast(okMessage, 'ok');
       updateDirtyNote();
+      savedSuccessfully = true;
     }).catch(function (err) {
       var detail = err.details && err.details.length ? ' ' + err.details.join(' ') : '';
       var message = (err.message || 'Saving failed.') + detail;
       setStatus(message, 'error');
       toast(message, 'error');
-    }).then(function () { setBusy(false); });
+    }).then(function () { setBusy(false); return savedSuccessfully; });
   }
 
   function removeHostedFiles() {

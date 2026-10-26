@@ -272,7 +272,7 @@ function createAdminUploadHarness(modelOverrides = {}, modelSlugs = ['sushmita-g
     <div id="top-actions" hidden>
       <select id="model-picker"></select>
       <button id="new-model"></button>
-      <button id="generate-thumbnails">Generate Thumbnails</button>
+      <div id="generation-progress" hidden></div><button id="generate-thumbnails">Generate Thumbnails</button>
       <a id="view-site"></a>
       <button id="archive-profile"></button>
       <button id="delete-profile"></button>
@@ -1016,4 +1016,38 @@ test('save failure shows a red-cross popup and an error status', async () => {
   const statusEl = h.doc.getElementById('status');
   assert.match(statusEl.className, /status error/);
   assert.match(statusEl.textContent, /changed since you opened it/);
+});
+
+test('Generate Thumbnails shows monotonic batch progress through encoding, upload, save and completion', async () => {
+  const h = await createAdminUploadHarness();
+  await h.boot();
+  const panel = h.doc.getElementById('generation-progress');
+  h.doc.getElementById('generate-thumbnails').dispatchEvent({ type: 'click', bubbles: true });
+  assert.equal(panel.hidden, false, 'bar appears immediately');
+  assert.match(panel.innerHTML, /aria-valuenow="0"/);
+  for (let i = 0; i < 12; i++) await h.flush();
+  const updates = h.uiHistory.filter(text => text.includes('aria-label="Thumbnail and variant generation"'));
+  const percentages = updates.map(text => Number(text.match(/aria-valuenow="(\d+)"/)[1]));
+  assert.ok(percentages.length > 10, 'progress updates for individual stages');
+  assert.ok(percentages.every((value, i) => !i || value >= percentages[i - 1]), 'never moves backwards');
+  assert.ok(updates.some(text => text.includes('Media 1 of 1') && text.includes('Encoding 480px AVIF')));
+  assert.ok(updates.some(text => text.includes('Uploading 800px WEBP')));
+  assert.ok(updates.some(text => text.includes('aria-valuenow="98"') && text.includes('Saving profile')));
+  assert.match(panel.innerHTML, /aria-valuenow="100"/);
+  assert.match(panel.textContent, /Complete/);
+  assert.equal(panel.className, 'generation-progress is-done');
+  assert.equal(panel.hidden, false, 'completion survives editor rerender');
+});
+
+test('generation progress reports profile save failures without claiming 100 percent saved', async () => {
+  const h = await createAdminUploadHarness();
+  await h.boot();
+  h.failNextSave('Conflict — reload before saving');
+  h.doc.getElementById('generate-thumbnails').dispatchEvent({ type: 'click', bubbles: true });
+  for (let i = 0; i < 12; i++) await h.flush();
+  const panel = h.doc.getElementById('generation-progress');
+  assert.equal(panel.className, 'generation-progress is-error');
+  assert.match(panel.innerHTML, /aria-valuenow="98"/);
+  assert.match(panel.textContent, /profile save failed/);
+  assert.equal(h.doc.getElementById('generate-thumbnails').disabled, false, 'action is restored');
 });

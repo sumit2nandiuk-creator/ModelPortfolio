@@ -429,6 +429,9 @@ function renderPortfolio(model, ctx) {
           const poster = posterUrl
             ? ` poster="${esc(posterThumb || posterUrl)}"${posterThumb ? ` data-full-poster="${esc(posterUrl)}"` : ''}`
             : '';
+          // No source and no native controls until the poster is played. Nothing
+          // is drawn over the poster (no play glyph, no button): the photo itself
+          // is the play target, and the script attaches `controls` on playback.
           const preload = 'none';
           const rawSrc = ctx.mediaUrl(video.file);
           const videoSrc = rawSrc;
@@ -438,8 +441,7 @@ function renderPortfolio(model, ctx) {
           return `
               <figure class="${cardClass}" data-category="${esc(group.title)}">
                 <div class="video-frame">
-                  <video controls controlsList="nodownload noremoteplayback" disablePictureInPicture playsinline preload="${preload}"${poster}${sizeAttrs}${naturalAttrs}${videoStyle} data-video-src="${esc(videoSrc)}" aria-label="${esc(vTitle || group.title)}"></video>
-                  <button type="button" class="video-play-button" aria-label="Play ${esc(vTitle || group.title)}">▶</button>
+                  <video controlsList="nodownload noremoteplayback" disablePictureInPicture playsinline preload="${preload}"${poster}${sizeAttrs}${naturalAttrs}${videoStyle} data-video-src="${esc(videoSrc)}" aria-label="${esc(vTitle || group.title)}"></video>
                 </div>${
                   hasCaption
                     ? `

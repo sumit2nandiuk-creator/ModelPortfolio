@@ -2000,21 +2000,57 @@
     // Idle players show a poster (or placeholder), never a network-loading spinner.
     updateMediaLoaded(v, true);
     var frame = v.closest ? v.closest('.video-frame') : null;
-    var button = frame && frame.querySelector('.video-play-button');
-    if (button) button.addEventListener('click', function () {
+
+    // The poster is the play target: nothing is drawn over it, so a video card
+    // looks like a photo until it is played. Native controls belong to the playing
+    // video only — a browser paints its own play glyph on a controlled poster
+    // (iOS Safari draws a big circle), which is exactly what is being avoided.
+    function showNativeControls(show) {
+      try { v.controls = show; } catch (_) {}
+      if (typeof v.setAttribute === 'function') {
+        if (show) {
+          v.setAttribute('controls', '');
+          v.removeAttribute('tabindex');
+        } else {
+          v.removeAttribute('controls');
+          if (v.getAttribute('data-video-src')) v.setAttribute('tabindex', '0');
+        }
+      }
+      if (frame && frame.classList) frame.classList.toggle('is-playing', show);
+    }
+
+    function startPlayback() {
       var source = v.getAttribute('data-video-src');
       if (source) {
         v.setAttribute('src', source);
         v.removeAttribute('data-video-src');
         v.load();
       }
-      button.hidden = true;
+      showNativeControls(true);
+      var blocked = function () {
+        // Keep the poster playable: restore the pending source so the next tap,
+        // click or key press can try again.
+        if (source) v.setAttribute('data-video-src', source);
+        showNativeControls(false);
+      };
       try {
         var playing = v.play();
-        if (playing && typeof playing.catch === 'function') {
-          playing.catch(function () { button.hidden = false; });
-        }
-      } catch (_) { button.hidden = false; }
+        if (playing && typeof playing.catch === 'function') playing.catch(blocked);
+      } catch (_) { blocked(); }
+    }
+
+    function playable() {
+      return Boolean(v.getAttribute('data-video-src'));
+    }
+
+    if (playable()) v.setAttribute('tabindex', '0');
+    v.addEventListener('click', function () {
+      if (playable()) startPlayback();
+    });
+    v.addEventListener('keydown', function (e) {
+      if (!playable() || !e || (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar')) return;
+      if (e.cancelable) e.preventDefault();
+      startPlayback();
     });
     v.addEventListener('play', function () {
       videoEls.forEach(function (other) {

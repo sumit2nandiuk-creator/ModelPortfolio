@@ -138,7 +138,10 @@ function documentShell({
   <title>${esc(title)}</title>
   ${description ? `<meta name="description" content="${esc(description)}">` : ''}
   <meta name="robots" content="${esc(robots)}">
-  <link rel="icon" href="data:,">
+  <link rel="icon" href="${esc(base)}assets/favicon.ico" sizes="48x48">
+  <link rel="icon" type="image/png" sizes="32x32" href="${esc(base)}assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="${esc(base)}assets/icon-192.png">
+  <link rel="apple-touch-icon" href="${esc(base)}assets/apple-touch-icon.png">
   <script>if('scrollRestoration' in history)history.scrollRestoration='manual';if(location.hash)history.replaceState(null,'',location.pathname+location.search);</script>
   ${extraHead}
   <link rel="preload" href="${esc(base)}assets/fonts/cormorant-garamond-latin-400-italic.woff2" as="font" type="font/woff2" crossorigin>

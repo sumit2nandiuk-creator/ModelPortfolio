@@ -247,6 +247,9 @@ async function persistBackendError(env, request, err, details = {}) {
       name: safeLogText(error.name, 100),
       stack: safeLogText(error.stack, 5000),
       method: request?.method || '',
+      requestId: safeLogText(request?.headers.get('CF-Ray'), 100),
+      userAgent: safeLogText(request?.headers.get('User-Agent'), 400),
+      cause: safeLogText(error.cause instanceof Error ? error.cause.stack : error.cause, 1000),
       ...details,
     },
   });
@@ -589,6 +592,15 @@ export async function handleRequest(request, env, deps = {}) {
       column: Number(rawDetails.column) || undefined,
       stack: safeLogText(rawDetails.stack, 4000),
     };
+    // Explicitly allow bounded diagnostics, never arbitrary client properties.
+    for (const key of ['clientTime', 'userAgent', 'language', 'viewport', 'visibility', 'readyState', 'connection', 'dimensions', 'cause']) {
+      if (rawDetails[key] !== undefined) details[key] = safeLogText(rawDetails[key], key === 'cause' ? 500 : 400);
+    }
+    for (const key of ['pixelRatio', 'uptimeMs', 'mediaCode', 'mediaState', 'networkState', 'currentTime']) {
+      if (typeof rawDetails[key] === 'number' && Number.isFinite(rawDetails[key])) details[key] = rawDetails[key];
+    }
+    if (typeof rawDetails.online === 'boolean') details.online = rawDetails.online;
+    details.requestId = safeLogText(request.headers.get('CF-Ray'), 100);
     const stored = await persistApplicationError(env, {
       source,
       message: body.message,

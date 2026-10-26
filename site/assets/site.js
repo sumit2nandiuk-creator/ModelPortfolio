@@ -9,6 +9,49 @@
 
   var reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  // ---- Beautiful page loader – fades out after initial load ---------------
+  (function () {
+    var loader = document.getElementById('page-loader');
+    if (!loader) return;
+    var start = Date.now();
+    var minShow = 650;
+    var maxWait = 3200;
+    var hidden = false;
+    // Prevent background scroll while loader is visible
+    try {
+      document.documentElement.style.overflow = 'hidden';
+      document.body.style.overflow = 'hidden';
+    } catch (_) {}
+    function doHide() {
+      if (hidden) return;
+      hidden = true;
+      var elapsed = Date.now() - start;
+      var delay = Math.max(0, minShow - elapsed);
+      setTimeout(function () {
+        loader.classList.add('is-hidden');
+        loader.setAttribute('aria-hidden', 'true');
+        try {
+          document.documentElement.style.overflow = '';
+          document.body.style.overflow = '';
+        } catch (_) {}
+        // Remove from layout after fade transition so it never blocks clicks
+        setTimeout(function () {
+          if (loader && loader.parentNode) loader.style.display = 'none';
+        }, 900);
+      }, delay);
+    }
+    if (document.readyState === 'complete') {
+      doHide();
+    } else {
+      window.addEventListener('load', doHide);
+      // fail-safe: never keep loader longer than maxWait + minShow
+      setTimeout(doHide, maxWait + minShow);
+    }
+    window.addEventListener('pageshow', function (e) {
+      if (e.persisted) doHide();
+    });
+  })();
+
   // ---- Always open / refresh at the top of the page ------------------------
   if ('scrollRestoration' in history) {
     history.scrollRestoration = 'manual';

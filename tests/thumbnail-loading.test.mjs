@@ -26,18 +26,22 @@ function render(model = profile) {
   });
 }
 
-test('site markup starts with R2 thumbnails and retains full-size sources for progressive replacement and popup', () => {
+test('site markup loads the hero full-size directly while gallery cards keep progressive thumbnails', () => {
   const html = render();
-  assert.match(html, /<img class="hero-media" src="\/media\/jane-doe\/cover-thumb\.webp" data-full-src="\/media\/jane-doe\/cover\.jpg"/);
-  assert.match(html, /data-src="\/media\/jane-doe\/cover\.jpg" data-thumb="\/media\/jane-doe\/cover-thumb\.webp"/);
+  const heroStart = html.indexOf('<section class="hero"');
+  const hero = html.slice(heroStart, html.indexOf('</section>', heroStart));
+  assert.match(hero, /<img class="hero-media" src="\/media\/jane-doe\/cover\.jpg" alt="Jane" loading="eager" fetchpriority="high"/);
+  assert.match(hero, /data-src="\/media\/jane-doe\/cover\.jpg"/);
+  assert.doesNotMatch(hero, /cover-thumb|cover-preview|data-full-src|data-medium-src/);
   assert.match(html, /<img src="\/media\/jane-doe\/photo-preview\.webp" data-medium-src="\/media\/jane-doe\/photo-thumb\.webp" data-full-src="\/media\/jane-doe\/photo\.jpg"/);
   assert.match(html, /data-src="\/media\/jane-doe\/photo\.jpg" data-thumb="\/media\/jane-doe\/photo-thumb\.webp"/);
   assert.match(html, /poster="\/media\/jane-doe\/poster-thumb\.webp" data-full-poster="\/media\/jane-doe\/poster\.jpg"/);
-  assert.match(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-thumb\.webp" fetchpriority="high">/);
+  assert.match(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover\.jpg" fetchpriority="high">/);
+  assert.ok(html.indexOf('<link rel="preload" as="image"') < html.indexOf('<title>'), 'hero image is discovered before page metadata');
   assert.ok(html.indexOf('<link rel="preload" as="image"') < html.indexOf('as="font"'), 'hero image is discovered before the font');
 });
 
-test('cover slideshow starts with normal thumbnails at high priority and preloads the first thumbnail', () => {
+test('cover slideshow loads full-size images at high priority and preloads only the first', () => {
   const html = render({
     ...profile,
     cover: [
@@ -47,16 +51,16 @@ test('cover slideshow starts with normal thumbnails at high priority and preload
       { file: 'cover-4.jpg', preview: 'cover-4-preview.webp', thumbnail: 'cover-4-thumb.webp', alt: 'Fourth cover' },
     ],
   });
+  const heroStart = html.indexOf('<section class="hero"');
+  const hero = html.slice(heroStart, html.indexOf('</section>', heroStart));
   for (let i = 1; i <= 4; i++) {
-    assert.match(html, new RegExp(`src="/media/jane-doe/cover-${i}-thumb\\.webp" data-full-src="/media/jane-doe/cover-${i}\\.jpg"`));
+    assert.match(hero, new RegExp(`src="/media/jane-doe/cover-${i}\\.jpg" alt="[^"]*" loading="eager" fetchpriority="high"`));
   }
-  assert.match(html, /cover-1-thumb\.webp" data-full-src[^>]*loading="eager" fetchpriority="high"/);
-  const hero = html.slice(html.indexOf('<section class="hero"'), html.indexOf('</section>', html.indexOf('<section class="hero"')));
   assert.equal((hero.match(/loading="eager" fetchpriority="high"/g) ?? []).length, 4);
-  assert.doesNotMatch(hero, /loading="lazy"|data-medium-src|preview/);
-  assert.match(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-1-thumb\.webp" fetchpriority="high">/);
-  assert.doesNotMatch(html, /cover-[1-4]-preview/);
-  assert.doesNotMatch(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-[2-4]-thumb\.webp"/);
+  assert.doesNotMatch(hero, /loading="lazy"|data-medium-src|data-full-src|preview|thumb/);
+  assert.match(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-1\.jpg" fetchpriority="high">/);
+  assert.doesNotMatch(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-[2-4]/);
+  assert.ok(html.indexOf('<link rel="preload" as="image"') < html.indexOf('<title>'));
 });
 
 test('profiles without thumbnails retain their original image and video poster markup', () => {
@@ -80,6 +84,7 @@ test('admin exposes the Generate Thumbnails action and the site upgrades thumbna
   assert.match(admin, /id="view-site"[^>]*aria-label="View site"/);
   assert.match(siteJs, /function loadFullImageAfterThumbnail\(img\)/);
   assert.match(siteJs, /full\.src = fullUrl/);
-  assert.match(siteJs, /img\.removeAttribute\('data-full-src'\)[\s\S]*?setMediaSrc\(img, full\.currentSrc \|\| fullUrl\)/);
+  assert.doesNotMatch(siteJs, /data-full-webp|data-full-avif/);
+  assert.match(siteJs, /img\.removeAttribute\('data-full-src'\)[\s\S]*?setMediaSrc\(img, fullUrl\)/);
   assert.match(siteJs, /activeImg\.complete && \(activeImg\.naturalWidth \|\| 0\) > 0\)[\s\S]*?loadFullImageAfterThumbnail\(activeImg\)/);
 });

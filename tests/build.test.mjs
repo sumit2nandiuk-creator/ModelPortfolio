@@ -577,7 +577,7 @@ test('a cover list builds a slideshow with dots and autoplay; a single cover has
   }
 });
 
-test('local tiny previews and normal thumbnails are copied into the profile media folder', async () => {
+test('local previews and thumbnails are copied but the hero loads full size', async () => {
   const ws = await tempWorkspace();
   try {
     await fs.mkdir(ws.modelsDir, { recursive: true });
@@ -600,7 +600,11 @@ test('local tiny previews and normal thumbnails are copied into the profile medi
     assert.equal(await exists(path.join(outMedia, 'preview-check-tiny.webp')), true);
     assert.equal(await exists(path.join(outMedia, 'preview-check-thumb.webp')), true);
     const html = await fs.readFile(path.join(ws.outDir, 'preview-check', 'index.html'), 'utf8');
-    assert.match(html, /src="\/preview-check\/media\/preview-check-thumb\.webp" data-full-src="\/preview-check\/media\/preview-check-cover\.png"/);
+    const heroStart = html.indexOf('<section class="hero"');
+    const hero = html.slice(heroStart, html.indexOf('</section>', heroStart));
+    assert.match(hero, /<img class="hero-media" src="\/preview-check\/media\/preview-check-cover\.png" alt="Cover preview"[^>]*loading="eager" fetchpriority="high"/);
+    assert.doesNotMatch(hero, /preview-check-tiny|preview-check-thumb|data-full-src|data-medium-src/);
+    assert.match(html, /<link rel="preload" as="image" href="\/preview-check\/media\/preview-check-cover\.png" fetchpriority="high">/);
   } finally {
     await ws.cleanup();
   }

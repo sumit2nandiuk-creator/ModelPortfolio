@@ -568,6 +568,7 @@
     $('setup').hidden = name !== 'setup';
     $('editor').hidden = name !== 'editor';
     $('top-actions').hidden = name !== 'editor';
+    if ($('brand-picker')) $('brand-picker').hidden = name !== 'editor';
   }
 
   function configured() {

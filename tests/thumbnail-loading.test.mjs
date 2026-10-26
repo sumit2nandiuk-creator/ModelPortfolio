@@ -41,7 +41,7 @@ test('site markup loads the hero full-size directly while gallery cards keep pro
   assert.ok(html.indexOf('<link rel="preload" as="image"') < html.indexOf('as="font"'), 'hero image is discovered before the font');
 });
 
-test('cover slideshow loads full-size images at high priority and preloads only the first', () => {
+test('cover slideshow loads the first full-size image at high priority and defers the rest', () => {
   const html = render({
     ...profile,
     cover: [
@@ -53,11 +53,12 @@ test('cover slideshow loads full-size images at high priority and preloads only 
   });
   const heroStart = html.indexOf('<section class="hero"');
   const hero = html.slice(heroStart, html.indexOf('</section>', heroStart));
-  for (let i = 1; i <= 4; i++) {
-    assert.match(hero, new RegExp(`src="/media/jane-doe/cover-${i}\\.jpg" alt="[^"]*" loading="eager" fetchpriority="high"`));
+  assert.match(hero, /<img class="hero-media" src="\/media\/jane-doe\/cover-1\.jpg" alt="[^"]*" loading="eager" fetchpriority="high"/);
+  for (let i = 2; i <= 4; i++) {
+    assert.match(hero, new RegExp(`data-deferred-src="/media/jane-doe/cover-${i}\\.jpg" alt="[^"]*" loading="lazy" fetchpriority="low"`));
   }
-  assert.equal((hero.match(/loading="eager" fetchpriority="high"/g) ?? []).length, 4);
-  assert.doesNotMatch(hero, /loading="lazy"|data-medium-src|data-full-src|preview|thumb/);
+  assert.equal((hero.match(/loading="eager" fetchpriority="high"/g) ?? []).length, 1);
+  assert.doesNotMatch(hero, /data-medium-src|data-full-src|preview|thumb/);
   assert.match(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-1\.jpg" fetchpriority="high">/);
   assert.doesNotMatch(html, /<link rel="preload" as="image" href="\/media\/jane-doe\/cover-[2-4]/);
   assert.ok(html.indexOf('<link rel="preload" as="image"') < html.indexOf('<title>'));

@@ -9,7 +9,10 @@
 
   var reducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  // ---- Beautiful page loader – fades out after initial load ---------------
+  // ---- Beautiful page loader – fades out once the cover photo is ready -----
+  // It only has to cover the first screen. Waiting for window "load" also meant
+  // waiting for every gallery photo the browser had started further down, so the
+  // page reveals itself as soon as the first cover photo has loaded and decoded.
   (function () {
     var loader = document.getElementById('page-loader');
     if (!loader) return;
@@ -34,9 +37,18 @@
         }, 800);
       }, delay);
     }
-    if (document.readyState === 'complete') {
+    var cover = document.querySelector('.hero-carousel .carousel-slide img');
+    function coverReady() {
+      if (cover.decode) cover.decode().then(doHide, doHide);
+      else doHide();
+    }
+    if (document.readyState === 'complete' || !cover || !cover.getAttribute('src')) {
       doHide();
+    } else if (cover.complete) {
+      coverReady();
     } else {
+      cover.addEventListener('load', coverReady);
+      cover.addEventListener('error', doHide);
       window.addEventListener('load', doHide);
       // fail-safe: never keep loader longer than maxWait + minShow
       setTimeout(doHide, maxWait + minShow);
@@ -563,18 +575,57 @@
   var hero = null;
   var viewerCarousel = null; // the photo viewer's carousel; set below when the viewer exists
 
+  // Later cover photos arrive with their sources in data-deferred-* attributes,
+  // so they never share the connection with the first screen. Copying them back
+  // starts the download (eager, low priority: the slide sits off screen).
+  function activateDeferredImage(img) {
+    if (!img || !img.getAttribute || img.getAttribute('data-deferred-src') === null) return;
+    var parent = img.parentElement || img.parentNode;
+    if (parent && parent.tagName === 'PICTURE' && parent.querySelectorAll) {
+      Array.prototype.forEach.call(parent.querySelectorAll('source'), function (source) {
+        var set = source.getAttribute('data-deferred-srcset');
+        if (set === null) return;
+        source.setAttribute('srcset', set);
+        source.removeAttribute('data-deferred-srcset');
+      });
+    }
+    img.setAttribute('loading', 'eager');
+    var srcset = img.getAttribute('data-deferred-srcset');
+    if (srcset !== null) {
+      img.setAttribute('srcset', srcset);
+      img.removeAttribute('data-deferred-srcset');
+    }
+    var src = img.getAttribute('data-deferred-src');
+    img.removeAttribute('data-deferred-src');
+    img.setAttribute('src', src);
+  }
+
+  // Starts every remaining cover photo, the one on screen first and then onwards
+  // in slideshow order, so the next slide is always the next download.
+  var heroSlidesReleased = false;
+  function releaseHeroSlides(fromIndex) {
+    if (!heroRoot) return;
+    var imgs = heroRoot.querySelectorAll('img');
+    var n = imgs.length;
+    var start = typeof fromIndex === 'number' ? fromIndex : (hero ? hero.current() : 0);
+    for (var k = 0; k < n; k++) activateDeferredImage(imgs[(start + k) % n]);
+    heroSlidesReleased = true;
+  }
+
   if (heroRoot) {
     var heroImgs = Array.prototype.slice.call(heroRoot.querySelectorAll('img'));
-    heroImgs.forEach(function (img) {
-      // Markup already makes every full-size slide eager/high so first-screen
-      // images outrank below-the-fold media; decode off the main thread.
+    heroImgs.forEach(function (img, i) {
+      // Only the first slide is needed for the first screen; it is preloaded
+      // and high priority. Decode off the main thread.
       img.decoding = 'async';
-      img.fetchPriority = 'high';
+      img.fetchPriority = i === 0 ? 'high' : 'low';
     });
 
     hero = createCarousel(heroRoot, {
       autoplay: Number(heroRoot.getAttribute('data-autoplay')) || 0,
       onChange: function (i) {
+        // Autoplay, a dot or a swipe moved on: that photo is needed now.
+        if (i !== 0 || heroSlidesReleased) releaseHeroSlides(i);
         heroDots.forEach(function (dot, j) { dot.classList.toggle('is-active', j === i); });
         var active = heroRoot.querySelectorAll('.carousel-slide')[i];
         var activeImg = active && active.querySelector('img');
@@ -599,6 +650,21 @@
     });
     hero.reset(0);
     hero.resume();
+
+    // The remaining cover photos start once the page has loaded (when the
+    // browser is idle), as soon as the visitor touches the slideshow, or after a
+    // fail-safe delay, always well before autoplay reaches them.
+    var releaseWhenIdle = function () {
+      var run = function () { releaseHeroSlides(); };
+      if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(run, { timeout: 1000 });
+      else setTimeout(run, 150);
+    };
+    if (document.readyState === 'complete') releaseWhenIdle();
+    else window.addEventListener('load', releaseWhenIdle);
+    setTimeout(function () { releaseHeroSlides(); }, 3500);
+    ['pointerdown', 'touchstart', 'focusin'].forEach(function (type) {
+      heroRoot.addEventListener(type, function () { releaseHeroSlides(); }, { passive: true, once: true });
+    });
   }
 
   // Keep the cover slides aligned with the real screen width. Without this, a size change

@@ -29,11 +29,17 @@ const hero = html.slice(heroStart, html.indexOf('</section>', heroStart));
 
 test('hero slides directly reference full-size responsive images', () => {
   assert.equal((hero.match(/class="hero-media"/g) ?? []).length, 2);
-  assert.match(hero, /src="\/media\/hero\/one-2400\.webp"/);
-  assert.match(hero, /src="\/media\/hero\/two-2400\.webp"/);
-  assert.match(hero, /srcset="[^"]*one-480\.avif 480w/);
-  assert.match(hero, /srcset="[^"]*one-2400\.webp 2400w/);
-  assert.equal((hero.match(/loading="eager" fetchpriority="high"/g) ?? []).length, 2);
+  assert.match(hero, / src="\/media\/hero\/one-2400\.webp"/);
+  assert.match(hero, / srcset="[^"]*one-480\.avif 480w/);
+  assert.match(hero, / srcset="[^"]*one-2400\.webp 2400w/);
+  assert.equal((hero.match(/loading="eager" fetchpriority="high"/g) ?? []).length, 1);
+  // Later slides keep the same full-size sources, but deferred until site.js
+  // activates them, so they cannot compete with the first screen.
+  assert.match(hero, / data-deferred-src="\/media\/hero\/two-2400\.webp"/);
+  assert.match(hero, /<source type="image\/avif" data-deferred-srcset="[^"]*two-480\.avif 480w/);
+  assert.match(hero, / data-deferred-srcset="[^"]*two-2400\.webp 2400w/);
+  assert.doesNotMatch(hero, / (src|srcset)="[^"]*two-/);
+  assert.match(hero, /loading="lazy" fetchpriority="low"/);
   assert.doesNotMatch(hero, /thumb|tiny|preview|data-full-src|data-medium-src|data-full-webp|data-full-avif/);
 });
 

@@ -200,7 +200,7 @@ Hosted files are referenced in `model.json` by their full `https://` URL. Option
 
 ### Notes
 
-- A new profile needs at least one cover photo before its first save. The admin generates a tiny WebP preview (64 px max edge, low quality, typically a few KB) plus a normal 360 px WebP thumbnail for each newly uploaded cover/gallery image. The hero slideshow loads full-size images directly, skipping both tiny previews and normal thumbnails. Every slide is `eager`/`fetchpriority="high"`; the first full-size image is preloaded before the title, fonts and stylesheets. Tiny previews and progressive upgrades remain available for gallery cards. Use **Generate Thumbnails** to backfill older images.
+- A new profile needs at least one cover photo before its first save. The admin generates a tiny WebP preview (64 px max edge, low quality, typically a few KB) plus a normal 360 px WebP thumbnail for each newly uploaded cover/gallery image. The hero slideshow loads full-size images directly, skipping both tiny previews and normal thumbnails. Only the first slide downloads with the page (`eager`/`fetchpriority="high"`, preloaded before the title, fonts and stylesheets); the other slides start as soon as the page has loaded, or immediately when a visitor touches the slideshow, so they never compete with the first screen. Tiny previews and progressive upgrades remain available for gallery cards. Use **Generate Thumbnails** to backfill older images.
 - Profiles can be archived and restored, or permanently removed from the public site. Permanent deletion removes R2 profile/media and blocks seed fallback; source files remain in Git. An administrator can later create a fresh profile with the same slug by submitting it without a version token; the deleted profile and its media are not restored, and stale versioned edits remain rejected.
 - Open `/errors` on the Cloudflare Pages site to inspect frontend JavaScript/media errors and backend API/runtime errors. The dashboard requires the admin token; records are stored in the private `MEDIA` R2 bucket.
 - Uploads are checked for size (25 MB for photos, 95 MB for videos) and file type. The build still checks that repo files exist.
@@ -222,6 +222,15 @@ Hosted files are referenced in `model.json` by their full `https://` URL. Option
   photos out of image search (`noimageindex`). The files themselves are still public:
   anyone can open a photo's address or use developer tools to save it. Only publish
   images that are fine to be seen by anyone who can open the site.
+
+### Page speed
+
+Measured with Lighthouse on its mobile profile (the one PageSpeed Insights uses), these rules keep the first screen fast:
+
+- **Fonts are self-hosted.** Cormorant Garamond and Inter are served from `/assets/fonts/`, so a default profile makes no Google Fonts request. Only fonts picked in the admin that are not self-hosted come from Google, loaded without blocking the first paint.
+- **Only the first cover photo competes with the first paint.** Chrome ignores a full-screen hero photo when it measures Largest Contentful Paint (it treats it as a background), so the header name is measured instead, and every request started before it paints delays it.
+- **The page loader fades out once the first cover photo is ready,** rather than after every image on the page has loaded.
+- **Live pages read their R2 data in parallel,** so a page view costs one storage round trip before the first byte instead of three.
 
 ### Responsive photo generation
 

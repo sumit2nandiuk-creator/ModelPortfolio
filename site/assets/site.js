@@ -14,14 +14,12 @@
     var loader = document.getElementById('page-loader');
     if (!loader) return;
     var start = Date.now();
-    var minShow = 650;
-    var maxWait = 3200;
+    var minShow = 520;
+    var maxWait = 2500;
     var hidden = false;
-    // Prevent background scroll while loader is visible
-    try {
-      document.documentElement.style.overflow = 'hidden';
-      document.body.style.overflow = 'hidden';
-    } catch (_) {}
+    // Do NOT lock html/body overflow – that was blocking vertical scroll
+    // for up to ~650ms after load and felt janky on image-heavy profiles.
+    // The fixed overlay already covers the viewport and fades via opacity.
     function doHide() {
       if (hidden) return;
       hidden = true;
@@ -30,14 +28,10 @@
       setTimeout(function () {
         loader.classList.add('is-hidden');
         loader.setAttribute('aria-hidden', 'true');
-        try {
-          document.documentElement.style.overflow = '';
-          document.body.style.overflow = '';
-        } catch (_) {}
-        // Remove from layout after fade transition so it never blocks clicks
+        // Remove from layout after fade so it never blocks clicks / scroll
         setTimeout(function () {
           if (loader && loader.parentNode) loader.style.display = 'none';
-        }, 900);
+        }, 800);
       }, delay);
     }
     if (document.readyState === 'complete') {

@@ -35,16 +35,39 @@
     article.appendChild(head);
     addText(article, 'p', 'message', item.message || 'Unknown error');
     addText(article, 'p', 'path', item.path || 'No page path recorded');
-    if (item.details && Object.keys(item.details).length) {
-      var details = document.createElement('details');
-      addText(details, 'summary', '', 'Technical details');
-      var text = Object.keys(item.details).map(function (key) {
-        var value = item.details[key];
-        return value === undefined || value === null || value === '' ? '' : key + ': ' + String(value);
-      }).filter(Boolean).join('\n');
-      if (text) addText(details, 'pre', '', text);
-      article.appendChild(details);
-    }
+    var text = JSON.stringify(item, null, 2);
+    var copy = addText(head, 'button', 'secondary copy-error', 'Copy details');
+    copy.type = 'button';
+    copy.setAttribute('aria-label', 'Copy complete error details');
+    copy.addEventListener('click', function () {
+      function fallback() {
+        var field = document.createElement('textarea');
+        field.value = text;
+        field.style.position = 'fixed';
+        field.style.opacity = '0';
+        document.body.appendChild(field);
+        field.select();
+        var copied = false;
+        try { copied = document.execCommand('copy'); } catch (_) {}
+        field.remove();
+        copy.focus();
+        if (!copied) throw new Error('Copy unavailable. Expand technical details and copy manually.');
+      }
+      Promise.resolve().then(function () {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          return navigator.clipboard.writeText(text).catch(fallback);
+        }
+        fallback();
+      }).then(function () {
+        copy.textContent = 'Copied';
+        setStatus('Error details copied.');
+        setTimeout(function () { copy.textContent = 'Copy details'; }, 2000);
+      }).catch(function (err) { setStatus(err.message, true); });
+    });
+    var details = document.createElement('details');
+    addText(details, 'summary', '', 'Technical details');
+    addText(details, 'pre', '', text);
+    article.appendChild(details);
     records.appendChild(article);
   }
 

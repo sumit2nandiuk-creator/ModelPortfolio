@@ -237,7 +237,7 @@ test('frontend errors can be reported publicly but error records are only readab
   const env = fakeEnv();
   const one = await handleRequest(apiRequest('POST', '/api/errors', {
     token: '',
-    body: { source: 'frontend-js', message: 'Uncaught test error', path: '/jane-doe/?private=yes', details: { stack: 'test stack' } },
+    body: { source: 'frontend-js', message: 'Uncaught test error', path: '/jane-doe/?private=yes', details: { stack: 'test stack', userAgent: 'TestBrowser/1', viewport: '390x844', online: false, mediaCode: 4, authorization: 'must-not-store' } },
   }), env);
   assert.equal(one.status, 202);
   const two = await handleRequest(apiRequest('POST', '/api/errors', {
@@ -258,6 +258,12 @@ test('frontend errors can be reported publicly but error records are only readab
   assert.equal(secondBody.errors.length, 1);
   assert.notEqual(firstBody.errors[0].id, secondBody.errors[0].id);
   assert.equal(firstBody.errors[0].path, '/jane-doe/');
+  const jsRecord = [...firstBody.errors, ...secondBody.errors].find(record => record.source === 'frontend-js');
+  assert.equal(jsRecord.details.userAgent, 'TestBrowser/1');
+  assert.equal(jsRecord.details.viewport, '390x844');
+  assert.equal(jsRecord.details.online, false);
+  assert.equal(jsRecord.details.mediaCode, 4);
+  assert.equal(jsRecord.details.authorization, undefined);
 });
 
 test('authenticated API errors are captured in the backend error log', async () => {

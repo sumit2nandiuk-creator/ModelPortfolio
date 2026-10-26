@@ -41,6 +41,22 @@
         column: Number(detail.column) || undefined,
         stack: safeStack(detail.stack),
         name: String(detail.name || '').slice(0, 100),
+        clientTime: new Date().toISOString(),
+        userAgent: String(navigator.userAgent || '').slice(0, 400),
+        language: String(navigator.language || '').slice(0, 40),
+        online: navigator.onLine,
+        viewport: [window.innerWidth || 0, window.innerHeight || 0].join('x'),
+        pixelRatio: Number(window.devicePixelRatio) || 1,
+        visibility: document.visibilityState || '',
+        readyState: document.readyState || '',
+        uptimeMs: Math.round(window.performance && window.performance.now ? window.performance.now() : 0),
+        connection: String((navigator.connection && navigator.connection.effectiveType) || '').slice(0, 40),
+        mediaCode: Number(detail.mediaCode) || undefined,
+        mediaState: Number(detail.mediaState) || undefined,
+        networkState: Number(detail.networkState) || undefined,
+        currentTime: Number(detail.currentTime) || undefined,
+        dimensions: String(detail.dimensions || '').slice(0, 60),
+        cause: safeStack(detail.cause).slice(0, 500),
       },
     };
     var body;
@@ -71,7 +87,12 @@
       var tag = String(target.tagName).toLowerCase();
       if (tag === 'img' || tag === 'video' || tag === 'script' || tag === 'link') {
         var resource = target.currentSrc || target.src || target.href || '';
-        send('frontend-resource', tag + ' failed to load', { resource: resource, name: tag });
+        send('frontend-resource', tag + ' failed to load', { resource: resource, name: tag,
+          mediaCode: target.error && target.error.code,
+          mediaState: target.readyState, networkState: target.networkState,
+          currentTime: target.currentTime,
+          dimensions: [target.naturalWidth || target.videoWidth || 0, target.naturalHeight || target.videoHeight || 0].join('x')
+        });
       }
       return;
     }
@@ -82,6 +103,7 @@
       column: event && event.colno,
       stack: error && error.stack,
       name: error && error.name,
+      cause: error && error.cause && (error.cause.stack || error.cause.message || String(error.cause)),
     });
   }, true);
 
@@ -90,6 +112,7 @@
     send('frontend-promise', reason && reason.message || String(reason || 'Unhandled promise rejection'), {
       stack: reason && reason.stack,
       name: reason && reason.name,
+      cause: reason && reason.cause && (reason.cause.stack || reason.cause.message || String(reason.cause)),
     });
   });
 })();

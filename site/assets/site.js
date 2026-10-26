@@ -442,14 +442,18 @@
       var moveX = e.clientX - drag.x;
       var moveY = e.clientY - drag.y;
       if (drag.axis === null) {
-        if (Math.abs(moveX) < 10 && Math.abs(moveY) < 10) return; // wait until the direction is clear
-        // Require a clear horizontal bias (1.35×) so diagonal vertical scrolls
-        // on the hero / popup don't get stolen as a horizontal swipe.
+        if (Math.abs(moveX) < 12 && Math.abs(moveY) < 12) return; // wait until the direction is clear
+        // Require a clear horizontal bias so diagonal vertical scrolls
+        // on the hero / popup don't get stolen. 2-slide carousels are
+        // extra sensitive (only 1 neighbour), so they need stronger bias.
         var absX = Math.abs(moveX);
         var absY = Math.abs(moveY);
-        if (absX > absY * 1.35 && absX > 10) drag.axis = 'x';
-        else if (absY > absX && absY > 10) drag.axis = 'y';
-        else return; // still ambiguous — let the browser handle it
+        var bias = slides().length === 2 ? 1.85 : 1.35;
+        if (absX > absY * bias && absX > 12) drag.axis = 'x';
+        else if (absY > absX * 1.1 && absY > 12) drag.axis = 'y';
+        else if (absX > 14 && absY < 6) drag.axis = 'x';
+        else if (absY > 14 && absX < 6) drag.axis = 'y';
+        else return; // still ambiguous — don't hijack, let native scroll win
         if (drag.axis === 'x' && root.setPointerCapture) {
           try { root.setPointerCapture(e.pointerId); } catch (err) { /* keep going without capture */ }
         }

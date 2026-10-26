@@ -2834,7 +2834,7 @@
     var failures = [];
     entries.forEach(function (entry) { entry.variants = variants; });
     function notify(text, done, total) { if (progress) progress(text, done, total); }
-    function encodeAvif(canvas) {
+    function encodeInWorker(canvas, format) {
       return new Promise(function (resolve, reject) {
         var activeWorker;
         var timer;
@@ -2854,14 +2854,14 @@
         try {
           if (!worker) worker = new window.Worker(new URL('image-variants-worker.js', window.location.href), { type: 'module' });
           activeWorker = worker;
-          timer = setTimeout(function () { finish(new Error('AVIF encoding timed out. Retry Generate Thumbnails.')); }, 120000);
+          timer = setTimeout(function () { finish(new Error(format.toUpperCase() + ' encoding timed out. Retry Generate Thumbnails.')); }, 120000);
           activeWorker.onmessage = function (event) {
             if (event.data.error) finish(new Error(event.data.error));
-            else finish(null, new Blob([event.data.buffer], { type: 'image/avif' }));
+            else finish(null, new Blob([event.data.buffer], { type: 'image/' + format }));
           };
-          activeWorker.onerror = function () { finish(new Error('Could not start AVIF encoder.')); };
+          activeWorker.onerror = function () { finish(new Error('Could not start ' + format.toUpperCase() + ' encoder.')); };
           var pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
-          activeWorker.postMessage({ pixels: pixels.buffer, width: canvas.width, height: canvas.height }, [pixels.buffer]);
+          activeWorker.postMessage({ format: format, pixels: pixels.buffer, width: canvas.width, height: canvas.height }, [pixels.buffer]);
         } catch (err) { finish(err); }
       });
     }
@@ -2895,9 +2895,14 @@
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-          var encoded = job.format === 'avif' ? encodeAvif(canvas) : new Promise(function (resolve, reject) {
+          var encoded = job.format === 'avif' ? encodeInWorker(canvas, 'avif') : new Promise(function (resolve, reject) {
             canvas.toBlob(function (blob) {
-              if (!blob || blob.type !== 'image/webp') reject(new Error('WebP encoding is not supported in this browser.'));
+              if (!blob || blob.type !== 'image/webp') {
+                // WebKit may return PNG even when image/webp was requested.
+                // Never upload that PNG under a .webp filename.
+                notify('Encoding ' + job.width + 'px WEBP with compatibility encoder…', index, jobs.length);
+                encodeInWorker(canvas, 'webp').then(resolve, reject);
+              }
               else resolve(blob);
             }, 'image/webp', 0.82);
           });

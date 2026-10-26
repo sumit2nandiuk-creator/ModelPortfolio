@@ -614,6 +614,8 @@
     var deleteBtn = $('delete-profile');
     var viewBtn = $('view-site');
     var disabled = !S.slug || S.isNew || S.busy;
+    var variantBtn = $('variant-notice-generate');
+    if (variantBtn) variantBtn.disabled = Boolean(S.busy);
     if (archiveBtn) {
       var label = S.isArchived ? 'Restore profile' : 'Temporarily hide profile';
       archiveBtn.disabled = disabled;
@@ -1333,6 +1335,8 @@
     var contact = m.contact || {};
     var seo = m.seo || {};
     $('editor-body').innerHTML = [
+      variantNoticeHtml(),
+
       '<div class="sections-overview-bar">' +
         '<button type="button" class="btn icon-btn ghost" data-action="toggle-all-sections" aria-label="' + (areAllSectionsCollapsed() ? 'Expand all sections' : 'Collapse all sections') + '" title="' + (areAllSectionsCollapsed() ? 'Expand all sections' : 'Collapse all sections') + '">' + icon(areAllSectionsCollapsed() ? 'expand' : 'chevronDown') + '</button>' +
       '</div>',
@@ -2050,6 +2054,10 @@
         else S.collapsedSections[toggleSid] = true;
         syncSectionCollapseDom(toggleSid);
       }
+      return;
+    }
+    if (action === 'generate-variants') {
+      generateThumbnails();
       return;
     }
     if (action === 'toggle-all-sections') {
@@ -2819,6 +2827,46 @@
         return (entry.variants || []).some(function (v) { return v.width === width && v.format === format && v.file; });
       });
     });
+  }
+
+  // The public page only uses <picture> AVIF/WebP sources when a photo has WebP
+  // variants; otherwise it serves the untouched original (often a multi-MB
+  // camera JPEG). Photos added before variants existed, or whose generation
+  // failed, stay that way until the backfill runs. Counted once per file.
+  function photoVariantGaps() {
+    var m = S.model || {};
+    var files = {};
+    (Array.isArray(m.cover) ? m.cover : []).concat(Array.isArray(m.photos) ? m.photos : []).forEach(function (entry) {
+      if (!entry || !entry.file) return;
+      var gap = files[String(entry.file)] || (files[String(entry.file)] = { original: false, incomplete: false });
+      var hasWebp = (entry.variants || []).some(function (v) { return v && v.format === 'webp' && v.file && v.width > 0; });
+      if (!hasWebp) gap.original = true;
+      if (!hasAllVariants(entry)) gap.incomplete = true;
+    });
+    var counts = { original: 0, incomplete: 0 };
+    Object.keys(files).forEach(function (file) {
+      if (files[file].original) counts.original += 1;
+      if (files[file].incomplete) counts.incomplete += 1;
+    });
+    return counts;
+  }
+
+  // A visible, labelled prompt for the backfill: the toolbar button is an
+  // icon whose tooltip never appears on touch screens.
+  function variantNoticeHtml() {
+    var gaps = photoVariantGaps();
+    if (!gaps.incomplete) return '';
+    var count = gaps.original || gaps.incomplete;
+    var noun = count === 1 ? '1 photo is' : count + ' photos are';
+    var title = gaps.original ? noun + ' published as full-size originals' : noun + ' missing some AVIF/WebP sizes';
+    var detail = gaps.original
+      ? (count === 1 ? 'It has' : 'They have') + ' no AVIF or WebP versions yet, so visitors download the original files and the site loads slowly.'
+      : 'Some sizes could not be created earlier, so some screens get a larger image than they need.';
+    return '<div class="variant-notice" role="note" data-variant-notice>' +
+      '<div class="variant-notice-text"><strong>' + esc(title) + '</strong>' +
+        '<span>' + esc(detail) + ' Creating them takes a little while per photo and saves the profile when finished.</span></div>' +
+      '<button type="button" class="btn primary small" id="variant-notice-generate" data-action="generate-variants"' + (S.busy ? ' disabled' : '') + '>Create AVIF/WebP versions</button>' +
+    '</div>';
   }
 
   // One decoded original, sequential resizes/encodes, and one AVIF worker per

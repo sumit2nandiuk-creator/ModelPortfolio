@@ -2000,16 +2000,21 @@
     // Idle players show a poster (or placeholder), never a network-loading spinner.
     updateMediaLoaded(v, true);
     var frame = v.closest ? v.closest('.video-frame') : null;
-    var button = frame && frame.querySelector('.video-play-button');
 
-    // Native controls belong to the playing video only. While the poster is up the
-    // frame shows its own play button, and a browser that also draws a play button
-    // over the poster (iOS Safari paints a large circle) would show two of them.
+    // The poster is the play target: nothing is drawn over it, so a video card
+    // looks like a photo until it is played. Native controls belong to the playing
+    // video only — a browser paints its own play glyph on a controlled poster
+    // (iOS Safari draws a big circle), which is exactly what is being avoided.
     function showNativeControls(show) {
       try { v.controls = show; } catch (_) {}
       if (typeof v.setAttribute === 'function') {
-        if (show) v.setAttribute('controls', '');
-        else v.removeAttribute('controls');
+        if (show) {
+          v.setAttribute('controls', '');
+          v.removeAttribute('tabindex');
+        } else {
+          v.removeAttribute('controls');
+          if (v.getAttribute('data-video-src')) v.setAttribute('tabindex', '0');
+        }
       }
       if (frame && frame.classList) frame.classList.toggle('is-playing', show);
     }
@@ -2022,9 +2027,10 @@
         v.load();
       }
       showNativeControls(true);
-      if (button) button.hidden = true;
       var blocked = function () {
-        if (button) button.hidden = false;
+        // Keep the poster playable: restore the pending source so the next tap,
+        // click or key press can try again.
+        if (source) v.setAttribute('data-video-src', source);
         showNativeControls(false);
       };
       try {
@@ -2033,10 +2039,18 @@
       } catch (_) { blocked(); }
     }
 
-    if (button) button.addEventListener('click', startPlayback);
-    // The poster itself plays too, since native controls only appear once it starts.
+    function playable() {
+      return Boolean(v.getAttribute('data-video-src'));
+    }
+
+    if (playable()) v.setAttribute('tabindex', '0');
     v.addEventListener('click', function () {
-      if (v.getAttribute('data-video-src')) startPlayback();
+      if (playable()) startPlayback();
+    });
+    v.addEventListener('keydown', function (e) {
+      if (!playable() || !e || (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar')) return;
+      if (e.cancelable) e.preventDefault();
+      startPlayback();
     });
     v.addEventListener('play', function () {
       videoEls.forEach(function (other) {

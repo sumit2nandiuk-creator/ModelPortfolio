@@ -2045,30 +2045,20 @@ video.is-failed {
   color: var(--font-contact-color, var(--paper));
 }
 
-/* Source-free idle videos only fetch their media after an explicit Play click. */
-.video-frame { position: relative; }
-.video-play-button {
-  position: absolute;
-  inset: 50% auto auto 50%;
-  transform: translate(-50%, -50%);
-  width: 64px;
-  height: 64px;
-  border: 1px solid rgba(255,255,255,.8);
-  border-radius: 50%;
-  background: rgba(0,0,0,.65);
-  color: white;
-  font-size: 26px;
+/* Source-free idle videos only fetch their media after the poster is played.
+   Nothing is drawn over the poster: the photo itself starts playback, and the
+   native controls appear with the playing video. */
+.video-frame {
+  position: relative;
   cursor: pointer;
-  z-index: 2;
 }
-.video-play-button[hidden] { display: none; }
-.video-play-button:focus-visible { outline: 3px solid white; outline-offset: 4px; }
+.video-frame.is-playing { cursor: default; }
+.video-frame:not(.is-playing) video:focus-visible { outline: 3px solid white; outline-offset: -3px; }
 
-/* Exactly one play button on a poster. iOS Safari paints its own large translucent
+/* No play glyph on the poster either. iOS Safari paints its own large translucent
    "start playback" circle over a video, and other WebKit builds add an overlay play
-   button; either one would sit underneath .video-play-button and read as two
-   buttons. Native controls are attached by the script when playback starts, so the
-   browser's poster button is hidden only while the frame is still idle. */
+   button; both are hidden while the frame is idle, so a video card reads as a clean
+   photo until it is played. */
 .video-frame:not(.is-playing) video::-webkit-media-controls,
 .video-frame:not(.is-playing) video::-webkit-media-controls-panel,
 .video-frame:not(.is-playing) video::-webkit-media-controls-play-button,

@@ -78,9 +78,8 @@ test('website loading speed: preloads LCP cover image, preconnects origins, and 
     assert.match(html, /<img src="https:\/\/media\.example\.test\/speed-test\/photo-1\.jpg" alt="Photo 1"[^>]*loading="lazy" decoding="async"/);
     assert.match(html, /<img src="https:\/\/media\.example\.test\/speed-test\/photo-2\.jpg" alt="Photo 2"[^>]*loading="lazy" decoding="async"/);
 
-    // 6. Videos have no active source and no native controls until explicitly played.
-    //    Native controls are attached by the script on play, so the browser cannot
-    //    draw its own play button over the poster next to the one in the frame.
+    // 6. Videos have no active source and no native controls until the poster is
+    //    played, and nothing is drawn over the poster: no play button, no glyph.
     const videos = html.match(/<video\b[^>]*>/g) || [];
     assert.ok(videos.length);
     videos.forEach(tag => {
@@ -89,7 +88,8 @@ test('website loading speed: preloads LCP cover image, preconnects origins, and 
       assert.doesNotMatch(tag, /\scontrols[\s=>]/, `idle video must not carry native controls: ${tag}`);
       assert.match(tag, /data-video-src=/);
     });
-    assert.match(html, /class="video-play-button"/);
+    assert.doesNotMatch(html, /video-play-button/, 'video cards render no play button');
+    assert.doesNotMatch(html, /▶/, 'video cards render no play glyph');
   } finally {
     await ws.cleanup();
   }

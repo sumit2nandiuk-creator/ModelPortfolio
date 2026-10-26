@@ -6,21 +6,21 @@ import vm from 'node:vm';
 const script = await readFile(new URL('../site/assets/site.js', import.meta.url), 'utf8');
 const setup = script.slice(script.indexOf('  function setupVideoPlayer('), script.indexOf('  videoEls.forEach(setupVideoPlayer);'));
 
-// Minimal video + play-button DOM, enough for setupVideoPlayer().
+// Minimal video DOM, enough for setupVideoPlayer().
 function createHarness({ playback = 'ok' } = {}) {
-  const attrs = new Map([['data-video-src', '/media/reel.mp4']]);
+  const attrs = new Map([['data-video-src', '/media/reel.mp4'], ['aria-label', 'Showreel']]);
   const events = {};
   const frameClasses = new Set();
   let loads = 0;
   let plays = 0;
-  const button = { hidden: false, addEventListener: (name, handler) => { events['button:' + name] = handler; } };
+  const frame = {
+    querySelector: () => null,
+    classList: { toggle: (name, on) => (on ? frameClasses.add(name) : frameClasses.delete(name)) },
+  };
   const video = {
     controls: false,
     addEventListener: (name, handler) => { events[name] = handler; },
-    closest: () => ({
-      querySelector: () => button,
-      classList: { toggle: (name, on) => (on ? frameClasses.add(name) : frameClasses.delete(name)) },
-    }),
+    closest: () => frame,
     getAttribute: name => (attrs.has(name) ? attrs.get(name) : null),
     setAttribute: (name, value) => attrs.set(name, value),
     removeAttribute: name => attrs.delete(name),
@@ -39,28 +39,28 @@ function createHarness({ playback = 'ok' } = {}) {
     attrs,
     events,
     frameClasses,
-    button,
     video,
     get loads() { return loads; },
     get plays() { return plays; },
-    strikePlayButton() { events['button:click'](); },
+    click() { events.click(); },
+    key(key) { events.keydown({ key, cancelable: true, preventDefault() {} }); },
   };
 }
 
-test('the idle poster shows one play button: no native controls until playback starts', () => {
+test('an idle video poster carries no play button, no glyph and no native controls', () => {
   const h = createHarness();
   assert.equal(h.loads, 0);
   assert.equal(h.plays, 0);
   assert.equal(h.attrs.has('src'), false, 'no source is attached while idle');
-  assert.equal(h.video.controls, false, 'native controls stay off while idle, so no second play button');
+  assert.equal(h.video.controls, false, 'native controls stay off while idle');
   assert.equal(h.attrs.has('controls'), false);
   assert.equal(h.frameClasses.has('is-playing'), false);
-  assert.equal(h.button.hidden, false, 'the frame keeps its own play button');
+  assert.equal(h.attrs.get('tabindex'), '0', 'the poster stays keyboard reachable');
 });
 
-test('only an explicit Play click attaches the video source, enables controls and starts playback', async () => {
+test('tapping the poster attaches the source and starts playback with native controls', () => {
   const h = createHarness();
-  h.strikePlayButton();
+  h.click();
   assert.equal(h.attrs.get('src'), '/media/reel.mp4');
   assert.equal(h.attrs.has('data-video-src'), false);
   assert.equal(h.loads, 1);
@@ -68,49 +68,55 @@ test('only an explicit Play click attaches the video source, enables controls an
   assert.equal(h.video.controls, true, 'native controls appear with the playing video');
   assert.equal(h.attrs.has('controls'), true);
   assert.equal(h.frameClasses.has('is-playing'), true);
-  assert.equal(h.button.hidden, true);
+  assert.equal(h.attrs.has('tabindex'), false, 'native controls own the focus target once playing');
 
-  // A second click on the (now hidden) button does not re-attach or reload the source.
-  h.strikePlayButton();
-  assert.equal(h.loads, 1, 'retry does not reset an already attached source');
+  // Further clicks belong to the native controls: nothing is restarted.
+  h.click();
+  assert.equal(h.plays, 1);
+  assert.equal(h.loads, 1);
 });
 
-test('blocked playback puts the poster state back, keeping a single play button', async () => {
+test('the poster also plays from the keyboard, and only before playback starts', () => {
+  const h = createHarness();
+  h.key('Tab');
+  assert.equal(h.plays, 0, 'other keys are ignored');
+  h.key('Enter');
+  assert.equal(h.plays, 1);
+  assert.equal(h.attrs.get('src'), '/media/reel.mp4');
+
+  h.key(' ');
+  assert.equal(h.plays, 1, 'a playing video is not restarted from the keyboard');
+});
+
+test('blocked playback restores the playable poster', async () => {
   for (const playback of ['reject', 'throw']) {
     const h = createHarness({ playback });
-    h.strikePlayButton();
+    h.click();
     await Promise.resolve();
-    assert.equal(h.button.hidden, false, `${playback}: the custom play button comes back for a retry`);
     assert.equal(h.video.controls, false, `${playback}: native controls are removed again`);
     assert.equal(h.attrs.has('controls'), false);
     assert.equal(h.frameClasses.has('is-playing'), false);
+    assert.equal(h.attrs.get('data-video-src'), '/media/reel.mp4', `${playback}: the poster can be tapped again`);
+    assert.equal(h.attrs.get('tabindex'), '0');
+
+    h.click();
+    assert.equal(h.plays, 2, `${playback}: a retry is possible`);
   }
 });
 
-test('tapping the poster also plays a video that has not been started yet', () => {
-  const h = createHarness();
-  assert.equal(typeof h.events.click, 'function', 'the video element listens for a tap');
-  h.events.click();
-  assert.equal(h.plays, 1);
-  assert.equal(h.attrs.get('src'), '/media/reel.mp4');
-  assert.equal(h.video.controls, true);
-
-  // Once playing, taps belong to the native controls: nothing is restarted.
-  h.events.click();
-  assert.equal(h.plays, 1);
-});
-
-test('CSS hides the WebKit poster play button only while the frame is idle', async () => {
+test('no round play button is rendered or styled anywhere', async () => {
   const css = await readFile(new URL('../site/assets/site.css', import.meta.url), 'utf8');
-  const guard = css.slice(css.indexOf('.video-frame:not(.is-playing)'), css.indexOf('}', css.indexOf('.video-frame:not(.is-playing)')));
-  assert.match(guard, /::-webkit-media-controls-start-playback-button/, 'iOS start-playback circle is suppressed while idle');
-  assert.match(guard, /::-webkit-media-controls-overlay-play-button/, 'WebKit overlay play button is suppressed while idle');
+  assert.doesNotMatch(css, /\.video-play-button/, 'the round play button styles are gone');
+  // WebKit's own poster glyphs stay hidden while the frame is idle.
+  const guardStart = css.indexOf('.video-frame:not(.is-playing) video::-webkit-media-controls,');
+  assert.notEqual(guardStart, -1, 'the idle-poster control guard exists');
+  const guard = css.slice(guardStart, css.indexOf('}', guardStart));
+  assert.match(guard, /::-webkit-media-controls-start-playback-button/);
+  assert.match(guard, /::-webkit-media-controls-overlay-play-button/);
   assert.match(guard, /display:\s*none\s*!important/);
   assert.match(guard, /-webkit-appearance:\s*none/);
-  assert.match(css, /\.video-frame:not\(\.is-playing\)/, 'the guard is scoped to an idle frame, so playing videos keep their controls');
-  // The play button itself stays a single centred control while idle.
-  const block = css.slice(css.indexOf('.video-play-button {'), css.indexOf('.video-play-button[hidden]'));
-  assert.match(block, /position:\s*absolute;/);
-  assert.match(block, /inset:\s*50% auto auto 50%;/);
-  assert.match(block, /border-radius:\s*50%;/);
+
+  const render = await readFile(new URL('../scripts/lib/render.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(render, /video-play-button/, 'the video card no longer renders a play button');
+  assert.doesNotMatch(render, /▶/, 'the video card no longer renders a play glyph');
 });

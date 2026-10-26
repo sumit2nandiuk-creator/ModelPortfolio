@@ -597,7 +597,7 @@ video {
   /* Hard clip: nothing from a neighbouring slide can show past the carousel's edges. */
   contain: paint;
   overscroll-behavior-x: contain;
-  touch-action: pan-y;
+  touch-action: pan-y pinch-zoom;
   -webkit-user-select: none;
   user-select: none;
 }

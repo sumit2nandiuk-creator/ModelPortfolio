@@ -14,14 +14,12 @@
     var loader = document.getElementById('page-loader');
     if (!loader) return;
     var start = Date.now();
-    var minShow = 650;
-    var maxWait = 3200;
+    var minShow = 520;
+    var maxWait = 2500;
     var hidden = false;
-    // Prevent background scroll while loader is visible
-    try {
-      document.documentElement.style.overflow = 'hidden';
-      document.body.style.overflow = 'hidden';
-    } catch (_) {}
+    // Do NOT lock html/body overflow – that was blocking vertical scroll
+    // for up to ~650ms after load and felt janky on image-heavy profiles.
+    // The fixed overlay already covers the viewport and fades via opacity.
     function doHide() {
       if (hidden) return;
       hidden = true;
@@ -30,14 +28,10 @@
       setTimeout(function () {
         loader.classList.add('is-hidden');
         loader.setAttribute('aria-hidden', 'true');
-        try {
-          document.documentElement.style.overflow = '';
-          document.body.style.overflow = '';
-        } catch (_) {}
-        // Remove from layout after fade transition so it never blocks clicks
+        // Remove from layout after fade so it never blocks clicks / scroll
         setTimeout(function () {
           if (loader && loader.parentNode) loader.style.display = 'none';
-        }, 900);
+        }, 800);
       }, delay);
     }
     if (document.readyState === 'complete') {
@@ -448,13 +442,30 @@
       var moveX = e.clientX - drag.x;
       var moveY = e.clientY - drag.y;
       if (drag.axis === null) {
-        if (Math.abs(moveX) < 6 && Math.abs(moveY) < 6) return; // wait until the direction is clear
-        drag.axis = Math.abs(moveX) > Math.abs(moveY) ? 'x' : 'y';
+        if (Math.abs(moveX) < 12 && Math.abs(moveY) < 12) return; // wait until the direction is clear
+        // Require a clear horizontal bias so diagonal vertical scrolls
+        // on the hero / popup don't get stolen. 2-slide carousels are
+        // extra sensitive (only 1 neighbour), so they need stronger bias.
+        var absX = Math.abs(moveX);
+        var absY = Math.abs(moveY);
+        var bias = slides().length === 2 ? 1.85 : 1.35;
+        if (absX > absY * bias && absX > 12) drag.axis = 'x';
+        else if (absY > absX * 1.1 && absY > 12) drag.axis = 'y';
+        else if (absX > 14 && absY < 6) drag.axis = 'x';
+        else if (absY > 14 && absX < 6) drag.axis = 'y';
+        else return; // still ambiguous — don't hijack, let native scroll win
         if (drag.axis === 'x' && root.setPointerCapture) {
           try { root.setPointerCapture(e.pointerId); } catch (err) { /* keep going without capture */ }
         }
       }
-      if (drag.axis !== 'x') return; // vertical movement scrolls the page instead
+      if (drag.axis !== 'x') {
+        // Vertical scroll — release pointer capture so page can scroll.
+        if (drag.axis === 'y' && root.hasPointerCapture && root.hasPointerCapture(e.pointerId)) {
+          try { root.releasePointerCapture(e.pointerId); } catch (_) {}
+        }
+        restartAutoplay();
+        return; // vertical movement scrolls the page instead
+      }
       if (e.cancelable) e.preventDefault();
       dx = moveX;
       scheduleLayout();

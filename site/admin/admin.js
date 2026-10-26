@@ -949,7 +949,7 @@
     var track = info.state === 'error'
       ? ''
       : '<div class="upload-track' + (info.indeterminate ? ' is-indeterminate' : '') + '" role="progressbar"' +
-          ' aria-valuemin="0" aria-valuemax="100"' +
+          ' aria-valuemin="0" aria-valuemax="100" aria-valuetext="' + esc(info.detail || info.title || 'Uploading') + '"' +
           (info.indeterminate ? '' : ' aria-valuenow="' + pct + '"') + '>' +
           '<div class="upload-fill" style="width:' + (info.indeterminate ? 38 : pct) + '%"></div>' +
         '</div>';
@@ -994,7 +994,7 @@
         '<span>' + esc(active.detail || '') + '</span>' +
       '</div>' +
       '<div class="upload-track' + (active.indeterminate ? ' is-indeterminate' : '') + '" role="progressbar"' +
-        ' aria-valuemin="0" aria-valuemax="100"' +
+        ' aria-valuemin="0" aria-valuemax="100" aria-valuetext="' + esc(active.detail || active.title || 'Uploading') + '"' +
         (active.indeterminate ? '' : ' aria-valuenow="' + pct + '"') + '>' +
         '<div class="upload-fill" style="width:' + (active.indeterminate ? 38 : pct) + '%"></div>' +
       '</div>';
@@ -1116,7 +1116,7 @@
   function coverHtml() {
     return S.model.cover.map(function (c, i) {
       return '<div class="item">' +
-        thumbBoxHtml('<img class="thumb" alt="" src="' + esc(mediaSrc(c.file)) + '" loading="lazy">', 'Loading photo…') +
+        thumbBoxHtml('<img class="thumb" alt="" src="' + esc(mediaSrc(c.thumbnail || c.file)) + '" loading="lazy">', 'Loading photo…') +
         '<div><div class="item-fields">' +
         '<label class="full">Alt text (describe the photo for screen readers)' +
         '<input data-list="cover" data-i="' + i + '" data-key="alt" value="' + esc(c.alt) + '"></label>' +
@@ -1254,7 +1254,7 @@
         var seqNum = groupVideos.length + pPos + 1;
         var naturalPhotoAttr = (p.width && p.height) ? ' data-natural-w="' + p.width + '" data-natural-h="' + p.height + '"' : '';
         return '<div class="item photo admin-media-card">' +
-          thumbBoxHtml('<img class="thumb"' + naturalPhotoAttr + ' alt="" src="' + esc(mediaSrc(p.file)) + '" loading="lazy">', 'Loading photo…') +
+          thumbBoxHtml('<img class="thumb"' + naturalPhotoAttr + ' alt="" src="' + esc(mediaSrc(p.thumbnail || p.file)) + '" loading="lazy">', 'Loading photo…') +
           '<div class="admin-media-body">' +
             '<div class="admin-media-badge-row">' +
               '<span class="media-kind-badge is-photo">#' + seqNum + ' · Photo</span>' +
@@ -1967,6 +1967,7 @@
     ['file', 'poster', 'thumbnail', 'preview', 'posterThumbnail', 'posterPreview'].forEach(function (key) {
       if (item[key]) files.push(item[key]);
     });
+    (item.variants || []).forEach(function (v) { files.push(v.file); });
     files.forEach(function (f) {
       if (isHttp(f) && S.pendingDeletes.indexOf(f) === -1) S.pendingDeletes.push(f);
     });
@@ -2005,6 +2006,7 @@
     if (!window.confirm(msg)) return;
 
     vInGroup.concat(pInGroup).forEach(function (item) {
+      (item.variants || []).forEach(function (v) { if (isHttp(v.file) && S.pendingDeletes.indexOf(v.file) === -1) S.pendingDeletes.push(v.file); });
       ['file', 'poster', 'thumbnail', 'preview', 'posterThumbnail', 'posterPreview'].forEach(function (key) {
         var file = item && item[key];
         if (file && isHttp(file) && S.pendingDeletes.indexOf(file) === -1) S.pendingDeletes.push(file);
@@ -2509,10 +2511,10 @@
       onProgress: function (loaded, total, computable) {
         if (!S.uploads[slotId] || S.uploads[slotId].state !== 'uploading') return;
         if (computable && total > 0) {
-          var pct = Math.min(95, Math.max(1, Math.round((loaded / total) * 95)));
+          var pct = Math.min(isVideo ? 95 : 60, Math.max(1, Math.round((loaded / total) * (isVideo ? 95 : 60))));
           S.uploads[slotId].percent = pct;
           S.uploads[slotId].indeterminate = false;
-          S.uploads[slotId].detail = pct + '% · ' + formatBytes(loaded) + ' / ' + formatBytes(total);
+          S.uploads[slotId].detail = (isVideo ? '' : 'Uploading original · ') + pct + '% · ' + formatBytes(loaded) + ' / ' + formatBytes(total);
         } else {
           S.uploads[slotId].indeterminate = true;
           S.uploads[slotId].detail = formatBytes(loaded) + ' sent…';
@@ -2521,9 +2523,9 @@
       },
       onSent: function () {
         if (!S.uploads[slotId] || S.uploads[slotId].state !== 'uploading') return;
-        S.uploads[slotId].percent = 97;
+        S.uploads[slotId].percent = isVideo ? 97 : 62;
         S.uploads[slotId].indeterminate = false;
-        S.uploads[slotId].detail = '97% · Saving to cloud…';
+        S.uploads[slotId].detail = isVideo ? '97% · Saving to cloud…' : 'Saving original to cloud…';
         S.uploads[slotId].canCancel = false;
         paintUploadSlot(slotId);
       },
@@ -2538,17 +2540,40 @@
     ]).then(function (results) {
       var uploaded = results[0];
       var size = results[1];
+      if (!isVideo && S.uploads[slotId]) {
+        S.uploads[slotId].detail = 'Generating and uploading preview thumbnails…';
+        S.uploads[slotId].percent = 64;
+        paintUploadSlot(slotId);
+      }
+      var responsiveEntry = {};
+      var variantError = '';
       return (isVideo
         ? Promise.resolve([{ url: '', error: '' }, { url: '', error: '' }])
         : Promise.all([
             makeAndUploadThumbnail(file, fileIndex),
             makeAndUploadThumbnail(file, fileIndex, 'preview'),
           ])).then(function (thumbnails) {
+        if (isVideo) return thumbnails;
+        var objectUrl = window.URL.createObjectURL(file);
+        return generateImageVariants(objectUrl, [responsiveEntry], function (text, done, total) {
+          if (!S.uploads[slotId]) return;
+          S.uploads[slotId].percent = 65 + Math.round(34 * done / Math.max(1, total));
+          S.uploads[slotId].detail = text;
+          S.uploads[slotId].canCancel = false;
+          paintUploadSlot(slotId);
+        }).catch(function (err) {
+          variantError = err.message || 'Variant generation failed.';
+          if (window.__appErrorReporter) window.__appErrorReporter.report('frontend-thumbnail', variantError, { name: 'responsive-variants' });
+        })
+          .finally(function () { window.URL.revokeObjectURL(objectUrl); })
+          .then(function () { return thumbnails; });
+      }).then(function (thumbnails) {
         var thumbnail = thumbnails[0];
         var preview = thumbnails[1];
         if (kind === 'cover') {
           var coverIdx = Math.min(insertPos, S.model.cover.length);
           var coverEntry = { file: uploaded.url, alt: titleFrom(prep.uploadName, fallbackTitle) };
+          if (responsiveEntry.variants) coverEntry.variants = responsiveEntry.variants;
           if (thumbnail.url) coverEntry.thumbnail = thumbnail.url;
           if (preview.url) coverEntry.preview = preview.url;
           S.model.cover.splice(coverIdx, 0, withSize(coverEntry, size));
@@ -2560,6 +2585,7 @@
             year: '',
             alt: '',
           }, size);
+          if (responsiveEntry.variants) pEntry.variants = responsiveEntry.variants;
           if (thumbnail.url) pEntry.thumbnail = thumbnail.url;
           if (preview.url) pEntry.preview = preview.url;
           if (targetGrp) pEntry._gid = targetGrp.id;
@@ -2584,7 +2610,9 @@
           S.uploads[slotId] = {
             state: 'done',
             title: (totalFiles > 1 ? 'Uploaded ' + totalFiles + ' files' : 'Uploaded ' + prep.displayName),
-            detail: '100% · Save changes to publish',
+            detail: (!isVideo && (variantError || thumbnail.error || preview.error))
+              ? '100% · Original uploaded; some variants failed. Save, then retry Generate Thumbnails.'
+              : '100% · Save changes to publish',
             percent: 100,
             indeterminate: false,
             canCancel: false,
@@ -2592,8 +2620,8 @@
           scheduleUploadAutoClear(slotId);
         }
         var uploadStatus = 'Uploaded ' + prep.displayName + '. Save to publish it.';
-        var thumbnailError = thumbnail.error || preview.error;
-        if (!isVideo && thumbnailError) uploadStatus += ' One or more thumbnails could not be generated; use Generate Thumbnails to retry.';
+        var thumbnailError = thumbnail.error || preview.error || variantError;
+        if (!isVideo && thumbnailError) uploadStatus += ' Some thumbnails or responsive variants could not be generated; use Generate Thumbnails to retry. ' + thumbnailError;
         setStatus(uploadStatus, !isVideo && thumbnailError ? 'error' : 'ok');
         render();
         paintSavebarProgress();
@@ -2779,6 +2807,118 @@
 
   // ---- Thumbnail generation --------------------------------------------
 
+  var VARIANT_WIDTHS = [480, 960, 1600, 2400];
+  function variantWidths(width) {
+    return VARIANT_WIDTHS.map(function (w) { return Math.min(w, width); }).filter(function (w, i, all) { return all.indexOf(w) === i; });
+  }
+  function hasAllVariants(entry) {
+    if (!entry || !entry.width) return false;
+    return variantWidths(Number(entry.width)).every(function (width) {
+      return ['avif', 'webp'].every(function (format) {
+        return (entry.variants || []).some(function (v) { return v.width === width && v.format === format && v.file; });
+      });
+    });
+  }
+
+  // One decoded original, sequential resizes/encodes, and one AVIF worker per
+  // photo keep memory bounded. Persist each success so interrupted jobs resume.
+  function generateImageVariants(source, entries, progress) {
+    var image;
+    var worker;
+    var variants = [];
+    entries.forEach(function (entry) {
+      (entry.variants || []).forEach(function (variant) {
+        if (!variants.some(function (v) { return v.width === variant.width && v.format === variant.format; })) variants.push(variant);
+      });
+    });
+    var failures = [];
+    entries.forEach(function (entry) { entry.variants = variants; });
+    function notify(text, done, total) { if (progress) progress(text, done, total); }
+    function encodeAvif(canvas) {
+      return new Promise(function (resolve, reject) {
+        var activeWorker;
+        var timer;
+        function finish(error, blob) {
+          clearTimeout(timer);
+          if (activeWorker) {
+            activeWorker.onmessage = activeWorker.onerror = null;
+            // A timed-out worker must not deliver an old result to the next size.
+            if (error) {
+              activeWorker.terminate();
+              if (worker === activeWorker) worker = null;
+            }
+          }
+          if (error) reject(error);
+          else resolve(blob);
+        }
+        try {
+          if (!worker) worker = new window.Worker(new URL('image-variants-worker.js', window.location.href), { type: 'module' });
+          activeWorker = worker;
+          timer = setTimeout(function () { finish(new Error('AVIF encoding timed out. Retry Generate Thumbnails.')); }, 120000);
+          activeWorker.onmessage = function (event) {
+            if (event.data.error) finish(new Error(event.data.error));
+            else finish(null, new Blob([event.data.buffer], { type: 'image/avif' }));
+          };
+          activeWorker.onerror = function () { finish(new Error('Could not start AVIF encoder.')); };
+          var pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+          activeWorker.postMessage({ pixels: pixels.buffer, width: canvas.width, height: canvas.height }, [pixels.buffer]);
+        } catch (err) { finish(err); }
+      });
+    }
+    notify('Decoding original photo…', 0, 1);
+    return new Promise(function (resolve, reject) {
+      image = new window.Image();
+      image.crossOrigin = 'anonymous';
+      var timer = setTimeout(function () { image.onload = image.onerror = null; reject(new Error('Photo decoding timed out.')); }, 30000);
+      image.onload = function () { clearTimeout(timer); resolve(); };
+      image.onerror = function () { clearTimeout(timer); reject(new Error('Could not decode original photo.')); };
+      image.src = source;
+    }).then(function () {
+      var width = image.naturalWidth || image.width;
+      var height = image.naturalHeight || image.height;
+      if (!width || !height) throw new Error('Original photo has no dimensions.');
+      entries.forEach(function (entry) { entry.width = width; entry.height = height; });
+      var jobs = [];
+      variantWidths(width).forEach(function (w) {
+        ['webp', 'avif'].forEach(function (format) {
+          if (!variants.some(function (v) { return v.width === w && v.format === format && v.file; })) jobs.push({ width: w, format: format });
+        });
+      });
+      return jobs.reduce(function (chain, job, index) {
+        return chain.then(function () {
+          notify('Encoding ' + job.width + 'px ' + job.format.toUpperCase() + ' (' + (index + 1) + '/' + jobs.length + ')…', index, jobs.length);
+          var canvas = document.createElement('canvas');
+          canvas.width = job.width;
+          canvas.height = Math.max(1, Math.round(height * job.width / width));
+          var ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error('This browser cannot resize photos.');
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+          var encoded = job.format === 'avif' ? encodeAvif(canvas) : new Promise(function (resolve, reject) {
+            canvas.toBlob(function (blob) {
+              if (!blob || blob.type !== 'image/webp') reject(new Error('WebP encoding is not supported in this browser.'));
+              else resolve(blob);
+            }, 'image/webp', 0.82);
+          });
+          return encoded.then(function (blob) {
+            notify('Uploading ' + job.width + 'px ' + job.format.toUpperCase() + ' (' + (index + 1) + '/' + jobs.length + ')…', index, jobs.length);
+            return uploadThumbnail(blob, job.width + '-' + index, 'variant');
+          }).then(function (url) {
+            variants.push({ file: url, width: canvas.width, height: canvas.height, format: job.format });
+            canvas.width = canvas.height = 1;
+            notify('Saved ' + job.width + 'px ' + job.format.toUpperCase(), index + 1, jobs.length);
+          });
+        }).catch(function (err) {
+          failures.push(job.width + 'px ' + job.format.toUpperCase() + ': ' + (err.message || 'generation failed'));
+          notify('Could not generate ' + job.width + 'px ' + job.format.toUpperCase() + '; continuing…', index + 1, jobs.length);
+        });
+      }, Promise.resolve()).then(function () {
+        if (failures.length) throw new Error(failures.join('; '));
+      });
+    }).finally(function () { if (worker) worker.terminate(); });
+  }
+
   function thumbnailSource(file) {
     if (isHttp(file)) return file;
     return new URL('../' + encodeURIComponent(S.slug) + '/media/' + encodeURIComponent(String(file || '')), window.location.href).toString();
@@ -2790,7 +2930,7 @@
       if (!sourceValue) return;
       var source = String(sourceValue);
       if (!bySource[source]) {
-        bySource[source] = { source: source, thumbnailRefs: [], previewRefs: [], thumbnail: '', preview: '' };
+        bySource[source] = { source: source, thumbnailRefs: [], previewRefs: [], thumbnail: '', preview: '', imageRefs: [] };
       }
       var group = bySource[source];
       var ref = { entry: entry, key: key };
@@ -2806,11 +2946,13 @@
       if (!entry || !entry.file) return;
       add(entry.file, entry, 'thumbnail', 'thumbnail');
       add(entry.file, entry, 'preview', 'preview');
+      bySource[String(entry.file)].imageRefs.push(entry);
     });
     (S.model.photos || []).forEach(function (entry) {
       if (!entry || !entry.file) return;
       add(entry.file, entry, 'thumbnail', 'thumbnail');
       add(entry.file, entry, 'preview', 'preview');
+      bySource[String(entry.file)].imageRefs.push(entry);
     });
     (S.model.videos || []).forEach(function (entry) {
       if (!entry) return;
@@ -2933,8 +3075,8 @@
 
   function uploadThumbnail(blob, index, tier) {
     var form = new FormData();
-    var ext = blob.type === 'image/png' ? 'png' : 'webp';
-    var prefix = tier === 'preview' ? 'preview-' : 'thumbnail-';
+    var ext = blob.type === 'image/avif' ? 'avif' : blob.type === 'image/png' ? 'png' : 'webp';
+    var prefix = tier === 'variant' ? 'variant-' : tier === 'preview' ? 'preview-' : 'thumbnail-';
     form.append('file', blob, prefix + Date.now() + '-' + index + '.' + ext);
     return api('POST', profilePath(S.slug, '/media'), { form: form }).then(function (data) { return data.url; });
   }
@@ -2956,17 +3098,18 @@
     var btn = $('generate-thumbnails');
     var groups = thumbnailTargets();
     var pending = groups.filter(function (group) {
-      return (!group.thumbnail && group.thumbnailRefs.length) || (!group.preview && group.previewRefs.length);
+      return (!group.thumbnail && group.thumbnailRefs.length) || (!group.preview && group.previewRefs.length) || group.imageRefs.some(function (entry) { return !hasAllVariants(entry); });
     });
     if (!pending.length) {
-      setStatus('All model images and videos already have thumbnails.', 'ok');
-      toast('All model images and videos already have thumbnails.', 'ok');
+      setStatus('All model images and videos already have thumbnails and responsive variants.', 'ok');
+      toast('All model images and videos already have thumbnails and responsive variants.', 'ok');
       return;
     }
     if (btn) { btn.disabled = true; btn.classList.add('is-working'); }
     setBusy(true, 'Generating thumbnails…');
     var failures = [];
     var generated = 0;
+    var metadataChanged = false;
     return pending.reduce(function (chain, group, index) {
       return chain.then(function () {
         setStatus('Generating media thumbnails ' + (index + 1) + ' of ' + pending.length + '…');
@@ -2992,7 +3135,17 @@
                   if (window.__appErrorReporter) window.__appErrorReporter.report('frontend-thumbnail', message, { resource: group.source, name: 'manual-thumbnail-generation' });
                 });
             });
-            }, Promise.resolve()).finally(function () { if (resolved.revoke) resolved.revoke(); });
+            }, Promise.resolve()).then(function () {
+              if (!group.imageRefs.length) return;
+              var before = JSON.stringify(group.imageRefs);
+              return generateImageVariants(resolved.url, group.imageRefs, function (text) {
+                setStatus('Photo ' + (index + 1) + '/' + pending.length + ' · ' + text);
+                // Save even partial successful variants if a later encode fails.
+                generated += text.indexOf('Saved ') === 0 ? 1 : 0;
+              }).finally(function () {
+                if (JSON.stringify(group.imageRefs) !== before) metadataChanged = true;
+              });
+            }).finally(function () { if (resolved.revoke) resolved.revoke(); });
           }).catch(function (err) {
             var message = err.message || 'A media file could not be processed.';
             failures.push(message);
@@ -3001,11 +3154,13 @@
         });
       });
     }, Promise.resolve()).then(function () {
-      if (generated) {
+      if (generated || metadataChanged) {
         render();
         updateDirtyNote();
         setBusy(false);
-        var message = 'Generated ' + generated + ' thumbnail variant' + (generated === 1 ? '' : 's') + ' and saved them to R2.';
+        var message = generated
+          ? 'Generated ' + generated + ' image variant' + (generated === 1 ? '' : 's') + ' and saved them to R2.'
+          : 'Updated responsive image references and saved the profile.';
         if (failures.length) message += ' ' + failures.length + ' media file' + (failures.length === 1 ? ' could' : 's could') + ' not be processed.';
         return save(message);
       } else {

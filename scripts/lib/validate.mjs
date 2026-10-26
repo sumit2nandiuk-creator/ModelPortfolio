@@ -1,3 +1,4 @@
+import { variantErrors } from './image-variants.mjs';
 // Validation for a model.json profile and the media it references.
 // Returns a list of human-readable error strings (empty when valid).
 
@@ -113,6 +114,12 @@ export async function validateModel(model, { folder, dir }) {
 
   // --- Media ---------------------------------------------------------------
   const mediaDir = path.join(dir, 'media');
+  for (const entry of [...coverList(model), ...(Array.isArray(model.photos) ? model.photos : [])]) {
+    variantErrors(entry, file => isHttpUrl(file) || isSafeFileName(file)).forEach(message => fail(message));
+    if (Array.isArray(entry?.variants)) {
+      for (const variant of entry.variants) await checkMedia(variant, 'variant', IMAGE_EXTENSIONS);
+    }
+  }
 
   // Optional "width" and "height" (whole pixels) let a hosted file reserve its layout space.
   function checkDimensions(entry, where) {
@@ -244,7 +251,7 @@ export function mediaEntries(model) {
 export function referencedMediaFiles(model) {
   const files = new Set();
   for (const entry of mediaEntries(model)) {
-    for (const file of [entry.file, entry.thumbnail, entry.preview]) {
+    for (const file of [entry.file, entry.thumbnail, entry.preview, ...(entry.variants || []).map(v => v.file)]) {
       if (typeof file === 'string' && file && !isHttpUrl(file)) files.add(file);
     }
   }

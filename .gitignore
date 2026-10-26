@@ -1,7 +1,7 @@
 # Generated site output
 dist/
 
-# Dependencies (none are required, but keep npm artefacts out of Git)
+# Installed build and encoder dependencies
 node_modules/
 
 # OS / editor noise

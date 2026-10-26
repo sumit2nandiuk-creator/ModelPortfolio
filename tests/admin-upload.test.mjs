@@ -154,11 +154,13 @@ function createAdminUploadHarness(modelOverrides = {}, modelSlugs = ['sushmita-g
       return this.childNodes.map((n) => (n.nodeType === 3 ? n.nodeValue : n.textContent)).join('');
     }
     set textContent(v) {
+      uiHistory.push(String(v));
       this.childNodes = v === '' ? [] : [{ nodeType: 3, nodeValue: String(v), parentElement: this }];
     }
 
     get innerHTML() { return this._rawHtml || ''; }
     set innerHTML(html) {
+      uiHistory.push(String(html));
       this._rawHtml = String(html);
       this.childNodes = [];
       for (const n of parseHtmlFragment(String(html), this.ownerDocument)) {
@@ -237,6 +239,7 @@ function createAdminUploadHarness(modelOverrides = {}, modelSlugs = ['sushmita-g
     }
   }
 
+  const uiHistory = [];
   const canvases = [];
   const doc = {
     createElement(tag) {
@@ -244,7 +247,7 @@ function createAdminUploadHarness(modelOverrides = {}, modelSlugs = ['sushmita-g
         const canvas = {
           width: 0,
           height: 0,
-          getContext: () => ({ drawImage() {} }),
+          getContext: () => ({ drawImage() {}, getImageData: () => ({ data: new Uint8ClampedArray(4) }) }),
           toBlob(callback, type) { callback(new Blob(['thumbnail'], { type })); },
         };
         canvases.push(canvas);
@@ -373,7 +376,7 @@ function createAdminUploadHarness(modelOverrides = {}, modelSlugs = ['sushmita-g
         status: 201,
         ok: true,
         headers: { get: () => 'application/json' },
-        json: async () => ({ url: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/' + (isPreview ? 'preview-cover.webp' : 'thumb-cover.webp') }),
+        json: async () => ({ url: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/' + (String(file?.filename || '').startsWith('variant-') ? file.filename : isPreview ? 'preview-cover.webp' : 'thumb-cover.webp') }),
       };
     }
     if (url.endsWith('/api/models/sushmita-ghosh') && opts.method === 'PUT') {
@@ -416,6 +419,10 @@ function createAdminUploadHarness(modelOverrides = {}, modelSlugs = ['sushmita-g
       revokeObjectURL() {},
     },
     Image: FakeImage,
+    Worker: class {
+      postMessage() { queueMicrotask(() => this.onmessage({ data: { buffer: new Uint8Array([0, 1, 2]).buffer } })); }
+      terminate() {}
+    },
     addEventListener() {},
     confirm: () => true,
   };
@@ -429,6 +436,7 @@ function createAdminUploadHarness(modelOverrides = {}, modelSlugs = ['sushmita-g
     profileActions,
     localProfileStorage,
     canvases,
+    uiHistory,
     failNextSave(error, { status = 409, errors } = {}) {
       putFailure = { error, status, errors };
     },
@@ -791,7 +799,7 @@ test('admin panel moves measurement attributes up/down and adds newly uploaded p
   ]);
   assert.ok(saved.cover[0].thumbnail, 'new slideshow cover receives a normal thumbnail automatically');
   assert.ok(saved.cover[0].preview, 'new slideshow cover receives a tiny preview automatically');
-  assert.equal(h.thumbnailUploads.length, 6, 'cover and both new portfolio photos each upload normal and tiny thumbnails');
+  assert.equal(h.thumbnailUploads.length, 18, 'three photos each upload two previews and four responsive variants without upscaling');
   assert.deepEqual(saved.videos.map((v) => v.file), [
     'https://modelportfolio.pages.dev/media/sushmita-ghosh/4-new-reel.mp4',
     'https://modelportfolio.pages.dev/media/sushmita-ghosh/old-bridal.mp4',
@@ -850,10 +858,13 @@ test('Generate Thumbnails downsizes missing model images, uploads them to R2 and
   h.doc.getElementById('generate-thumbnails').dispatchEvent({ type: 'click', bubbles: true });
   for (let i = 0; i < 8; i++) await h.flush();
 
-  assert.equal(h.thumbnailUploads.length, 2, 'one tiny preview and one normal thumbnail are uploaded for the cover');
+  assert.equal(h.thumbnailUploads.length, 6, 'two previews plus WebP and AVIF variants at 480px and native 800px');
   assert.ok(h.canvases.some((canvas) => canvas.width === 43 && canvas.height === 64), 'tiny preview is resized to at most 64 pixels on its longest edge');
   assert.ok(h.canvases.some((canvas) => canvas.width === 240 && canvas.height === 360), 'normal thumbnail is resized to at most 360 pixels on its longest edge');
   assert.equal(h.savedPayloads.length, 1, 'profile is saved after thumbnail upload');
+  assert.equal(h.savedPayloads[0].model.cover[0].variants.length, 4);
+  assert.deepEqual(h.savedPayloads[0].model.cover[0].variants.map(v => v.width), [480, 480, 800, 800]);
+  assert.deepEqual(h.savedPayloads[0].model.cover[0].variants.map(v => v.format), ['webp', 'avif', 'webp', 'avif']);
   assert.equal(
     h.savedPayloads[0].model.cover[0].thumbnail,
     'https://modelportfolio.pages.dev/media/sushmita-ghosh/thumb-cover.webp',
@@ -865,7 +876,7 @@ test('Generate Thumbnails downsizes missing model images, uploads them to R2 and
 
   h.doc.getElementById('generate-thumbnails').dispatchEvent({ type: 'click', bubbles: true });
   await h.flush();
-  assert.equal(h.thumbnailUploads.length, 2, 'a second run skips images that already have both thumbnail sizes');
+  assert.equal(h.thumbnailUploads.length, 6, 'a second run skips completed previews and variants');
 });
 
 test('Generate Thumbnails backfills only the tiny preview when a normal cover thumbnail already exists', async () => {
@@ -876,7 +887,7 @@ test('Generate Thumbnails backfills only the tiny preview when a normal cover th
   h.doc.getElementById('generate-thumbnails').dispatchEvent({ type: 'click', bubbles: true });
   for (let i = 0; i < 8; i++) await h.flush();
 
-  assert.equal(h.thumbnailUploads.length, 1, 'only the missing tiny preview is generated');
+  assert.equal(h.thumbnailUploads.length, 5, 'missing preview and four responsive variants are generated');
   assert.equal(h.thumbnailUploads[0].entries[0].filename.startsWith('preview-'), true);
   assert.equal(h.savedPayloads[0].model.cover[0].thumbnail, 'https://modelportfolio.pages.dev/media/sushmita-ghosh/existing-normal.webp');
   assert.equal(h.savedPayloads[0].model.cover[0].preview, 'https://modelportfolio.pages.dev/media/sushmita-ghosh/preview-cover.webp');
@@ -904,7 +915,7 @@ test('a batch of four cover slideshow photos receives a thumbnail per image befo
     for (let wait = 0; wait < 10; wait++) await h.flush();
   }
 
-  assert.equal(h.thumbnailUploads.length, 8, 'every uploaded cover generates and uploads tiny and normal WebP thumbnails');
+  assert.equal(h.thumbnailUploads.length, 24, 'every uploaded cover generates two previews and four responsive variants');
   h.doc.getElementById('save').dispatchEvent({ type: 'click', bubbles: true });
   await h.flush();
   await h.flush();
@@ -932,7 +943,11 @@ test('a newly uploaded portfolio photo gets a thumbnail uploaded and linked auto
   h.xhrs[0].emit('load');
   for (let i = 0; i < 8; i++) await h.flush();
 
-  assert.equal(h.thumbnailUploads.length, 2, 'generated normal and tiny thumbnails are uploaded to R2 automatically');
+  assert.equal(h.thumbnailUploads.length, 6, 'previews and responsive variants are uploaded to R2 automatically');
+  assert.ok(h.uiHistory.some(text => text.includes('Generating and uploading preview thumbnails')));
+  assert.ok(h.uiHistory.some(text => text.includes('Encoding 480px AVIF')));
+  assert.ok(h.uiHistory.some(text => text.includes('Uploading 800px WEBP')));
+  assert.equal(h.thumbnailUploads.filter(form => form.entries[0].filename.endsWith('.avif')).length, 2);
   h.doc.getElementById('save').dispatchEvent({ type: 'click', bubbles: true });
   await h.flush();
   await h.flush();

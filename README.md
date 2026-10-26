@@ -4,9 +4,9 @@ A modern, elegant portfolio website for a model: a hero, an about section with
 measurements, a filterable photo gallery with a full-screen viewer, a video
 reel section, and a contact block.
 
-The site is **static** (plain HTML, CSS and JavaScript). It has **no runtime
-dependencies**, so there is nothing to install. You only need Node.js 18.17+
-(`node -v`) to build and preview it.
+The public site is **static** (plain HTML, CSS and JavaScript). Use Node.js 18.17+
+and `npm ci` to install the build tools. The admin uses a bundled, locally served
+AVIF WebAssembly encoder; no image service or third-party CDN is needed.
 
 Each model has its own URL, for example `/sushmita-ghosh/`. Models are fully
 isolated from one another: a model's page only contains that model's text,
@@ -17,6 +17,7 @@ photos, and videos, and only that model's files are published.
 ## Quick start
 
 ```bash
+npm ci            # install pinned build/encoder dependencies
 npm run build     # validates everything and writes the site to dist/
 npm run dev       # build + preview at http://localhost:3000
 npm test          # runs the test suite
@@ -221,3 +222,32 @@ Hosted files are referenced in `model.json` by their full `https://` URL. Option
   photos out of image search (`noimageindex`). The files themselves are still public:
   anyone can open a photo's address or use developer tools to save it. Only publish
   images that are fine to be seen by anyone who can open the site.
+
+### Responsive photo generation
+
+The admin **Generate thumbnails & variants** button backfills missing derivatives
+for cover and portfolio photos. New photo uploads generate these automatically
+before the upload is marked complete. Save new uploads to publish as usual; the
+backfill button saves the profile automatically.
+
+- AVIF (quality 55, jSquash/libavif WASM worker) and WebP (quality 82) at
+  **480, 960, 1600 and 2400 pixels wide**, preserving aspect ratio. For smaller
+  originals, widths are capped at the native width and duplicates are omitted.
+- Tiny 64px and normal 360px-long-edge WebP previews remain available.
+- `file` keeps the untouched original; `variants` stores a list of
+  `{ file, width, height, format: "avif" | "webp" }` on each photo or cover.
+- Canvas resampling normalizes browser-decoded orientation/colour and does not
+  copy original EXIF metadata. Originals are retained unchanged.
+- Public cards and heroes use `<picture>`, `srcset` and `sizes`. Larger viewer
+  candidates are selected when its slides are opened, rather than downloading
+  camera originals for every card. Old profiles without variants still work.
+- Generation is sequential per photo, with AVIF encoding off the main thread.
+  Upload progress names the original upload, thumbnail work, encoding size/format
+  and variant upload. Successful partial results are kept; rerun the button to
+  retry missing sizes without regenerating completed ones.
+- If a browser cannot encode a format, the admin reports it and retains the
+  original and successful derivatives. Use a current browser with Web Workers,
+  WebAssembly and WebP canvas encoding enabled.
+
+`npm run build` bundles the encoder and copies its WASM and license to
+`dist/admin/`. Serve `.wasm` as `application/wasm`; do not deploy raw `site/` files.

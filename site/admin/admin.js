@@ -2813,7 +2813,13 @@
       add(entry.file, entry, 'preview', 'preview');
     });
     (S.model.videos || []).forEach(function (entry) {
-      if (entry && entry.poster) add(entry.poster, entry, 'posterThumbnail', 'thumbnail');
+      if (!entry) return;
+      if (entry.poster) add(entry.poster, entry, 'posterThumbnail', 'thumbnail');
+      else if (entry.file) {
+        add(entry.file, entry, 'poster', 'thumbnail');
+        add(entry.file, entry, 'posterThumbnail', 'thumbnail');
+        bySource[String(entry.file)].isVideo = true;
+      }
     });
     return Object.keys(bySource).map(function (key) {
       var group = bySource[key];
@@ -2865,6 +2871,56 @@
     });
   }
 
+  // Capture once in the admin instead of downloading video frames on every visit.
+  function makeVideoThumbnail(source) {
+    return new Promise(function (resolve, reject) {
+      var video = document.createElement('video');
+      var settled = false;
+      var timer = setTimeout(function () { finish(new Error('Video thumbnail generation timed out.')); }, 30000);
+      function finish(error, blob) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        video.onloadedmetadata = video.onseeked = video.onerror = null;
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+        if (error) reject(error);
+        else resolve(blob);
+      }
+      video.crossOrigin = 'anonymous';
+      video.preload = 'auto';
+      video.muted = true;
+      video.playsInline = true;
+      video.onloadedmetadata = function () {
+        if (!video.videoWidth || !video.videoHeight || !isFinite(video.duration) || video.duration <= 0) {
+          finish(new Error('Could not read video dimensions or duration.'));
+          return;
+        }
+        // Seek beyond common black opening frames without requiring playback.
+        video.currentTime = Math.min(1, video.duration * 0.15);
+      };
+      video.onseeked = function () {
+        if (settled) return;
+        try {
+          var scale = Math.min(1, 360 / Math.max(video.videoWidth, video.videoHeight));
+          var canvas = document.createElement('canvas');
+          canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+          canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+          var ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error('This browser cannot create video thumbnails.');
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob(function (blob) {
+            finish(blob ? null : new Error('Could not encode video thumbnail.'), blob);
+          }, 'image/webp', 0.76);
+        } catch (err) { finish(err); }
+      };
+      video.onerror = function () { finish(new Error('Could not decode video. Try uploading a custom poster image.')); };
+      video.src = source;
+      video.load();
+    });
+  }
+
   function makeThumbnailFromFile(file, tier) {
     if (!window.URL || typeof window.URL.createObjectURL !== 'function') {
       return Promise.reject(new Error('This browser cannot read local image files.'));
@@ -2903,8 +2959,8 @@
       return (!group.thumbnail && group.thumbnailRefs.length) || (!group.preview && group.previewRefs.length);
     });
     if (!pending.length) {
-      setStatus('All model images already have thumbnails.', 'ok');
-      toast('All model images already have thumbnails.', 'ok');
+      setStatus('All model images and videos already have thumbnails.', 'ok');
+      toast('All model images and videos already have thumbnails.', 'ok');
       return;
     }
     if (btn) { btn.disabled = true; btn.classList.add('is-working'); }
@@ -2913,7 +2969,7 @@
     var generated = 0;
     return pending.reduce(function (chain, group, index) {
       return chain.then(function () {
-        setStatus('Generating image thumbnails ' + (index + 1) + ' of ' + pending.length + '…');
+        setStatus('Generating media thumbnails ' + (index + 1) + ' of ' + pending.length + '…');
         // Yield to browser between groups to keep UI responsive for large batches
         return Promise.resolve().then(function () {
           var jobs = [];
@@ -2922,7 +2978,7 @@
           return resolveThumbnailSource(group.source).then(function (resolved) {
           return jobs.reduce(function (jobChain, job) {
             return jobChain.then(function () {
-              return makeThumbnail(resolved.url, job.tier)
+              return (group.isVideo ? makeVideoThumbnail(resolved.url) : makeThumbnail(resolved.url, job.tier))
                 .then(function (blob) { return uploadThumbnail(blob, (index + 1) + '-' + job.tier, job.tier); })
                 .then(function (url) {
                   job.refs.forEach(function (ref) { ref.entry[ref.key] = url; });
@@ -2931,14 +2987,14 @@
                   generated += 1;
                 })
                 .catch(function (err) {
-                  var message = err.message || 'An image could not be processed.';
+                  var message = err.message || 'A media file could not be processed.';
                   failures.push(message);
                   if (window.__appErrorReporter) window.__appErrorReporter.report('frontend-thumbnail', message, { resource: group.source, name: 'manual-thumbnail-generation' });
                 });
             });
             }, Promise.resolve()).finally(function () { if (resolved.revoke) resolved.revoke(); });
           }).catch(function (err) {
-            var message = err.message || 'An image could not be processed.';
+            var message = err.message || 'A media file could not be processed.';
             failures.push(message);
             if (window.__appErrorReporter) window.__appErrorReporter.report('frontend-thumbnail', message, { resource: group.source, name: 'manual-thumbnail-generation' });
           });
@@ -2950,7 +3006,7 @@
         updateDirtyNote();
         setBusy(false);
         var message = 'Generated ' + generated + ' thumbnail variant' + (generated === 1 ? '' : 's') + ' and saved them to R2.';
-        if (failures.length) message += ' ' + failures.length + ' image' + (failures.length === 1 ? ' could' : 's could') + ' not be processed.';
+        if (failures.length) message += ' ' + failures.length + ' media file' + (failures.length === 1 ? ' could' : 's could') + ' not be processed.';
         return save(message);
       } else {
         setBusy(false);

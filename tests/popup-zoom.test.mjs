@@ -637,56 +637,20 @@ test('all-landscape categories stay landscape while portrait/mixed categories us
   assert.equal(h.meeshoGroup.hidden, false);
 });
 
-test('videos without a custom poster show their thumbnail on load (skipping black intro frames and priming iOS Safari)', async () => {
+test('videos without posters never seek or prime playback on page visit', async () => {
   const h = await createLightboxHarness();
   await h.boot();
-
-  const [bridal, meesho] = h.videoNodes;
-
-  // 1. Video 1 ("Bridal") decodes frame data naturally, detects dark intro at 0.15s, steps to 1.0s, and sets poster
-  bridal.vid.videoWidth = 1080;
-  bridal.vid.videoHeight = 1920;
-  bridal.vid.readyState = 1;
-  bridal.vid.dispatchEvent(h.makeEvent('loadedmetadata', { bubbles: false }));
-  assert.ok(bridal.vid.currentTime > 0, 'seeks past 0.00s for initial frame');
-
-  bridal.vid.readyState = 2;
-  bridal.vid.dispatchEvent(h.makeEvent('loadeddata', { bubbles: false }));
-  // Because 0.15s was dark in our mock, it stepped forward to 1.0s to find a bright frame
-  assert.equal(bridal.vid.currentTime, 1);
-
-  bridal.vid.dispatchEvent(h.makeEvent('seeked', { bubbles: false }));
-  assert.match(bridal.vid.getAttribute('poster') || '', /^data:image\/jpeg;base64,/);
-
-  // 2. Video 2 ("Meesho") simulates iOS Safari stopping at HAVE_METADATA (readyState === 1) until play() primes it
-  let primedPlayCalls = 0;
-  let pausedAfterPrime = false;
-  meesho.vid.videoWidth = 720;
-  meesho.vid.videoHeight = 1280;
-  meesho.vid.readyState = 1;
-  meesho.vid.muted = false;
-  meesho.vid.play = () => {
-    primedPlayCalls++;
-    assert.equal(meesho.vid.muted, true, 'silent decoder prime must be muted');
-    meesho.vid.readyState = 2;
-    meesho.vid.currentTime = 0.5;
-    return {
-      then(onFulfilled) {
-        onFulfilled();
-      },
-    };
-  };
-  meesho.vid.pause = () => {
-    pausedAfterPrime = true;
-  };
-
-  meesho.vid.dispatchEvent(h.makeEvent('loadedmetadata', { bubbles: false }));
-  h.advanceTime(300);
-
-  assert.equal(primedPlayCalls, 1, 'primes hardware decoder when stuck at HAVE_METADATA');
-  assert.equal(pausedAfterPrime, true, 'immediately pauses after priming 1 frame');
-  assert.equal(meesho.vid.muted, false, 'restores original unmuted state for user playback');
-  assert.match(meesho.vid.getAttribute('poster') || '', /^data:image\/jpeg;base64,/);
+  for (const { vid } of h.videoNodes) {
+    let playCalls = 0;
+    vid.play = () => { playCalls++; };
+    const initialTime = vid.currentTime;
+    vid.readyState = 1;
+    vid.dispatchEvent(h.makeEvent('loadedmetadata', { bubbles: false }));
+    h.advanceTime(500);
+    assert.equal(playCalls, 0);
+    assert.equal(vid.currentTime, initialTime);
+    assert.equal(vid.getAttribute('poster'), null);
+  }
 });
 
 test('popup opens dialog before measuring #lb-stage and keeps left/right neighbour slides strictly outside the stage', async () => {

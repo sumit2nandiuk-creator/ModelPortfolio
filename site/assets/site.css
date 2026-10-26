@@ -1913,3 +1913,22 @@ video.is-failed {
   font-size: calc(0.9rem * var(--font-contact-scale, 1));
   color: var(--font-contact-color, var(--paper));
 }
+
+/* Source-free idle videos only fetch their media after an explicit Play click. */
+.video-frame { position: relative; }
+.video-play-button {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  width: 64px;
+  height: 64px;
+  border: 1px solid rgba(255,255,255,.8);
+  border-radius: 50%;
+  background: rgba(0,0,0,.65);
+  color: white;
+  font-size: 26px;
+  cursor: pointer;
+  z-index: 2;
+}
+.video-play-button[hidden] { display: none; }
+.video-play-button:focus-visible { outline: 3px solid white; outline-offset: 4px; }

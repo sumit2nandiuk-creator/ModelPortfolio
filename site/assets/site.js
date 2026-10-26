@@ -283,6 +283,7 @@
     var slideGap = Number(options.slideGap) || 0;
     var index = 0;
     var dx = 0;            // live drag offset in px
+    var dir = 0;           // side the outgoing slide leaves on (-1 left, +1 right)
     var busy = false;      // true while a slide is animating
     var drag = null;       // gesture in progress
     var suppressUntil = 0; // clicks before this time came from the end of a drag
@@ -326,6 +327,11 @@
       els.forEach(function (el, i) {
         var d = (i - index + n) % n;
         if (d > n / 2) d -= n;                              // nearest way round
+        // A slide that sits exactly opposite can go either way round. With two
+        // photos that slide is the only neighbour, so it has to follow the
+        // direction of travel; picking a fixed side makes the outgoing photo
+        // sweep back across the incoming one as soon as the finger lifts.
+        else if (dir && d === n / 2) d = dir;
         if (n === 2 && i !== index && dx !== 0) d = dx < 0 ? 1 : -1;    // one neighbour: show it on the side being dragged (only while dragging)
         var near = Math.abs(d) <= 1;
         el.style.transition = animate ? 'transform ' + ms + 'ms ' + EASE : 'none';
@@ -373,11 +379,25 @@
       if (options.onChange) options.onChange(index);
     }
 
-    function goTo(next, animate) {
+    // Which side the slide that is leaving the screen travels to. Two-slide
+    // carousels cannot answer this from the indexes alone (the only neighbour is
+    // both next and previous), so the gesture — or the direction a step goes in —
+    // decides. `travel` is the side the finger pushed towards, when there is one.
+    function exitSide(from, to, n, travel) {
+      if (travel === 1 || travel === -1) return travel;
+      if (n < 2 || from === to) return 0;
+      if (n === 2) return -1;                               // two slides: treat it as "next"
+      var forward = (to - from + n) % n;
+      return forward > n / 2 ? 1 : -1;
+    }
+
+    function goTo(next, animate, travel) {
       var n = slides().length;
       if (n < 2) return;
       cancelScheduled();
+      var from = index;
       index = ((next % n) + n) % n;
+      dir = exitSide(from, index, n, travel);
       dx = 0;
       busy = !!animate;
       if (animate) void root.offsetWidth; // start the slide from where the drag left it
@@ -394,12 +414,15 @@
     }
 
     function step(delta) {
-      goTo(index + delta, !reducedMotion);
+      goTo(index + delta, !reducedMotion, delta < 0 ? 1 : -1);
     }
 
-    function snapBack() {
+    // `side` is the side the neighbour came from, so it slides back out of the
+    // way instead of crossing the photo on screen.
+    function snapBack(side) {
       cancelScheduled();
       dx = 0;
+      dir = side === 1 || side === -1 ? side : 0;
       busy = !reducedMotion; // only lock input while the slide is actually sliding back
       if (busy) void root.offsetWidth;
       layout(!reducedMotion, SNAP_BACK_MS);
@@ -413,6 +436,7 @@
       busy = false;
       drag = null;
       dx = 0;
+      dir = 0;
       suppressUntil = 0;
       stopAutoplay();
     }
@@ -422,6 +446,7 @@
       cancelScheduled();
       drag = null;
       if (dx !== 0) {
+        dir = dx < 0 ? 1 : -1;  // leave the neighbour on the side the finger found it
         dx = 0;
         layout(false, 0);
       }
@@ -483,8 +508,11 @@
       var distance = Math.abs(dx);
       var speed = distance / Math.max(1, Date.now() - finished.t); // px per ms
       var commit = distance > width() * 0.16 || (distance > 32 && speed > 0.3);
-      if (commit) goTo(index + (dx < 0 ? 1 : -1), !reducedMotion);
-      else snapBack();
+      // The side of the gesture decides which way each slide travels: the one
+      // leaving must keep going the way the finger pushed it, and the neighbour
+      // that snaps back must return to the side it came from.
+      if (commit) goTo(index + (dx < 0 ? 1 : -1), !reducedMotion, dx < 0 ? -1 : 1);
+      else snapBack(dx < 0 ? 1 : -1);
     }
     root.addEventListener('pointerup', endDrag);
     root.addEventListener('pointercancel', endDrag);

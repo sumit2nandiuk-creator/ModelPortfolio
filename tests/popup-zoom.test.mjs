@@ -11,7 +11,14 @@ const siteJsPath = path.join(root, 'site', 'assets', 'site.js');
 // Minimal DOM harness tailored to site/assets/site.js so we can exercise mobile
 // touch-zoom gestures (pinch, pan, double-tap, backdrop tap, 1-finger carousel swipe)
 // without an external headless browser.
-function createLightboxHarness({ width = 390, height = 844, naturalWidth = 1200, naturalHeight = 1600 } = {}) {
+function createLightboxHarness({
+  width = 390,
+  height = 844,
+  naturalWidth = 1200,
+  naturalHeight = 1600,
+  photoCount = 3,
+  filmCount = 2,
+} = {}) {
   let clock = 10_000;
   let rafId = 1;
   const timers = new Map();
@@ -221,7 +228,7 @@ function createLightboxHarness({ width = 390, height = 844, naturalWidth = 1200,
     return { card, frame, vid };
   });
 
-  const galleryButtons = [0, 1, 2].map((i) => {
+  const galleryButtons = Array.from({ length: photoCount }, (_, i) => i).map((i) => {
     const fig = bridalRow.appendChild(new ElementNode('figure', { className: 'media-card media-card--photo gallery-item', attrs: { 'data-category': 'Bridal' } }));
     const btn = fig.appendChild(new ElementNode('button', {
       className: 'gallery-btn',
@@ -234,7 +241,7 @@ function createLightboxHarness({ width = 390, height = 844, naturalWidth = 1200,
     return btn;
   });
 
-  const filmPhotos = [0, 1].map((i) => {
+  const filmPhotos = Array.from({ length: filmCount }, (_, i) => i).map((i) => {
     const fig = filmRow.appendChild(new ElementNode('figure', { className: 'media-card media-card--photo gallery-item', attrs: { 'data-category': 'Short Film' } }));
     const btn = fig.appendChild(new ElementNode('button', {
       className: 'gallery-btn',
@@ -435,6 +442,88 @@ test('unzoomed 1-finger swipe in popup still navigates between photos', async ()
 
   assert.equal(h.caption.textContent, 'Caption 2');
   assert.equal(h.dialog.open, true);
+});
+
+// Two-photo profiles have exactly one neighbour, and it is both the "next" and the
+// "previous" slide. Its side therefore has to come from the gesture: the photo that
+// leaves must keep travelling the way the finger pushed it, and a cancelled swipe
+// must put the neighbour back where it came from. Picking a fixed side made the
+// outgoing photo sweep back across the incoming one the moment the touch lifted,
+// which hid the photo the visitor had just swiped to.
+function slideOffsetX(el) {
+  const m = (el.style.transform || '').match(/translate3d\(([-\d.]+)px,\s*[-\d.]+(?:px)?,\s*0\)/);
+  assert.ok(m, `expected a horizontal translate3d on the slide, got: ${el.style.transform}`);
+  return Number(m[1]);
+}
+
+test('two-photo viewer: the photo that leaves travels the way the finger moved', async () => {
+  const width = 393;
+  const gap = 24;
+  const stride = width + gap;
+
+  const left = await createLightboxHarness({ width, height: 852, photoCount: 2, filmCount: 0 });
+  await left.boot();
+  left.galleryButtons[0].dispatchEvent(left.makeEvent('click'));
+  const leftSlides = left.stage.querySelectorAll('.carousel-slide');
+  assert.equal(leftSlides.length, 2, 'a two-photo profile opens a two-slide viewer');
+  assert.equal(slideOffsetX(leftSlides[0]), 0);
+  assert.equal(slideOffsetX(leftSlides[1]), stride, 'the only neighbour waits on the right');
+
+  // Swipe left and let go: the first photo must leave to the left, not back to the right.
+  left.stage.dispatchEvent(left.makeEvent('pointerdown', { pointerId: 1, pointerType: 'touch', clientX: 300, clientY: 400 }));
+  left.advanceTime(40);
+  left.stage.dispatchEvent(left.makeEvent('pointermove', { pointerId: 1, pointerType: 'touch', clientX: 140, clientY: 402 }));
+  left.advanceTime(40);
+  left.stage.dispatchEvent(left.makeEvent('pointerup', { pointerId: 1, pointerType: 'touch', clientX: 140, clientY: 402 }));
+
+  assert.equal(leftSlides[1].classList.contains('is-current'), true, 'the incoming photo becomes current');
+  assert.equal(slideOffsetX(leftSlides[1]), 0, 'the incoming photo lands on screen');
+  assert.equal(slideOffsetX(leftSlides[0]), -stride, 'the outgoing photo keeps moving left');
+  left.advanceTime(1200);
+  assert.equal(slideOffsetX(leftSlides[0]), -stride, 'it stays parked on the left once the slide settles');
+
+  const right = await createLightboxHarness({ width, height: 852, photoCount: 2, filmCount: 0 });
+  await right.boot();
+  right.galleryButtons[0].dispatchEvent(right.makeEvent('click'));
+  const rightSlides = right.stage.querySelectorAll('.carousel-slide');
+
+  // Swipe right and let go: the first photo must leave to the right.
+  right.stage.dispatchEvent(right.makeEvent('pointerdown', { pointerId: 1, pointerType: 'touch', clientX: 90, clientY: 400 }));
+  right.advanceTime(40);
+  right.stage.dispatchEvent(right.makeEvent('pointermove', { pointerId: 1, pointerType: 'touch', clientX: 250, clientY: 402 }));
+  right.advanceTime(40);
+  right.stage.dispatchEvent(right.makeEvent('pointerup', { pointerId: 1, pointerType: 'touch', clientX: 250, clientY: 402 }));
+
+  assert.equal(right.caption.textContent, 'Caption 2', 'a right swipe wraps to the other photo');
+  assert.equal(rightSlides[1].classList.contains('is-current'), true);
+  assert.equal(slideOffsetX(rightSlides[1]), 0);
+  assert.equal(slideOffsetX(rightSlides[0]), stride, 'the outgoing photo keeps moving right');
+});
+
+test('two-photo viewer: a cancelled swipe returns the neighbour to the side it came from', async () => {
+  const width = 393;
+  const gap = 24;
+  const stride = width + gap;
+  const h = await createLightboxHarness({ width, height: 852, photoCount: 2, filmCount: 0 });
+  await h.boot();
+  h.galleryButtons[0].dispatchEvent(h.makeEvent('click'));
+  const slides = h.stage.querySelectorAll('.carousel-slide');
+
+  // A short, slow swipe to the right brings the neighbour in from the left but does
+  // not travel far enough to commit. It must slide back out to the left; returning it
+  // to its resting side would drag it across the whole photo on screen.
+  h.stage.dispatchEvent(h.makeEvent('pointerdown', { pointerId: 1, pointerType: 'touch', clientX: 100, clientY: 400 }));
+  h.advanceTime(600);
+  h.stage.dispatchEvent(h.makeEvent('pointermove', { pointerId: 1, pointerType: 'touch', clientX: 150, clientY: 404 }));
+  h.advanceTime(50);
+  assert.equal(slideOffsetX(slides[1]), -stride + 50, 'the neighbour follows the finger in from the left');
+
+  h.stage.dispatchEvent(h.makeEvent('pointerup', { pointerId: 1, pointerType: 'touch', clientX: 150, clientY: 404 }));
+  assert.equal(h.caption.textContent, 'Caption 1', 'a short swipe does not change the photo');
+  assert.equal(slideOffsetX(slides[0]), 0);
+  assert.equal(slideOffsetX(slides[1]), -stride, 'the neighbour retreats to the left, never across the photo');
+  h.advanceTime(1200);
+  assert.equal(slideOffsetX(slides[1]), -stride);
 });
 
 test('two-finger pinch zooms the popup image, clamps pan while zoomed, and prevents accidental swipe or close', async () => {

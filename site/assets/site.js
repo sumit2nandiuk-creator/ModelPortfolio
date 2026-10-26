@@ -2001,20 +2001,42 @@
     updateMediaLoaded(v, true);
     var frame = v.closest ? v.closest('.video-frame') : null;
     var button = frame && frame.querySelector('.video-play-button');
-    if (button) button.addEventListener('click', function () {
+
+    // Native controls belong to the playing video only. While the poster is up the
+    // frame shows its own play button, and a browser that also draws a play button
+    // over the poster (iOS Safari paints a large circle) would show two of them.
+    function showNativeControls(show) {
+      try { v.controls = show; } catch (_) {}
+      if (typeof v.setAttribute === 'function') {
+        if (show) v.setAttribute('controls', '');
+        else v.removeAttribute('controls');
+      }
+      if (frame && frame.classList) frame.classList.toggle('is-playing', show);
+    }
+
+    function startPlayback() {
       var source = v.getAttribute('data-video-src');
       if (source) {
         v.setAttribute('src', source);
         v.removeAttribute('data-video-src');
         v.load();
       }
-      button.hidden = true;
+      showNativeControls(true);
+      if (button) button.hidden = true;
+      var blocked = function () {
+        if (button) button.hidden = false;
+        showNativeControls(false);
+      };
       try {
         var playing = v.play();
-        if (playing && typeof playing.catch === 'function') {
-          playing.catch(function () { button.hidden = false; });
-        }
-      } catch (_) { button.hidden = false; }
+        if (playing && typeof playing.catch === 'function') playing.catch(blocked);
+      } catch (_) { blocked(); }
+    }
+
+    if (button) button.addEventListener('click', startPlayback);
+    // The poster itself plays too, since native controls only appear once it starts.
+    v.addEventListener('click', function () {
+      if (v.getAttribute('data-video-src')) startPlayback();
     });
     v.addEventListener('play', function () {
       videoEls.forEach(function (other) {

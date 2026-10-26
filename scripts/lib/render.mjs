@@ -377,16 +377,17 @@ function renderPortfolio(model, ctx) {
           const poster = posterUrl
             ? ` poster="${esc(posterThumb || posterUrl)}"${posterThumb ? ` data-full-poster="${esc(posterUrl)}"` : ''}`
             : '';
-          const preload = 'metadata';
+          const preload = 'none';
           const rawSrc = ctx.mediaUrl(video.file);
-          const videoSrc = !video.poster && !rawSrc.includes('#') ? `${rawSrc}#t=0.1` : rawSrc;
+          const videoSrc = rawSrc;
           const vTitle = String(video.title ?? '').trim();
           const showSubTitle = vTitle && vTitle.toLowerCase() !== group.title.toLowerCase();
           const hasCaption = Boolean(showSubTitle || video.description);
           return `
               <figure class="${cardClass}" data-category="${esc(group.title)}">
                 <div class="video-frame">
-                  <video controls controlsList="nodownload noremoteplayback" disablePictureInPicture playsinline preload="${preload}"${poster}${sizeAttrs}${naturalAttrs}${videoStyle} src="${esc(videoSrc)}" aria-label="${esc(vTitle || group.title)}"></video>
+                  <video controls controlsList="nodownload noremoteplayback" disablePictureInPicture playsinline preload="${preload}"${poster}${sizeAttrs}${naturalAttrs}${videoStyle} data-video-src="${esc(videoSrc)}" aria-label="${esc(vTitle || group.title)}"></video>
+                  <button type="button" class="video-play-button" aria-label="Play ${esc(vTitle || group.title)}">▶</button>
                 </div>${
                   hasCaption
                     ? `

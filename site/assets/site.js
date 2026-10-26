@@ -1801,189 +1801,37 @@
     syncMediaRowFraming(row);
   });
 
-  function frameBrightnessState(ctx2d, w, h) {
-    var data = ctx2d.getImageData(0, 0, w, h).data;
-    var step = Math.max(4, Math.floor(data.length / (64 * 4)) * 4);
-    var totalLuma = 0;
-    var opaqueSamples = 0;
-    for (var i = 0; i < data.length; i += step) {
-      if (data[i + 3] > 16) {
-        opaqueSamples++;
-        totalLuma += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-      }
-    }
-    if (!opaqueSamples) return 'blank';
-    return (totalLuma / opaqueSamples) < 10 ? 'dark' : 'ok';
-  }
-
   function setupVideoPlayer(v) {
     syncVideoOrientation(v);
     v.addEventListener('loadedmetadata', function () { syncVideoOrientation(v); });
     v.addEventListener('loadeddata', function () { updateMediaLoaded(v, true); syncVideoOrientation(v); });
     v.addEventListener('resize', function () { syncVideoOrientation(v); });
-
-    // When a custom poster image is already set, the browser displays it immediately.
-    if (v.getAttribute('poster')) {
-      updateMediaLoaded(v, true);
-      return;
-    }
-
-    var userInteracted = false;
-    var posterCaptured = false;
-    var capturedRatio = 0;
-    var checkedDarkFrame = false;
-    var primingPlay = false;
-    var hasPlayedForUser = false;
-    var primeTimer = null;
-
-    var markInteracted = function () {
-      userInteracted = true;
-      clearTimeout(primeTimer);
-    };
-    var frameEl = v.closest ? v.closest('.video-frame') : null;
-    (frameEl || v).addEventListener('pointerdown', markInteracted, { passive: true });
-    (frameEl || v).addEventListener('touchstart', markInteracted, { passive: true });
-    v.addEventListener('keydown', markInteracted);
-
-    function targetPreviewTime() {
-      var dur = Number(v.duration) || 0;
-      if (dur > 0) return Math.min(0.15, dur * 0.1);
-      return 0.1;
-    }
-
-    function tryCapturePoster() {
-      if (posterCaptured || userInteracted || v.getAttribute('poster')) return;
-      if ((v.readyState || 0) < 2 || !v.videoWidth || !v.videoHeight) return;
-      if (typeof document.createElement !== 'function') return;
+    // Idle players show a poster (or placeholder), never a network-loading spinner.
+    updateMediaLoaded(v, true);
+    var frame = v.closest ? v.closest('.video-frame') : null;
+    var button = frame && frame.querySelector('.video-play-button');
+    if (button) button.addEventListener('click', function () {
+      var source = v.getAttribute('data-video-src');
+      if (source) {
+        v.setAttribute('src', source);
+        v.removeAttribute('data-video-src');
+        v.load();
+      }
+      button.hidden = true;
       try {
-        var canvas = document.createElement('canvas');
-        if (!canvas || typeof canvas.getContext !== 'function') return;
-        var vw = v.videoWidth;
-        var vh = v.videoHeight;
-        var frameDims = targetFrameDimsForVideo(v) || { w: vw, h: vh };
-        var targetRatio = frameDims.w / frameDims.h;
-        var srcRatio = vw / vh;
-        var sx = 0;
-        var sy = 0;
-        var sw = vw;
-        var sh = vh;
-        if (srcRatio > targetRatio) {
-          sw = vh * targetRatio;
-          sx = (vw - sw) / 2;
-        } else if (srcRatio < targetRatio) {
-          sh = vw / targetRatio;
-          sy = (vh - sh) / 2;
+        var playing = v.play();
+        if (playing && typeof playing.catch === 'function') {
+          playing.catch(function () { button.hidden = false; });
         }
-        var scale = Math.min(1, 720 / Math.max(sw, sh));
-        var cw = Math.max(1, Math.round(sw * scale));
-        var ch = Math.max(1, Math.round(sh * scale));
-        canvas.width = cw;
-        canvas.height = ch;
-        var ctx2d = canvas.getContext('2d');
-        if (!ctx2d) return;
-        ctx2d.drawImage(v, sx, sy, sw, sh, 0, 0, cw, ch);
-        var state = frameBrightnessState(ctx2d, cw, ch);
-        if (state === 'blank') return;
-        // Skip fade-from-black intros so the initial thumbnail shows the model clearly.
-        if (state === 'dark' && !checkedDarkFrame && Number(v.duration) > 0.8) {
-          checkedDarkFrame = true;
-          v.currentTime = Math.min(1.0, Number(v.duration) * 0.15);
-          return;
-        }
-        var dataUrl = canvas.toDataURL('image/jpeg', 0.82);
-        if (dataUrl && dataUrl.indexOf('data:image/') === 0 && dataUrl.length > 128) {
-          v.setAttribute('poster', dataUrl);
-          posterCaptured = true;
-          capturedRatio = targetRatio;
-          updateMediaLoaded(v, true);
-        }
-      } catch (_) {
-        // Cross-origin videos without CORS cannot read canvas pixels; #t=0.1 still shows the frame.
-      }
-    }
-
-    v._onFrameRatioSync = function (nextRatio) {
-      if (!posterCaptured || userInteracted || !capturedRatio || !nextRatio) return;
-      if (Math.abs(capturedRatio - nextRatio) <= 0.04) return;
-      var curPoster = v.getAttribute('poster') || '';
-      if (curPoster.indexOf('data:image/') !== 0) return;
-      v.removeAttribute('poster');
-      posterCaptured = false;
-      capturedRatio = 0;
-      tryCapturePoster();
-    };
-
-    function seekToInitialFrame() {
-      if (userInteracted || posterCaptured || !v.paused) return;
-      var t = targetPreviewTime();
-      if ((v.currentTime || 0) < 0.05 && t > 0) {
-        try { v.currentTime = t; } catch (_) {}
-      }
-      // On iOS Safari, WebKit may stop at HAVE_METADATA (readyState 1) without painting
-      // a frame until a muted micro-play primes the hardware decoder.
-      clearTimeout(primeTimer);
-      primeTimer = setTimeout(function () {
-        if (posterCaptured || userInteracted || !v.paused || (v.readyState || 0) >= 2) {
-          tryCapturePoster();
-          return;
-        }
-        if (typeof v.play !== 'function') return;
-        var prevMuted = Boolean(v.muted);
-        primingPlay = true;
-        v.muted = true;
-        var finishPrime = function () {
-          if (!primingPlay) return;
-          primingPlay = false;
-          if (!userInteracted) {
-            try { v.pause(); } catch (_) {}
-            v.muted = prevMuted;
-            var pt = targetPreviewTime();
-            if ((v.currentTime || 0) < 0.05 && pt > 0) {
-              try { v.currentTime = pt; } catch (_) {}
-            }
-          }
-          tryCapturePoster();
-        };
-        try {
-          var p = v.play();
-          if (p && typeof p.then === 'function') {
-            p.then(finishPrime, function () {
-              primingPlay = false;
-              if (!userInteracted) v.muted = prevMuted;
-            });
-          } else {
-            finishPrime();
-          }
-        } catch (_) {
-          primingPlay = false;
-          if (!userInteracted) v.muted = prevMuted;
-        }
-      }, 280);
-    }
-
-    v.addEventListener('loadedmetadata', seekToInitialFrame);
-    v.addEventListener('loadeddata', tryCapturePoster);
-    v.addEventListener('seeked', tryCapturePoster);
-    v.addEventListener('canplay', tryCapturePoster);
+      } catch (_) { button.hidden = false; }
+    });
     v.addEventListener('play', function () {
-      if (primingPlay) return;
-      userInteracted = true;
-      clearTimeout(primeTimer);
       videoEls.forEach(function (other) {
         if (other !== v && !other.paused) {
           try { other.pause(); } catch (_) {}
         }
       });
-      if (!hasPlayedForUser) {
-        hasPlayedForUser = true;
-        if (checkedDarkFrame && v.currentTime > 0.25 && v.currentTime < 1.5) {
-          try { v.currentTime = 0; } catch (_) {}
-        }
-      }
     });
-
-    if ((v.readyState || 0) >= 1) seekToInitialFrame();
-    if ((v.readyState || 0) >= 2) tryCapturePoster();
   }
 
   videoEls.forEach(setupVideoPlayer);

@@ -28,7 +28,7 @@ async function createTempWorkspace(model) {
   };
 }
 
-test('website loading speed: preloads LCP cover image, preconnects origins, and sets eager/lazy/metadata loading attributes', async () => {
+test('website loading speed: preloads LCP cover image, preconnects origins, and sets eager/lazy/on-demand loading attributes', async () => {
   const R2 = 'https://media.example.test';
   const model = {
     slug: 'speed-test',
@@ -77,8 +77,15 @@ test('website loading speed: preloads LCP cover image, preconnects origins, and 
     assert.match(html, /<img src="https:\/\/media\.example\.test\/speed-test\/photo-1\.jpg" alt="Photo 1"[^>]*loading="lazy" decoding="async"/);
     assert.match(html, /<img src="https:\/\/media\.example\.test\/speed-test\/photo-2\.jpg" alt="Photo 2"[^>]*loading="lazy" decoding="async"/);
 
-    // 6. Video element: preload="metadata" avoids downloading full video data on initial page load
-    assert.match(html, /<video controls[^>]*preload="metadata"/);
+    // 6. Videos have no active source until explicitly played.
+    assert.match(html, /<video controls[^>]*preload="none"/);
+    const videos = html.match(/<video\b[^>]*>/g) || [];
+    assert.ok(videos.length);
+    videos.forEach(tag => {
+      assert.doesNotMatch(tag, /\ssrc=/);
+      assert.match(tag, /data-video-src=/);
+    });
+    assert.match(html, /class="video-play-button"/);
   } finally {
     await ws.cleanup();
   }

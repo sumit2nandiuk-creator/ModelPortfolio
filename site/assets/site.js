@@ -625,18 +625,75 @@
 
   function findExistingImage(src) {
     if (!src || typeof document === 'undefined') return null;
+    function absoluteUrl(value) {
+      if (!value) return '';
+      try { return new URL(value, window.location.href).href; }
+      catch (_) { return String(value); }
+    }
+    var requested = absoluteUrl(src);
     var imgs = document.querySelectorAll('img');
+    var fallback = null;
+    var declared = null;
     for (var i = 0; i < imgs.length; i++) {
       var candidate = imgs[i];
       if (candidate.closest && candidate.closest('#lb-stage')) continue;
+      // <picture>/srcset can display an entirely different URL from src.
+      // Prefer a decoded, actually selected match over declared fallback URLs.
+      if (absoluteUrl(candidate.currentSrc) === requested) {
+        if (candidate.complete && candidate.naturalWidth > 0) return candidate;
+        fallback = fallback || candidate;
+      }
       var candidateSrc = candidate.getAttribute('src') || candidate.src || '';
       var candidateFull = candidate.getAttribute('data-full-src') || '';
-      if (candidateSrc === src || candidate.src === src || candidateFull === src) return candidate;
-      if (candidateSrc && src && (candidateSrc.indexOf(src) !== -1 || src.indexOf(candidateSrc) !== -1)) {
-        return candidate;
+      if (!declared && (absoluteUrl(candidateSrc) === requested ||
+          absoluteUrl(candidate.src) === requested || absoluteUrl(candidateFull) === requested)) {
+        declared = candidate;
       }
     }
-    return null;
+    // Exact URL comparison keeps different variants and retry query strings
+    // distinct; substring matches could incorrectly reuse a different file.
+    return fallback || declared;
+  }
+
+  // Preserve actual painted pixels across a popup quality upgrade. A decoded
+  // preload alone does not prevent WebKit clearing the visible <img> on src change.
+  function holdPopupImage(img) {
+    if (!img || img.tagName !== 'IMG' || !img.closest || !img.closest('#lb-stage') ||
+        !img.complete || !img.naturalWidth || !img.naturalHeight) return null;
+    if (img._popupCover) return img._popupCover;
+    try {
+      var canvas = document.createElement('canvas');
+      var scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      var ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.className = 'lb-image-cover';
+      canvas.setAttribute('aria-hidden', 'true');
+      canvas.style.transform = img.style.transform || '';
+      var slide = img.closest('.carousel-slide');
+      if (!slide) return null;
+      slide.appendChild(canvas);
+      var revealing = false;
+      var cover = {
+        element: canvas,
+        reveal: function () {
+          if (revealing) return;
+          revealing = true;
+          // Let the decoded replacement paint before fading the retained pixels.
+          requestFrame(function () { requestFrame(function () {
+            canvas.style.opacity = '0';
+            setTimeout(function () {
+              if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
+              if (img._popupCover === cover) img._popupCover = null;
+            }, reducedMotion ? 0 : 220);
+          }); });
+        }
+      };
+      img._popupCover = cover;
+      return cover;
+    } catch (_) { return null; }
   }
 
   function setMediaSrc(el, url) {
@@ -653,6 +710,7 @@
     // never turns black after a preview was already visible (new profiles have R2
     // preview/thumb URLs that may 404 on first deploy).
     var previous = current;
+    var cover = holdPopupImage(el);
     var restored = false;
     var restore = function () {
       if (restored) return;
@@ -660,21 +718,27 @@
       restored = true;
       try { el.src = previous; } catch (_) {}
       if (typeof el.setAttribute === 'function') el.setAttribute('src', previous);
+      if (cover) {
+        if (el.decode) el.decode().then(cover.reveal).catch(function () {});
+        else el.addEventListener('load', cover.reveal, { once: true });
+      }
     };
     var onError = function () { restore(); };
     el.addEventListener('error', onError, { once: true });
     // Keep current low-res visible until new source is decoded — no blink.
     try { el.src = url; } catch (_) {}
-    if (typeof el.setAttribute === 'function') {
+    if (typeof el.setAttribute === 'function' && el.getAttribute('src') !== url) {
       el.setAttribute('src', url);
     }
     var check = function () {
-      if ((el.complete && (el.naturalWidth || 0) > 0) || (el.naturalWidth || 0) > 0) {
+      if (getMediaSrc(el) === url && el.complete && (el.naturalWidth || 0) > 0) {
+        if (cover) cover.reveal();
         try { el.removeEventListener('error', onError); } catch (_) {}
         updateMediaLoaded(el, true);
         syncAllFramesForUrl(url, true);
       }
     };
+    el.addEventListener('load', check, { once: true });
     check();
     if (el.decode) {
       el.decode().then(check).catch(function () {});
@@ -1254,6 +1318,7 @@
       img.style.transform = zoomed
         ? 'translate3d(' + zoomX.toFixed(2) + 'px, ' + zoomY.toFixed(2) + 'px, 0) scale(' + zoomScale.toFixed(4) + ')'
         : '';
+      if (img._popupCover) img._popupCover.element.style.transform = img.style.transform;
       if (useAnim) {
         zoomAnimTimer = setTimeout(function () {
           if (img) img.style.transition = 'none';
@@ -1275,6 +1340,7 @@
       for (var i = 0; i < allImgs.length; i++) {
         allImgs[i].style.transition = animate && !reducedMotion ? 'transform ' + ZOOM_MS + 'ms ' + EASE : 'none';
         allImgs[i].style.transform = '';
+        if (allImgs[i]._popupCover) allImgs[i]._popupCover.element.style.transform = '';
       }
     }
 
@@ -1300,8 +1366,6 @@
     function setPopupImage(img, item) {
       if (item.webp) {
         // Viewer-sized candidates are selected only when this slide is opened.
-        img.setAttribute('sizes', '100vw');
-        img.setAttribute('srcset', item.webp);
         if (item.avif && img.parentNode && img.parentNode.tagName !== 'PICTURE') {
           var picture = document.createElement('picture');
           var source = document.createElement('source');
@@ -1312,6 +1376,8 @@
           picture.appendChild(source);
           picture.appendChild(img);
         }
+        img.setAttribute('sizes', '100vw');
+        img.setAttribute('srcset', item.webp);
         setMediaSrc(img, item.src);
         return;
       }

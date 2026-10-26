@@ -917,9 +917,8 @@ main section {
   transition: transform 1.1s var(--ease), filter 0.85s var(--ease), opacity 0.45s var(--ease);
 }
 
-/* Progressive preview → medium → full: start blurred tiny preview, sharpen smoothly with no blink */
+/* Gallery/viewer progressive loading: blur tiny previews, sharpen smoothly with no blink. Hero starts unblurred. */
 .hero-media[data-medium-src],
-.hero-media[data-full-src],
 .gallery-btn img[data-medium-src],
 .gallery-btn img[data-full-src],
 .lb-stage .carousel-slide img[data-medium-src],
@@ -1935,8 +1934,9 @@ video.is-failed {
 
 .gallery-btn > picture, .lb-stage .carousel-slide > picture { display: contents; }
 
-/* Retain the previous painted photo until a popup quality upgrade is ready. */
-.lb-stage .carousel-slide .lb-image-cover {
+/* Retain the previous painted photo until a quality upgrade is ready. */
+.lb-stage .carousel-slide .lb-image-cover,
+.hero .carousel-slide .lb-image-cover {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -1948,6 +1948,11 @@ video.is-failed {
   transition: opacity 200ms ease;
   z-index: 1;
 }
+.hero .carousel-slide .lb-image-cover {
+  object-fit: cover;
+  object-position: center 40%;
+}
 @media (prefers-reduced-motion: reduce) {
-  .lb-stage .carousel-slide .lb-image-cover { transition: none; }
+  .lb-stage .carousel-slide .lb-image-cover,
+  .hero .carousel-slide .lb-image-cover { transition: none; }
 }

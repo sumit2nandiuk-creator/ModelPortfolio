@@ -114,6 +114,7 @@ function documentShell({
   ${description ? `<meta name="description" content="${esc(description)}">` : ''}
   <meta name="robots" content="${esc(robots)}">
   <link rel="icon" href="data:,">
+  ${extraHead}
   <link rel="preload" href="${esc(base)}assets/fonts/cormorant-garamond-latin-400-italic.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -122,7 +123,6 @@ function documentShell({
   <link rel="stylesheet" href="${esc(fontsHref)}">
   <script>if('scrollRestoration' in history)history.scrollRestoration='manual';if(location.hash)history.replaceState(null,'',location.pathname+location.search);</script>
   <link rel="stylesheet" href="${esc(base)}assets/site.css">
-  ${extraHead}
 </head>
 <body class="${esc(bodyClass)}"${bodyStyle ? ` style="${esc(bodyStyle)}"` : ''}>
 ${body}
@@ -207,12 +207,18 @@ function renderHero(model, ctx) {
   // One slide per cover photo. A tap opens the viewer; a drag moves the slides instead.
   const slides = covers
     .map((cover, i) => {
-      const source = imageSource(cover, ctx);
+      // Never use the tiny preview for an above-the-fold hero.
+      const source = imageSource({ ...cover, preview: undefined }, ctx);
+      const thumb = cover.thumbnail ? ctx.mediaUrl(cover.thumbnail) : '';
+      const display = thumb ? { src: thumb, full: source.full, thumb, preview: '' } : source;
+      const upgrade = thumb && source.webp?.length
+        ? ` data-full-webp="${esc(variantSet(source.webp))}" data-full-avif="${esc(variantSet(source.avif))}"`
+        : '';
       const src = source.full;
       const label = many ? `Open cover photo ${i + 1} of ${covers.length}` : 'Open cover photo';
       return `
         <button class="carousel-slide" type="button" data-src="${esc(src)}"${viewerAttrs(source)}${(source.thumb || source.preview) ? ` data-thumb="${esc(source.thumb || source.preview)}"` : ''} data-alt="${esc(cover.alt)}" data-caption="" aria-label="${esc(label)}">
-          ${responsiveImage(source, `<img class="hero-media" src="${esc(source.src)}"${progressiveAttrs(source)} alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} loading="${(source.webp ? i === 0 : i < 2) ? 'eager' : 'lazy'}"${i === 0 ? ' fetchpriority="high"' : ''} decoding="async" draggable="false">`, true)}
+          ${responsiveImage(display, `<img class="hero-media" src="${esc(display.src)}"${progressiveAttrs(display)}${upgrade} alt="${esc(cover.alt)}"${dimensionAttrs(ctx.sizeOf(cover.file))} loading="eager" fetchpriority="high" decoding="async" draggable="false">`, true)}
         </button>`;
     })
     .join('');
@@ -633,7 +639,7 @@ export function renderModelPage(model, ctx) {
     }
   };
   for (const coverEntry of covers) {
-    if (coverEntry?.file) registerRemoteOrigin(ctx.mediaUrl(coverEntry.preview || coverEntry.thumbnail || coverEntry.file));
+    if (coverEntry?.file) registerRemoteOrigin(ctx.mediaUrl(coverEntry.thumbnail || coverEntry.file));
   }
   for (const p of model.photos ?? []) {
     if (p.file) registerRemoteOrigin(ctx.mediaUrl(p.file));
@@ -650,18 +656,21 @@ export function renderModelPage(model, ctx) {
     )
     .join('\n  ');
 
-  // Preload only the first cover (the LCP image); neighboring slides load on demand.
+  // Preload the first hero image from <head>; all slides are eager/high in markup.
   const coverPreloads = covers
     .slice(0, 1)
     .map((c, i) => {
-      const responsive = imageSource(c, ctx);
+      if (c.thumbnail) {
+        return `<link rel="preload" as="image" href="${esc(ctx.mediaUrl(c.thumbnail))}" fetchpriority="high">`;
+      }
+      const responsive = imageSource({ ...c, preview: undefined }, ctx);
       if (responsive.webp?.length) {
         // Preload AVIF only: WebP browsers discover their fallback in <picture>.
         const variants = responsive.avif;
         if (!variants.length) return '';
         return `<link rel="preload" as="image" type="image/avif" href="${esc(variants.at(-1).url)}" imagesrcset="${esc(variantSet(variants))}" imagesizes="100vw" fetchpriority="high">`;
       }
-      const url = ctx.mediaUrl(c.preview || c.thumbnail || c.file);
+      const url = ctx.mediaUrl(c.file);
       if (!url) return '';
       return `<link rel="preload" as="image" href="${esc(url)}"${i === 0 ? ' fetchpriority="high"' : ''}>`;
     })

@@ -1934,3 +1934,20 @@ video.is-failed {
 .video-play-button:focus-visible { outline: 3px solid white; outline-offset: 4px; }
 
 .gallery-btn > picture, .lb-stage .carousel-slide > picture { display: contents; }
+
+/* Retain the previous painted photo until a popup quality upgrade is ready. */
+.lb-stage .carousel-slide .lb-image-cover {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  transform-origin: 50% 50%;
+  opacity: 1;
+  transition: opacity 200ms ease;
+  z-index: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lb-stage .carousel-slide .lb-image-cover { transition: none; }
+}

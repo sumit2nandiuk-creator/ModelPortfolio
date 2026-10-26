@@ -93,6 +93,10 @@ export async function build({
         outfile: path.join(outDir, 'admin/image-variants-worker.js'), minify: true });
       await fs.copyFile(path.join(repoRoot, 'node_modules/@jsquash/avif/codec/enc/avif_enc.wasm'),
         path.join(outDir, 'admin/avif_enc.wasm'));
+      await fs.copyFile(path.join(repoRoot, 'node_modules/@jsquash/webp/codec/enc/webp_enc.wasm'),
+        path.join(outDir, 'admin/webp_enc.wasm'));
+      await fs.copyFile(path.join(repoRoot, 'node_modules/@jsquash/webp/LICENSE'),
+        path.join(outDir, 'admin/webp-LICENSE.txt'));
       await fs.copyFile(path.join(repoRoot, 'node_modules/@jsquash/avif/LICENSE'),
         path.join(outDir, 'admin/avif-LICENSE.txt'));
     }

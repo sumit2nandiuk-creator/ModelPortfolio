@@ -10,21 +10,22 @@ import { defaultOptions } from '@jsquash/avif/meta.js';
 
 const admin = await readFile(new URL('../site/admin/admin.js', import.meta.url), 'utf8');
 const helpers = admin.slice(admin.indexOf('  var VARIANT_WIDTHS ='), admin.indexOf('  function thumbnailSource('));
-function generationHarness(width, height, failAvif = false) {
+function generationHarness(width, height, failAvif = false, nativeWebp = 'supported') {
   const uploads = [];
+  const workerFormats = [];
   const progress = [];
   let terminated = 0;
   const context = vm.createContext({
     URL, Blob, setTimeout, clearTimeout,
     document: { createElement: () => ({ width: 0, height: 0,
       getContext: () => ({ drawImage() {}, getImageData: () => ({ data: new Uint8ClampedArray(4) }) }),
-      toBlob: (cb, type) => cb(new Blob(['encoded'], { type }))
+      toBlob: (cb, type) => cb(nativeWebp === 'null' ? null : new Blob(['encoded'], { type: nativeWebp === 'png' ? 'image/png' : type }))
     }) },
     window: {
       location: { href: 'https://example.test/admin/' },
       Image: class { constructor() { this.naturalWidth = width; this.naturalHeight = height; } set src(_) { this.onload(); } },
       Worker: class {
-        postMessage() { queueMicrotask(() => this.onmessage({ data: failAvif ? { error: 'test failure' } : { buffer: new Uint8Array([1]).buffer } })); }
+        postMessage(message) { workerFormats.push(message.format); queueMicrotask(() => this.onmessage({ data: failAvif ? { error: 'test failure' } : { buffer: new Uint8Array([1]).buffer } })); }
         terminate() { terminated++; }
       }
     },
@@ -34,7 +35,7 @@ function generationHarness(width, height, failAvif = false) {
     }
   });
   vm.runInContext(helpers, context);
-  return { context, uploads, progress, terminated: () => terminated,
+  return { context, uploads, progress, workerFormats, terminated: () => terminated,
     generate: entries => context.generateImageVariants('blob:original', entries, (...args) => progress.push(args)) };
 }
 
@@ -153,4 +154,30 @@ test('responsive viewer installs AVIF and WebP candidates instead of downloading
   assert.equal(img.attrs.src, '2400.webp');
   assert.match(img.attrs.srcset, /480w/);
   assert.equal(img.attrs['data-full-src'], undefined);
+});
+
+for (const nativeResult of ['png', 'null']) {
+  test(`native canvas WebP ${nativeResult} result falls back to WASM and keeps existing AVIF variants`, async () => {
+    const h = generationHarness(4000, 6000, false, nativeResult);
+    const entry = { variants: variants().filter(v => v.format === 'avif') };
+    const existing = JSON.stringify(entry.variants);
+    await h.generate([entry]);
+    assert.equal(h.uploads.length, 4);
+    assert.ok(h.uploads.every(upload => upload.type === 'image/webp'));
+    assert.deepEqual(h.workerFormats, ['webp', 'webp', 'webp', 'webp']);
+    assert.equal(JSON.stringify(entry.variants.filter(v => v.format === 'avif')), existing);
+    assert.equal(h.context.hasAllVariants(entry), true);
+    assert.ok(h.progress.some(([text]) => text.includes('compatibility encoder')));
+    await h.generate([entry]);
+    assert.equal(h.uploads.length, 4, 'retry skips all completed variants');
+  });
+}
+
+test('real fallback codec produces WebP bytes rather than mislabeled PNG', async () => {
+  const { default: createWebpEncoder } = await import('@jsquash/webp/codec/enc/webp_enc.js');
+  const { defaultOptions: options } = await import('@jsquash/webp/meta.js');
+  const module = await createWebpEncoder({ wasmBinary: await readFile(new URL('../node_modules/@jsquash/webp/codec/enc/webp_enc.wasm', import.meta.url)) });
+  const encoded = module.encode(new Uint8Array(16 * 16 * 4).fill(180), 16, 16, { ...options, quality: 82 });
+  assert.equal(new TextDecoder().decode(encoded.subarray(0, 4)), 'RIFF');
+  assert.equal(new TextDecoder().decode(encoded.subarray(8, 12)), 'WEBP');
 });

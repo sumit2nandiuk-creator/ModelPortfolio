@@ -6,7 +6,7 @@ reel section, and a contact block.
 
 The public site is **static** (plain HTML, CSS and JavaScript). Use Node.js 18.17+
 and `npm ci` to install the build tools. The admin uses a bundled, locally served
-AVIF WebAssembly encoder; no image service or third-party CDN is needed.
+AVIF/WebP WebAssembly encoders; no image service or third-party CDN is needed.
 
 Each model has its own URL, for example `/sushmita-ghosh/`. Models are fully
 isolated from one another: a model's page only contains that model's text,
@@ -241,7 +241,8 @@ backfill button saves the profile automatically.
 - Public cards and heroes use `<picture>`, `srcset` and `sizes`. Larger viewer
   candidates are selected when its slides are opened, rather than downloading
   camera originals for every card. Old profiles without variants still work.
-- Generation is sequential per photo, with AVIF encoding off the main thread.
+- Generation is sequential per photo, with AVIF encoding off the main thread. WebP uses a worker-based WASM fallback
+  when native canvas WebP encoding is unavailable (including iOS WebKit).
   Upload progress names the original upload, thumbnail work, encoding size/format
   and variant upload. Successful partial results are kept; rerun the button to
   retry missing sizes without regenerating completed ones.

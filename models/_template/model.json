@@ -26,6 +26,11 @@
       "category": "Showreel"
     }
   ],
+  "introVideo": {
+    "file": "intro.mp4",
+    "poster": "intro-poster.jpg",
+    "title": "Introduction"
+  },
   "contact": {
     "email": "bookings@example.com",
     "phone": "+00 00000 00000",

@@ -15,6 +15,7 @@ function createAdminUploadHarness(modelOverrides = {}, modelSlugs = ['sushmita-g
   const thumbnailUploads = [];
   const profileReads = [];
   const profileActions = [];
+  const deletedMedia = [];
   let putFailure = null;
   const storage = new Map([['admin.token', 'secret-token']]);
 
@@ -368,6 +369,15 @@ function createAdminUploadHarness(modelOverrides = {}, modelSlugs = ['sushmita-g
         json: async () => ({ state: body.action === 'permanent' ? 'deleted' : body.action === 'archive' ? 'archived' : 'active' }),
       };
     }
+    if (url.endsWith('/api/models/sushmita-ghosh/media') && opts.method === 'DELETE') {
+      deletedMedia.push(JSON.parse(opts.body).url);
+      return {
+        status: 200,
+        ok: true,
+        headers: { get: () => 'application/json' },
+        json: async () => ({ ok: true }),
+      };
+    }
     if (url.endsWith('/api/models/sushmita-ghosh/media') && opts.method === 'POST') {
       thumbnailUploads.push(opts.body);
       const file = opts.body.entries.find((entry) => entry.name === 'file');
@@ -434,6 +444,7 @@ function createAdminUploadHarness(modelOverrides = {}, modelSlugs = ['sushmita-g
     thumbnailUploads,
     profileReads,
     profileActions,
+    deletedMedia,
     localProfileStorage,
     canvases,
     uiHistory,
@@ -628,12 +639,13 @@ test('redesigned admin groups videos first followed by photos per category/title
   toggleAllBtn.dispatchEvent({ type: 'click', bubbles: true });
   assert.equal(groupCards.every((c) => !c.querySelector('.group-card-body').hidden), true);
 
-  // 3b. Every top-level admin section (Profile & About, Measurements, Contact, Cover photos, Portfolio groups)
+  // 3b. Every top-level admin section (Profile & About, Introduction video, Measurements, Contact,
+  // Cover photos, Portfolio groups)
   // can be collapsed/expanded individually and via "Collapse all sections" / "Expand all sections"
   const sectionCards = h.doc.querySelectorAll('.section-card');
   assert.deepEqual(
     sectionCards.map((s) => s.getAttribute('data-section-card')),
-    ['profile', 'measurements', 'contact', 'cover', 'portfolio'],
+    ['profile', 'intro', 'measurements', 'contact', 'cover', 'portfolio'],
   );
   const portfolioSection = h.doc.querySelector('[data-section-card="portfolio"]');
   assert.ok(portfolioSection);
@@ -921,6 +933,63 @@ test('a batch of four cover slideshow photos receives a thumbnail per image befo
   await h.flush();
   assert.equal(h.savedPayloads[0].model.cover.length, 4);
   assert.ok(h.savedPayloads[0].model.cover.every((cover) => cover.thumbnail && cover.preview), 'all four saved cover entries include both thumbnail sizes');
+});
+
+test('the admin panel adds and removes the About introduction video', async () => {
+  const h = await createAdminUploadHarness();
+  await h.boot();
+
+  const introSection = () => h.doc.querySelector('[data-section-card="intro"]');
+  assert.ok(introSection(), 'Introduction video section is rendered in the editor');
+  assert.match(introSection().textContent, /end of the About section/, 'the empty state explains where the video appears');
+
+  const input = introSection().querySelector('input[data-upload="intro"]');
+  assert.ok(input, 'the section has its own video upload control');
+  assert.equal(input.getAttribute('accept'), 'video/*');
+
+  input.files = [{ name: 'hello.mp4', size: 4 * 1024 * 1024, type: 'video/mp4' }];
+  input.dispatchEvent({ type: 'change', bubbles: true });
+  await h.flush();
+  assert.equal(h.xhrs.length, 1, 'the clip uploads to R2');
+  assert.equal(h.xhrs[0].sentForm.entries[0].filename, 'hello.mp4');
+  assert.match(h.doc.querySelector('[data-upload-slot="intro"]').textContent, /Uploading introduction video: hello\.mp4/);
+
+  h.xhrs[0].status = 201;
+  h.xhrs[0].responseText = JSON.stringify({
+    key: 'sushmita-ghosh/1-hello.mp4',
+    url: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/1-hello.mp4',
+    kind: 'video',
+  });
+  h.xhrs[0].emit('load');
+  for (let i = 0; i < 8; i++) await h.flush();
+
+  const preview = introSection().querySelector('.item.video video');
+  assert.ok(preview, 'the uploaded clip is previewed in the section');
+  assert.match(preview.getAttribute('src'), /1-hello\.mp4/);
+  assert.match(introSection().textContent, /About · Introduction video/);
+
+  h.doc.getElementById('save').dispatchEvent({ type: 'click', bubbles: true });
+  await h.flush();
+  await h.flush();
+  assert.deepEqual(
+    h.savedPayloads[0].model.introVideo,
+    { file: 'https://modelportfolio.pages.dev/media/sushmita-ghosh/1-hello.mp4' },
+    'the profile saves the introduction video reference',
+  );
+
+  // Removing it clears the reference and queues the hosted file for deletion.
+  introSection().querySelector('[data-action="remove-intro"]').dispatchEvent({ type: 'click', bubbles: true });
+  await h.flush();
+  assert.match(introSection().textContent, /No introduction video yet/);
+  h.doc.getElementById('save').dispatchEvent({ type: 'click', bubbles: true });
+  await h.flush();
+  await h.flush();
+  assert.equal('introVideo' in h.savedPayloads[1].model, false, 'a removed introduction video is not saved');
+  assert.deepEqual(
+    h.deletedMedia,
+    ['https://modelportfolio.pages.dev/media/sushmita-ghosh/1-hello.mp4'],
+    'the hosted clip is deleted from R2 on save',
+  );
 });
 
 test('a newly uploaded portfolio photo gets a thumbnail uploaded and linked automatically', async () => {

@@ -202,6 +202,21 @@ export async function validateModel(model, { folder, dir }) {
     }
   }
 
+  // Optional introduction video: one framed clip at the end of the About section.
+  if (model.introVideo !== undefined && model.introVideo !== null) {
+    const intro = model.introVideo;
+    if (!intro || typeof intro !== 'object' || Array.isArray(intro)) {
+      fail('"introVideo" must be an object like { "file": "intro.mp4", "poster": "intro.jpg" }');
+    } else {
+      await checkMedia(intro, 'introVideo', VIDEO_EXTENSIONS);
+      await checkPoster(intro, 'introVideo');
+      if (intro.title !== undefined && typeof intro.title !== 'string') {
+        fail('"introVideo.title" must be text');
+      }
+      checkDimensions(intro, 'introVideo');
+    }
+  }
+
   // --- Contact -------------------------------------------------------------
   if (model.contact !== undefined) {
     const c = model.contact;
@@ -242,6 +257,18 @@ export function mediaEntries(model) {
   for (const video of model.videos ?? []) {
     entries.push(video);
     if (video.poster) entries.push({ file: video.poster, width: video.posterWidth, height: video.posterHeight, thumbnail: video.posterThumbnail, preview: video.posterPreview });
+  }
+  if (model.introVideo && typeof model.introVideo === 'object' && model.introVideo.file) {
+    entries.push(model.introVideo);
+    if (model.introVideo.poster) {
+      entries.push({
+        file: model.introVideo.poster,
+        width: model.introVideo.posterWidth,
+        height: model.introVideo.posterHeight,
+        thumbnail: model.introVideo.posterThumbnail,
+        preview: model.introVideo.posterPreview,
+      });
+    }
   }
   return entries.filter((e) => e && typeof e.file === 'string');
 }

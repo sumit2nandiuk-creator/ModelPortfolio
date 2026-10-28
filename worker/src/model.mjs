@@ -228,6 +228,17 @@ export function validateModelShape(model, slug) {
     }
   }
 
+  if (model.introVideo !== undefined && model.introVideo !== null) {
+    const intro = model.introVideo;
+    if (!intro || typeof intro !== 'object' || Array.isArray(intro)) {
+      fail('"introVideo" must be an object.');
+    } else {
+      if (!validMediaRef(intro.file)) fail('The introduction video needs a file.');
+      if (intro.poster !== undefined && !validMediaRef(intro.poster)) fail('The introduction video has an invalid poster.');
+      if (intro.title !== undefined && typeof intro.title !== 'string') fail('The introduction video caption must be text.');
+    }
+  }
+
   if (model.contact !== undefined) {
     const c = model.contact;
     if (!c || typeof c !== 'object' || Array.isArray(c)) fail('"contact" must be an object.');

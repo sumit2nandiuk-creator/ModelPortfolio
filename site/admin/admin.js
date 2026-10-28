@@ -269,6 +269,7 @@
       cover: [],
       photos: [],
       videos: [],
+      introVideo: null,
       contact: {},
     };
   }
@@ -323,6 +324,9 @@
     m.videos = Array.isArray(m.videos) ? m.videos : [];
     m.bio = Array.isArray(m.bio) ? m.bio : [];
     m.stats = Array.isArray(m.stats) ? m.stats : [];
+    m.introVideo = (m.introVideo && typeof m.introVideo === 'object' && !Array.isArray(m.introVideo) && m.introVideo.file)
+      ? m.introVideo
+      : null;
     m.contact = m.contact || {};
     m.fonts = (m.fonts && typeof m.fonts === 'object' && !Array.isArray(m.fonts)) ? m.fonts : {};
     m.texts = (m.texts && typeof m.texts === 'object' && !Array.isArray(m.texts)) ? m.texts : {};
@@ -451,6 +455,14 @@
 
     var contact = cleanEntry(m.contact || {}, Object.keys(m.contact || {}));
     setOrDelete(out, 'contact', Object.keys(contact).length ? contact : null);
+
+    // Optional introduction video shown at the end of the About section.
+    if (m.introVideo && typeof m.introVideo === 'object' && m.introVideo.file) {
+      var introClean = cleanEntry(m.introVideo, ['file', 'title', 'poster', 'width', 'height', 'posterWidth', 'posterHeight']);
+      setOrDelete(out, 'introVideo', Object.keys(introClean).length ? introClean : null);
+    } else {
+      delete out.introVideo;
+    }
 
     // Clean box-level font settings.
     var fonts = {};
@@ -1035,9 +1047,10 @@
     }
   }
 
-  var SECTION_IDS = ['profile', 'measurements', 'contact', 'cover', 'portfolio'];
+  var SECTION_IDS = ['profile', 'intro', 'measurements', 'contact', 'cover', 'portfolio'];
   var SECTION_LABELS = {
     profile: 'Profile & About',
+    intro: 'Introduction video',
     measurements: 'Measurements',
     contact: 'Contact',
     cover: 'Cover photos',
@@ -1111,7 +1124,7 @@
 
   function uploadButton(label, kind, extra) {
     var uploading = Boolean(S.activeUploadSlot);
-    var glyph = kind === 'video' ? 'video' : 'photo';
+    var glyph = (kind === 'video' || kind === 'intro') ? 'video' : 'photo';
     return '<label class="btn icon-btn file-btn' + (uploading ? ' is-uploading' : '') + '" aria-label="' + esc(label) + '" title="' + esc(label) + '">' + icon(glyph) +
       '<input type="file" aria-label="' + esc(label) + '" data-upload="' + kind + '"' + (uploading ? ' disabled' : '') + (extra || '') + '></label>';
   }
@@ -1307,6 +1320,35 @@
     }).join('');
   }
 
+  // The single introduction video card. It lives in its own editor section and
+  // is shown in a frame at the end of the About section on the site.
+  function introVideoHtml() {
+    var intro = S.model.introVideo;
+    var videoStyle = esc(boxInlineCss('videoText'));
+    if (!intro || !intro.file) {
+      return '<p class="muted">No introduction video yet. Add one and it appears in a frame at the end of the About section. A landscape video fits the frame best.</p>';
+    }
+    var preview = intro.poster
+      ? thumbBoxHtml('<img class="thumb wide" alt="" src="' + esc(mediaSrc(intro.posterThumbnail || intro.poster)) + '" loading="lazy">', 'Loading poster…')
+      : thumbBoxHtml('<video class="thumb wide" preload="auto" muted playsinline src="' + esc(mediaSrc(intro.file)) + '#t=0.1"></video>', 'Loading video…');
+    return '<div class="item video admin-media-card">' +
+      preview +
+      '<div class="admin-media-body">' +
+        '<div class="admin-media-badge-row">' +
+          '<span class="media-kind-badge is-video">About · Introduction video</span>' +
+        '</div>' +
+        '<div class="item-fields">' +
+          '<label class="full">Caption / Title<input data-field="introVideo.title" data-styled-slot="videoText" style="' + videoStyle + '" value="' + esc(intro.title || '') + '" placeholder="Optional caption"></label>' +
+        '</div>' +
+        uploadSlotHtml('intro-poster') +
+        '<div class="item-actions">' +
+          uploadButton(intro.poster ? 'Replace poster' : 'Add poster', 'intro-poster', ' accept="image/*"') +
+          '<button type="button" class="btn icon-btn danger" data-action="remove-intro" title="Remove introduction video" aria-label="Remove introduction video">' + icon('trash') + '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
   function statsHtml() {
     var count = S.model.stats.length;
     if (!count) return '<p class="muted">No measurements yet.</p>';
@@ -1384,6 +1426,14 @@
               '<input type="checkbox" data-field="seo.noindex"' + (seo.noindex ? ' checked' : '') + ' style="width:auto"> Hide this page from search engines</label>' +
           '</div>' +
         '</div>'
+      ),
+
+      sectionCard(
+        'intro',
+        'Introduction video (About)',
+        uploadButton(S.model.introVideo && S.model.introVideo.file ? 'Replace introduction video' : 'Add introduction video', 'intro', ' accept="video/*"'),
+        '<div class="list">' + introVideoHtml() + '</div>',
+        'intro'
       ),
 
       sectionCard(
@@ -2056,6 +2106,10 @@
       }
       return;
     }
+    if (action === 'remove-intro') {
+      removeIntroVideo();
+      return;
+    }
     if (action === 'generate-variants') {
       generateThumbnails();
       return;
@@ -2450,6 +2504,16 @@
       return;
     }
 
+    if (kind === 'intro') {
+      uploadIntroVideo(files[0]).then(doneReset, doneReset);
+      return;
+    }
+
+    if (kind === 'intro-poster') {
+      uploadIntroPoster(files[0]).then(doneReset, doneReset);
+      return;
+    }
+
     var cancelled = false;
     var batchInserted = 0;
     files.reduce(function (chain, file, idx) {
@@ -2756,6 +2820,224 @@
     });
   }
 
+  // ---- About introduction video -----------------------------------------
+
+  // Queues this profile's hosted files for deletion once the save succeeds.
+  function queueIntroFileDeletes(intro, keepFile) {
+    if (!intro) return;
+    ['file', 'poster', 'posterThumbnail', 'posterPreview'].forEach(function (key) {
+      var value = intro[key];
+      if (value && isHttp(value) && value !== keepFile && S.pendingDeletes.indexOf(value) === -1) {
+        S.pendingDeletes.push(value);
+      }
+    });
+  }
+
+  function removeIntroVideo() {
+    var intro = S.model && S.model.introVideo;
+    if (!intro) return;
+    if (!window.confirm('Remove the introduction video? Hosted files are deleted when you save.')) return;
+    queueIntroFileDeletes(intro, '');
+    S.model.introVideo = null;
+    delete S.uploads.intro;
+    delete S.uploads['intro-poster'];
+    render();
+    setStatus('Introduction video removed. Save to publish the change.');
+  }
+
+  // Progress hooks shared by the introduction video uploads.
+  function introUploadHooks(slotId, isVideo) {
+    return {
+      registerAbort: function (fn) { S.abortUpload = fn; },
+      onProgress: function (loaded, total, computable) {
+        if (!S.uploads[slotId] || S.uploads[slotId].state !== 'uploading') return;
+        if (computable && total > 0) {
+          var pct = Math.min(isVideo ? 95 : 60, Math.max(1, Math.round((loaded / total) * (isVideo ? 95 : 60))));
+          S.uploads[slotId].percent = pct;
+          S.uploads[slotId].indeterminate = false;
+          S.uploads[slotId].detail = pct + '% · ' + formatBytes(loaded) + ' / ' + formatBytes(total);
+        } else {
+          S.uploads[slotId].indeterminate = true;
+          S.uploads[slotId].detail = formatBytes(loaded) + ' sent…';
+        }
+        paintUploadSlot(slotId);
+      },
+      onSent: function () {
+        if (!S.uploads[slotId] || S.uploads[slotId].state !== 'uploading') return;
+        S.uploads[slotId].percent = isVideo ? 97 : 62;
+        S.uploads[slotId].indeterminate = false;
+        S.uploads[slotId].detail = isVideo ? '97% · Saving to cloud…' : 'Saving poster to cloud…';
+        S.uploads[slotId].canCancel = false;
+        paintUploadSlot(slotId);
+      },
+    };
+  }
+
+  // Captures a still from the freshly uploaded video and stores it as the poster,
+  // so the About frame never shows an empty black box.
+  function captureIntroPoster() {
+    var intro = S.model && S.model.introVideo;
+    if (!intro || !intro.file || intro.poster) return Promise.resolve(true);
+    return resolveThumbnailSource(intro.file).then(function (resolved) {
+      return makeVideoThumbnail(resolved.url, 1280)
+        .then(function (blob) { return uploadThumbnail(blob, 'intro-poster', 'thumbnail'); })
+        .then(function (url) {
+          if (S.model.introVideo === intro) intro.poster = url;
+          return true;
+        })
+        .catch(function (err) {
+          var message = (err && err.message) || 'A poster frame could not be captured.';
+          if (window.__appErrorReporter) window.__appErrorReporter.report('frontend-thumbnail', message, { name: 'intro-video-poster' });
+          return false;
+        })
+        .then(function (result) {
+          if (resolved.revoke) resolved.revoke();
+          return result;
+        });
+    }, function () { return false; });
+  }
+
+  function uploadIntroVideo(file) {
+    var slotId = 'intro';
+    var prep = prepareUploadFile(file, true);
+    if (!prep.ok) {
+      showUploadError(slotId, 'Cannot add introduction video', prep.error);
+      return Promise.resolve();
+    }
+
+    delete S.collapsedSections.intro;
+    clearTimeout(uploadDoneTimers[slotId]);
+    S.activeUploadSlot = slotId;
+    S.uploads[slotId] = {
+      state: 'uploading',
+      title: 'Uploading introduction video: ' + prep.displayName,
+      detail: 'Preparing ' + formatBytes(file.size) + '…',
+      percent: 0,
+      indeterminate: true,
+      canCancel: true,
+    };
+    setBusy(true, 'Uploading introduction video…');
+    paintUploadSlot(slotId);
+
+    return Promise.all([
+      uploadFile(file, prep.uploadName, introUploadHooks(slotId, true)),
+      videoSize(file),
+    ]).then(function (results) {
+      var uploaded = results[0];
+      var size = results[1];
+      queueIntroFileDeletes(S.model.introVideo, uploaded.url);
+      var entry = { file: uploaded.url };
+      if (size) { entry.width = size.width; entry.height = size.height; }
+      S.model.introVideo = entry;
+      S.abortUpload = null;
+      S.activeUploadSlot = '';
+      S.uploads[slotId] = {
+        state: 'done',
+        title: 'Introduction video uploaded',
+        detail: '100% · Save changes to publish',
+        percent: 100,
+        indeterminate: false,
+        canCancel: false,
+      };
+      scheduleUploadAutoClear(slotId);
+      setStatus('Introduction video uploaded. Save to publish it.', 'ok');
+      render();
+      paintSavebarProgress();
+      // The poster frame is captured in the background so a slow decode never
+      // holds up the upload. Failure is harmless: a poster can be added by hand.
+      captureIntroPoster().then(function (posterOk) {
+        if (!posterOk || !S.model || !S.model.introVideo) return;
+        render();
+        setStatus('Poster frame captured for the introduction video. Save to publish it.', 'ok');
+      });
+    }).catch(function (err) {
+      S.abortUpload = null;
+      S.activeUploadSlot = '';
+      if (err && err.aborted) {
+        delete S.uploads[slotId];
+        paintUploadSlot(slotId);
+        setStatus('Upload cancelled.');
+        toast('Upload cancelled');
+        render();
+        return;
+      }
+      showUploadError(slotId, 'Introduction video upload failed', (err && err.message) || 'Upload failed.');
+      render();
+    }).then(function () {
+      if (!S.activeUploadSlot) setBusy(false);
+    });
+  }
+
+  function uploadIntroPoster(file) {
+    var intro = S.model && S.model.introVideo;
+    if (!intro) return Promise.resolve();
+    var slotId = 'intro-poster';
+    var prep = prepareUploadFile(file, false);
+    if (!prep.ok) {
+      showUploadError(slotId, 'Cannot add poster', prep.error);
+      return Promise.resolve();
+    }
+
+    clearTimeout(uploadDoneTimers[slotId]);
+    S.activeUploadSlot = slotId;
+    S.uploads[slotId] = {
+      state: 'uploading',
+      title: 'Uploading poster: ' + prep.displayName,
+      detail: 'Preparing ' + formatBytes(file.size) + '…',
+      percent: 0,
+      indeterminate: true,
+      canCancel: true,
+    };
+    setBusy(true, 'Uploading poster…');
+    paintUploadSlot(slotId);
+
+    return Promise.all([
+      uploadFile(file, prep.uploadName, introUploadHooks(slotId, false)),
+      imageSize(file),
+    ]).then(function (results) {
+      var uploaded = results[0];
+      var size = results[1];
+      queueIntroFileDeletes({ poster: intro.poster, posterThumbnail: intro.posterThumbnail, posterPreview: intro.posterPreview }, '');
+      intro.poster = uploaded.url;
+      if (size) { intro.posterWidth = size.width; intro.posterHeight = size.height; }
+      return makeAndUploadThumbnail(file, 'intro-poster', 'thumbnail').then(function (thumbnail) {
+        if (thumbnail.url) intro.posterThumbnail = thumbnail.url;
+        else delete intro.posterThumbnail;
+        S.abortUpload = null;
+        S.activeUploadSlot = '';
+        S.uploads[slotId] = {
+          state: 'done',
+          title: 'Poster uploaded',
+          detail: '100% · Save changes to publish',
+          percent: 100,
+          indeterminate: false,
+          canCancel: false,
+        };
+        scheduleUploadAutoClear(slotId);
+        setStatus(thumbnail.error
+          ? 'Poster uploaded, but its thumbnail could not be generated. Use Generate Thumbnails to retry.'
+          : 'Poster uploaded. Save to publish it.', thumbnail.error ? 'error' : 'ok');
+        render();
+        paintSavebarProgress();
+      });
+    }).catch(function (err) {
+      S.abortUpload = null;
+      S.activeUploadSlot = '';
+      if (err && err.aborted) {
+        delete S.uploads[slotId];
+        paintUploadSlot(slotId);
+        setStatus('Upload cancelled.');
+        toast('Upload cancelled');
+        render();
+        return;
+      }
+      showUploadError(slotId, 'Poster upload failed', (err && err.message) || 'Poster upload failed.');
+      render();
+    }).then(function () {
+      if (!S.activeUploadSlot) setBusy(false);
+    });
+  }
+
   function withSize(entry, size) {
     if (size) { entry.width = size.width; entry.height = size.height; }
     return entry;
@@ -3017,6 +3299,16 @@
         bySource[String(entry.file)].isVideo = true;
       }
     });
+    // The About introduction video gets a poster frame the same way.
+    var introEntry = S.model.introVideo;
+    if (introEntry && introEntry.file) {
+      if (introEntry.poster) add(introEntry.poster, introEntry, 'posterThumbnail', 'thumbnail');
+      else {
+        add(introEntry.file, introEntry, 'poster', 'thumbnail');
+        add(introEntry.file, introEntry, 'posterThumbnail', 'thumbnail');
+        bySource[String(introEntry.file)].isVideo = true;
+      }
+    }
     return Object.keys(bySource).map(function (key) {
       var group = bySource[key];
       if (group.thumbnail) group.thumbnailRefs.forEach(function (ref) { if (!ref.entry[ref.key]) ref.entry[ref.key] = group.thumbnail; });
@@ -3068,7 +3360,7 @@
   }
 
   // Capture once in the admin instead of downloading video frames on every visit.
-  function makeVideoThumbnail(source) {
+  function makeVideoThumbnail(source, maxEdge) {
     return new Promise(function (resolve, reject) {
       var video = document.createElement('video');
       var settled = false;
@@ -3099,7 +3391,8 @@
       video.onseeked = function () {
         if (settled) return;
         try {
-          var scale = Math.min(1, 360 / Math.max(video.videoWidth, video.videoHeight));
+          var edge = maxEdge > 0 ? maxEdge : 360;
+          var scale = Math.min(1, edge / Math.max(video.videoWidth, video.videoHeight));
           var canvas = document.createElement('canvas');
           canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
           canvas.height = Math.max(1, Math.round(video.videoHeight * scale));

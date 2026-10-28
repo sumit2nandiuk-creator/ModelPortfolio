@@ -827,6 +827,38 @@ main section {
   border-radius: var(--radius);
 }
 
+/* Introduction video framed at the end of the About section -------------- */
+
+.about-video-wrap {
+  margin-top: clamp(28px, 4.5vw, 56px);
+}
+
+.about-video {
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+}
+
+.about-video-frame {
+  margin: 0;
+}
+
+/* Landscape clips fill the frame; portrait clips get a narrower phone-shaped
+   frame so they never grow taller than the viewport. */
+.about-video-frame video {
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+
+.about-video-frame.is-portrait {
+  max-width: min(420px, 100%);
+  margin-inline: auto;
+}
+
+.about-video .media-caption {
+  text-align: center;
+}
+
 .stats {
   margin: 0;
   display: grid;

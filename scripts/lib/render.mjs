@@ -98,9 +98,15 @@ function hasContact(model) {
   );
 }
 
+// The optional introduction video shown in a frame at the end of About.
+function introVideoOf(model) {
+  const video = model?.introVideo;
+  return video && typeof video === 'object' && video.file ? video : null;
+}
+
 function sectionsFor(model) {
   return {
-    about: (model.bio ?? []).length > 0 || (model.stats ?? []).length > 0,
+    about: (model.bio ?? []).length > 0 || (model.stats ?? []).length > 0 || Boolean(introVideoOf(model)),
     portfolio: (model.photos ?? []).length > 0 || (model.videos ?? []).length > 0,
     contact: hasContact(model),
   };
@@ -289,14 +295,51 @@ function statSpanClass(stat) {
   return '';
 }
 
-function renderAbout(model) {
+// A single framed introduction video placed at the end of the About section.
+// It reuses the portfolio video frame, so the poster is the play target and the
+// source is only fetched once the visitor presses play.
+function renderAboutVideo(model, ctx) {
+  const video = introVideoOf(model);
+  if (!video) return '';
+  const posterUrl = video.poster ? ctx.mediaUrl(video.poster) : '';
+  const posterThumb = video.posterThumbnail ? ctx.mediaUrl(video.posterThumbnail) : '';
+  const poster = posterUrl
+    ? ` poster="${esc(posterThumb || posterUrl)}"${posterThumb ? ` data-full-poster="${esc(posterUrl)}"` : ''}`
+    : '';
+  const hasDims = video.width > 0 && video.height > 0;
+  // The frame follows the video's own shape; portrait clips get a narrower frame.
+  const frameStyle = hasDims ? ` style="aspect-ratio: ${video.width} / ${video.height}"` : '';
+  const portrait = hasDims && video.height > video.width;
+  const title = String(video.title ?? '').trim();
+  const label = title || `${model.name} introduction video`;
+  return `
+      <figure class="about-video reveal">
+        <div class="video-frame about-video-frame${portrait ? ' is-portrait' : ''}">
+          <video controlsList="nodownload noremoteplayback" disablePictureInPicture playsinline preload="none"${poster}${frameStyle} data-video-src="${esc(ctx.mediaUrl(video.file))}" aria-label="${esc(label)}"></video>
+        </div>${
+          title
+            ? `
+        <figcaption class="media-caption">
+          <h2 class="video-title">${esc(title)}</h2>
+        </figcaption>`
+            : ''
+        }
+      </figure>`;
+}
+
+function renderAbout(model, ctx) {
   const bio = model.bio ?? [];
   const stats = model.stats ?? [];
-  if (!bio.length && !stats.length) return '';
+  const introVideo = renderAboutVideo(model, ctx);
+  if (!bio.length && !stats.length && !introVideo) return '';
   const richBio = Array.isArray(model.richText?.bio) ? model.richText.bio : null;
   const statsCountClass = stats.length === 1 ? ' stats--count-1' : stats.length === 2 ? ' stats--count-2' : '';
+  const hasText = bio.length > 0 || stats.length > 0;
+  const sectionLabel = hasText ? ' aria-labelledby="about-title"' : ' aria-label="About"';
   return `
-    <section id="about" class="section about" aria-labelledby="about-title">
+    <section id="about" class="section about"${sectionLabel}>${
+      hasText
+        ? `
       <div class="container about-grid">
         <div class="about-text reveal">
           <p id="about-title" class="eyebrow">${renderTextOrRuns(model, 'aboutLabel')}</p>
@@ -316,7 +359,15 @@ function renderAbout(model) {
         </aside>`
             : ''
         }
-      </div>
+      </div>`
+        : ''
+      }${
+        introVideo
+          ? `
+      <div class="container about-video-wrap">${introVideo}
+      </div>`
+          : ''
+      }
     </section>`;
 }
 
@@ -687,6 +738,7 @@ export function renderModelPage(model, ctx) {
     if (v.file) registerRemoteOrigin(ctx.mediaUrl(v.file));
     if (v.poster) registerRemoteOrigin(ctx.mediaUrl(v.poster));
   }
+  if (introVideoOf(model)?.file) registerRemoteOrigin(ctx.mediaUrl(model.introVideo.file));
 
   const preconnectTags = [...remoteOrigins]
     .map(
@@ -728,7 +780,7 @@ export function renderModelPage(model, ctx) {
   ${renderHeader(model, available)}
   <main id="main">
     ${renderHero(model, ctx)}
-    ${renderAbout(model)}
+    ${renderAbout(model, ctx)}
     ${renderPortfolio(model, ctx)}
     ${renderContact(model)}
   </main>

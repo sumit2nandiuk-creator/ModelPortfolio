@@ -159,6 +159,75 @@ test('the real models/ folder builds and the template is skipped', async () => {
   }
 });
 
+test('the About section ends with an optional framed introduction video', async () => {
+  const ws = await tempWorkspace();
+  try {
+    await fs.mkdir(ws.modelsDir, { recursive: true });
+    await writeModel(ws.modelsDir, 'intro-model', 'Intro Person');
+    await writeModel(ws.modelsDir, 'plain-model', 'Plain Person');
+    // The introduction video and its poster live in the model's media/ folder.
+    const mediaDir = path.join(ws.modelsDir, 'intro-model', 'media');
+    await fs.writeFile(path.join(mediaDir, 'intro-model-intro.mp4'), 'fake video');
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    await fs.writeFile(path.join(mediaDir, 'intro-model-intro.png'), png);
+    const model = JSON.parse(await fs.readFile(path.join(mediaDir, '..', 'model.json'), 'utf8'));
+    model.introVideo = {
+      file: 'intro-model-intro.mp4',
+      poster: 'intro-model-intro.png',
+      title: 'Say hello',
+      width: 1920,
+      height: 1080,
+    };
+    await fs.writeFile(path.join(mediaDir, '..', 'model.json'), JSON.stringify(model, null, 2));
+
+    await build({ modelsDir: ws.modelsDir, siteDir, outDir: ws.outDir, year: 2026 });
+    const html = await fs.readFile(path.join(ws.outDir, 'intro-model', 'index.html'), 'utf8');
+
+    const about = html.slice(html.indexOf('id="about"'), html.indexOf('id="portfolio"'));
+    assert.match(about, /<figure class="about-video reveal">/);
+    assert.match(about, /data-video-src="\/intro-model\/media\/intro-model-intro\.mp4"/);
+    assert.match(about, /poster="\/intro-model\/media\/intro-model-intro\.png"/);
+    assert.match(about, /preload="none"/, 'the clip is only fetched once played');
+    assert.equal(/<video[^>]*\ssrc="/.test(about), false, 'no eager video source');
+    assert.match(about, /style="aspect-ratio: 1920 \/ 1080"/, 'the frame follows the clip shape');
+    assert.match(about, /<h2 class="video-title">Say hello<\/h2>/);
+    // It sits after the biography/measurements grid, at the end of About.
+    assert.ok(about.indexOf('about-grid') < about.indexOf('about-video-wrap'));
+    assert.ok(await exists(path.join(ws.outDir, 'intro-model', 'media', 'intro-model-intro.mp4')));
+    assert.ok(await exists(path.join(ws.outDir, 'intro-model', 'media', 'intro-model-intro.png')));
+
+    // A profile without one renders no frame at all.
+    const plain = await fs.readFile(path.join(ws.outDir, 'plain-model', 'index.html'), 'utf8');
+    assert.equal(plain.includes('about-video'), false);
+  } finally {
+    await ws.cleanup();
+  }
+});
+
+test('an introduction video that points at a missing file fails the build', async () => {
+  const ws = await tempWorkspace();
+  try {
+    await fs.mkdir(ws.modelsDir, { recursive: true });
+    await writeModel(ws.modelsDir, 'broken-intro', 'Broken Person', {
+      introVideo: { file: 'nowhere.mp4' },
+    });
+    await assert.rejects(
+      () => build({ modelsDir: ws.modelsDir, siteDir, outDir: ws.outDir }),
+      (err) => {
+        assert.ok(err instanceof BuildError);
+        const text = err.errors.join('\n');
+        assert.match(text, /\[broken-intro\].*introVideo\.file "nowhere\.mp4" was not found/);
+        return true;
+      },
+    );
+  } finally {
+    await ws.cleanup();
+  }
+});
+
 test('invalid profiles fail the build with clear messages', async () => {
   const ws = await tempWorkspace();
   try {

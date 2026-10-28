@@ -59,6 +59,21 @@ test('the shape check rejects reserved slugs and photos without a title', () => 
   assert.ok(errors.some((e) => /Photo 1 needs a title/.test(e)));
 });
 
+test('the shape check accepts an introduction video and rejects a broken one', () => {
+  const intro = { file: `${BASE}/jane-doe/4-jkl-intro.mp4`, poster: `${BASE}/jane-doe/5-mno-poster.jpg`, title: 'Hello' };
+  assert.deepEqual(validateModelShape(validModel({ introVideo: intro }), 'jane-doe'), []);
+  assert.deepEqual(validateModelShape(validModel({ introVideo: null }), 'jane-doe'), [], 'null means no video');
+
+  const missingFile = validateModelShape(validModel({ introVideo: { poster: `${BASE}/jane-doe/poster.jpg` } }), 'jane-doe');
+  assert.ok(missingFile.some((e) => /introduction video needs a file/i.test(e)));
+
+  const badPoster = validateModelShape(validModel({ introVideo: { file: `${BASE}/jane-doe/intro.mp4`, poster: '../../x.jpg' } }), 'jane-doe');
+  assert.ok(badPoster.some((e) => /invalid poster/i.test(e)));
+
+  const notObject = validateModelShape(validModel({ introVideo: 'intro.mp4' }), 'jane-doe');
+  assert.ok(notObject.some((e) => /"introVideo" must be an object/.test(e)));
+});
+
 test('uploads: images and videos are allowed, other types and oversize files are not', () => {
   assert.equal(checkUpload({ name: 'Bridal.JPG', size: 1000 }).kind, 'image');
   assert.equal(checkUpload({ name: 'reel.mp4', size: 1000 }).contentType, 'video/mp4');

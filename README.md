@@ -68,6 +68,7 @@ heavily commented by example in `models/_template/model.json`.
 | `cover` | Hero slideshow: a list of `{ "file", "alt" }`. The first photo shows first; visitors swipe or tap the dots to move through the rest. One entry (or a single `{ "file", "alt" }` object) shows a still photo. |
 | `photos` | Gallery entries: `{ "file", "title", "category", "year", "alt" }`. Each distinct `category` gets a filter button automatically. Tapping a photo opens it in the viewer, where it can be swiped to the next or previous one. |
 | `videos` | Video entries: `{ "file", "poster", "title", "category", "description" }`. |
+| `introVideo` | Optional introduction video shown in a frame at the end of the About section: `{ "file", "poster", "title" }`. Upload it from the admin panel; the poster frame is captured automatically. |
 | `contact` | `email`, `phone`, `whatsapp` (phone numbers with at least 8 digits; the WhatsApp card links to `wa.me`), and optional `instagram`, `linkedin`, `tiktok`, `imdb`, `website` (full `https://` URLs). Empty values are hidden. Unused fields such as the old `location` and `representation` are ignored. |
 
 Notes:
@@ -76,6 +77,7 @@ Notes:
 - Videos should be **MP4 (H.264)** for the widest browser support. WebM also works.
 - Photos should be **JPG, PNG, or WebP**, around 1600–2000 px on the long edge, to keep the page fast. The build reads the dimensions to prevent layout jumps.
 - Sections with no content are hidden automatically. For example, a model with no videos gets no Videos section or menu link.
+- `introVideo` only appears once it is set; a profile without one has no About video frame. Landscape clips fill the frame best, while portrait clips get a narrower phone-shaped frame.
 
 ### Replacing the placeholder content
 
@@ -167,7 +169,7 @@ private repository needs a GitHub plan that supports it).
 
 ## Admin page and R2 media
 
-The admin page at `/admin/` lets you edit a model's details and add or remove cover photos, portfolio photos and videos without touching the code. It is served with `noindex`, and every request needs the admin token. The site itself stays static on GitHub Pages. A small Cloudflare Worker (in `worker/`) does the privileged work: it holds the token and a GitHub token, saves `models/<slug>/model.json` through the GitHub API (which triggers a Pages deploy), and uploads files to an R2 bucket.
+The admin page at `/admin/` lets you edit a model's details and add or remove cover photos, portfolio photos, videos and the About introduction video without touching the code. It is served with `noindex`, and every request needs the admin token. The site itself stays static on GitHub Pages. A small Cloudflare Worker (in `worker/`) does the privileged work: it holds the token and a GitHub token, saves `models/<slug>/model.json` through the GitHub API (which triggers a Pages deploy), and uploads files to an R2 bucket.
 
 Photos and videos can live in either place:
 

@@ -372,19 +372,32 @@ function renderAbout(model, ctx) {
 }
 
 function videoDimensions(video, ctx) {
-  if (video.width && video.height) return { width: video.width, height: video.height };
-  const fromFile = video.file ? ctx.sizeOf(video.file) : null;
-  if (fromFile?.width && fromFile?.height) return fromFile;
-  if (video.posterWidth && video.posterHeight) return { width: video.posterWidth, height: video.posterHeight };
-  const fromPoster = video.poster ? ctx.sizeOf(video.poster) : null;
-  if (fromPoster?.width && fromPoster?.height) return fromPoster;
+  const vw = Number(video?.width);
+  const vh = Number(video?.height);
+  if (vw > 0 && vh > 0) return { width: vw, height: vh };
+  const fromFile = video?.file ? ctx.sizeOf(video.file) : null;
+  if (fromFile?.width && fromFile?.height) return { width: Number(fromFile.width), height: Number(fromFile.height) };
+  const pw = Number(video?.posterWidth);
+  const ph = Number(video?.posterHeight);
+  if (pw > 0 && ph > 0) return { width: pw, height: ph };
+  const fromPoster = video?.poster ? ctx.sizeOf(video.poster) : null;
+  if (fromPoster?.width && fromPoster?.height) return { width: Number(fromPoster.width), height: Number(fromPoster.height) };
   return null;
 }
 
 function photoDimensions(photo, ctx) {
-  if (photo?.width && photo?.height) return { width: photo.width, height: photo.height };
+  const pw = Number(photo?.width);
+  const ph = Number(photo?.height);
+  if (pw > 0 && ph > 0) return { width: pw, height: ph };
   const fromFile = photo?.file ? ctx.sizeOf(photo.file) : null;
-  if (fromFile?.width && fromFile?.height) return fromFile;
+  if (fromFile?.width && fromFile?.height) return { width: Number(fromFile.width), height: Number(fromFile.height) };
+  if (Array.isArray(photo?.variants)) {
+    const best = photo.variants
+      .map((v) => ({ width: Number(v?.width), height: Number(v?.height) }))
+      .filter((v) => v.width > 0 && v.height > 0)
+      .sort((a, b) => b.width - a.width)[0];
+    if (best) return best;
+  }
   return null;
 }
 
@@ -459,25 +472,26 @@ function renderPortfolio(model, ctx) {
   const hasAnyPhotos = (model.photos ?? []).length > 0;
 
   let photoIndex = 0;
-  function isLandscapeDim(d) { return d && d.width > d.height; }
-  function isPortraitDim(d) { return d && d.width <= d.height; }
+  function isLandscapeDim(d) { return Boolean(d && d.width > d.height); }
 
-  function renderMediaRow(rowVideos, rowVideoDims, rowPhotos, rowPhotoDims, title, orientation) {
-    const totalItems = rowVideos.length + rowPhotos.length;
+  function renderMediaRow(videoEntries, photoEntries, title, orientation) {
+    const totalItems = videoEntries.length + photoEntries.length;
     if (!totalItems) return '';
-    const groupHasPhotos = rowPhotos.length > 0;
-    const allDims = [...rowVideoDims, ...rowPhotoDims];
+    const groupHasPhotos = photoEntries.length > 0;
+    const allDims = [...videoEntries.map((e) => e.dim), ...photoEntries.map((e) => e.dim)];
     const knownDims = allDims.filter(Boolean);
     const isAllLandscapeGroup =
-      allDims.length > 0 &&
-      knownDims.length === allDims.length &&
-      knownDims.every((d) => d.width > d.height);
+      orientation === 'landscape' ||
+      (orientation !== 'portrait' &&
+        knownDims.length > 0 &&
+        knownDims.every((d) => d.width > d.height));
     const hasKnownNonLandscape = knownDims.some((d) => d.width <= d.height);
     const rowLandscapeFrame = isAllLandscapeGroup && groupHasPhotos ? landscapeFrameForDims(knownDims) : null;
 
-    const videoCards = rowVideos
-      .map((video, vIdx) => {
-        const nativeDim = rowVideoDims[vIdx];
+    const videoCards = videoEntries
+      .map((entry) => {
+        const video = entry.item;
+        const nativeDim = entry.dim;
         let frameDim = null;
         if (isAllLandscapeGroup) {
           frameDim = groupHasPhotos ? rowLandscapeFrame : nativeDim;
@@ -506,7 +520,7 @@ function renderPortfolio(model, ctx) {
         const showSubTitle = vTitle && vTitle.toLowerCase() !== title.toLowerCase();
         const hasCaption = Boolean(showSubTitle || video.description);
         return `
-              <figure class="${cardClass}" data-category="${esc(title)}">
+              <figure class="${cardClass}" data-category="${esc(title)}" data-group-order="${entry.order}">
                 <div class="video-frame">
                   <video controlsList="nodownload noremoteplayback" disablePictureInPicture playsinline preload="${preload}"${poster}${sizeAttrs}${naturalAttrs}${videoStyle} data-video-src="${esc(videoSrc)}" aria-label="${esc(vTitle || title)}"></video>
                 </div>${
@@ -522,17 +536,18 @@ function renderPortfolio(model, ctx) {
       })
       .join('');
 
-    const photoCards = rowPhotos
-      .map((photo, pIdx) => {
+    const photoCards = photoEntries
+      .map((entry) => {
+        const photo = entry.item;
+        const pDim = entry.dim;
         const i = photoIndex++;
-        const pDim = rowPhotoDims[pIdx];
         const source = imageSource(photo, ctx);
         const src = source.full;
         const alt = photo.alt || photo.title || title;
         const caption = title;
         const label = [title, photo.title].filter(Boolean).join(' · ');
         return `
-              <figure class="media-card media-card--photo gallery-item" data-category="${esc(title)}">
+              <figure class="media-card media-card--photo gallery-item" data-category="${esc(title)}" data-group-order="${entry.order}">
                 <button class="gallery-btn" type="button" data-index="${i}" data-src="${esc(src)}"${viewerAttrs(source)}${(source.thumb || source.preview) ? ` data-thumb="${esc(source.thumb || source.preview)}"` : ''} data-alt="${esc(alt)}" data-caption="${esc(caption)}" aria-label="Open photo: ${esc(label)}">
                   ${responsiveImage(source, `<img src="${esc(source.src)}"${progressiveAttrs(source)} alt="${esc(alt)}"${dimensionAttrs(pDim)} loading="lazy" decoding="async" draggable="false">`)}
                 </button>${
@@ -556,28 +571,30 @@ function renderPortfolio(model, ctx) {
               </div>`
         : '';
 
-    const rowClass = `media-row${totalItems < 2 ? ' is-single' : ''}${isAllLandscapeGroup ? ' is-landscape-row' : ''}${orientation ? ' is-' + orientation + '-row' : ''}`;
+    const rowClasses = ['media-row'];
+    if (totalItems < 2) rowClasses.push('is-single');
+    if (isAllLandscapeGroup) rowClasses.push('is-landscape-row');
+    if (orientation === 'portrait') rowClasses.push('is-portrait-row');
+    const rowClass = rowClasses.join(' ');
     const rowStyle = rowLandscapeFrame ? ` style="--row-frame-ratio: ${rowLandscapeFrame.width} / ${rowLandscapeFrame.height}"` : '';
     const orientationAttr = orientation ? ` data-orientation="${orientation}"` : '';
 
-    // For split groups we render row + its own nav; for single row we keep nav in head (legacy)
-    // To keep filtering simple, we return the row markup alone – caller wraps with group header
     return { html: `<div class="${rowClass}" data-media-row${groupHasPhotos ? ' data-has-photos="1"' : ''}${rowStyle}${orientationAttr}>${videoCards}${photoCards}
             </div>`, navButtons, totalItems, hasPhotos: groupHasPhotos, rowClass, rowStyle };
   }
 
   const groupSections = groups
     .map((group) => {
-      const videoDims = group.videos.map((v) => videoDimensions(v, ctx));
-      const photoDims = group.photos.map((p) => photoDimensions(p, ctx));
-      const allDims = [...videoDims, ...photoDims];
+      const videoEntries = group.videos.map((v, i) => ({ item: v, dim: videoDimensions(v, ctx), order: i }));
+      const photoEntries = group.photos.map((p, i) => ({ item: p, dim: photoDimensions(p, ctx), order: group.videos.length + i }));
+      const allDims = [...videoEntries.map((e) => e.dim), ...photoEntries.map((e) => e.dim)];
       const knownDims = allDims.filter(Boolean);
       const hasPortrait = knownDims.some((d) => d.width <= d.height);
       const hasLandscape = knownDims.some((d) => d.width > d.height);
       const isMixed = hasPortrait && hasLandscape;
 
       if (!isMixed) {
-        const row = renderMediaRow(group.videos, videoDims, group.photos, photoDims, group.title, '');
+        const row = renderMediaRow(videoEntries, photoEntries, group.title, '');
         return `
           <section class="media-group reveal" data-group="${esc(group.title)}" aria-label="${esc(group.title)}">
             <div class="media-group-head">
@@ -589,26 +606,20 @@ function renderPortfolio(model, ctx) {
 
       // Mixed: split into portrait and landscape rows under same group header
       const portraitVideos = [];
-      const portraitVideoDims = [];
       const landscapeVideos = [];
-      const landscapeVideoDims = [];
-      group.videos.forEach((v, i) => {
-        const d = videoDims[i];
-        if (isLandscapeDim(d)) { landscapeVideos.push(v); landscapeVideoDims.push(d); }
-        else { portraitVideos.push(v); portraitVideoDims.push(d); }
+      videoEntries.forEach((entry) => {
+        if (isLandscapeDim(entry.dim)) landscapeVideos.push(entry);
+        else portraitVideos.push(entry);
       });
       const portraitPhotos = [];
-      const portraitPhotoDims = [];
       const landscapePhotos = [];
-      const landscapePhotoDims = [];
-      group.photos.forEach((p, i) => {
-        const d = photoDims[i];
-        if (isLandscapeDim(d)) { landscapePhotos.push(p); landscapePhotoDims.push(d); }
-        else { portraitPhotos.push(p); portraitPhotoDims.push(d); }
+      photoEntries.forEach((entry) => {
+        if (isLandscapeDim(entry.dim)) landscapePhotos.push(entry);
+        else portraitPhotos.push(entry);
       });
 
-      const portraitRow = renderMediaRow(portraitVideos, portraitVideoDims, portraitPhotos, portraitPhotoDims, group.title, 'portrait');
-      const landscapeRow = renderMediaRow(landscapeVideos, landscapeVideoDims, landscapePhotos, landscapePhotoDims, group.title, 'landscape');
+      const portraitRow = renderMediaRow(portraitVideos, portraitPhotos, group.title, 'portrait');
+      const landscapeRow = renderMediaRow(landscapeVideos, landscapePhotos, group.title, 'landscape');
 
       function rowWithNav(row, orientation) {
         if (!row || !row.html) return '';

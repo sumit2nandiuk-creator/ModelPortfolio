@@ -2643,6 +2643,9 @@
       }).then(function (thumbnails) {
         var thumbnail = thumbnails[0];
         var preview = thumbnails[1];
+        if (!size && responsiveEntry.width > 0 && responsiveEntry.height > 0) {
+          size = { width: responsiveEntry.width, height: responsiveEntry.height };
+        }
         if (kind === 'cover') {
           var coverIdx = Math.min(insertPos, S.model.cover.length);
           var coverEntry = { file: uploaded.url, alt: titleFrom(prep.uploadName, fallbackTitle) };

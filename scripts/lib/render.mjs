@@ -372,19 +372,32 @@ function renderAbout(model, ctx) {
 }
 
 function videoDimensions(video, ctx) {
-  if (video.width && video.height) return { width: video.width, height: video.height };
-  const fromFile = video.file ? ctx.sizeOf(video.file) : null;
-  if (fromFile?.width && fromFile?.height) return fromFile;
-  if (video.posterWidth && video.posterHeight) return { width: video.posterWidth, height: video.posterHeight };
-  const fromPoster = video.poster ? ctx.sizeOf(video.poster) : null;
-  if (fromPoster?.width && fromPoster?.height) return fromPoster;
+  const vw = Number(video?.width);
+  const vh = Number(video?.height);
+  if (vw > 0 && vh > 0) return { width: vw, height: vh };
+  const fromFile = video?.file ? ctx.sizeOf(video.file) : null;
+  if (fromFile?.width && fromFile?.height) return { width: Number(fromFile.width), height: Number(fromFile.height) };
+  const pw = Number(video?.posterWidth);
+  const ph = Number(video?.posterHeight);
+  if (pw > 0 && ph > 0) return { width: pw, height: ph };
+  const fromPoster = video?.poster ? ctx.sizeOf(video.poster) : null;
+  if (fromPoster?.width && fromPoster?.height) return { width: Number(fromPoster.width), height: Number(fromPoster.height) };
   return null;
 }
 
 function photoDimensions(photo, ctx) {
-  if (photo?.width && photo?.height) return { width: photo.width, height: photo.height };
+  const pw = Number(photo?.width);
+  const ph = Number(photo?.height);
+  if (pw > 0 && ph > 0) return { width: pw, height: ph };
   const fromFile = photo?.file ? ctx.sizeOf(photo.file) : null;
-  if (fromFile?.width && fromFile?.height) return fromFile;
+  if (fromFile?.width && fromFile?.height) return { width: Number(fromFile.width), height: Number(fromFile.height) };
+  if (Array.isArray(photo?.variants)) {
+    const best = photo.variants
+      .map((v) => ({ width: Number(v?.width), height: Number(v?.height) }))
+      .filter((v) => v.width > 0 && v.height > 0)
+      .sort((a, b) => b.width - a.width)[0];
+    if (best) return best;
+  }
   return null;
 }
 
@@ -459,61 +472,57 @@ function renderPortfolio(model, ctx) {
   const hasAnyPhotos = (model.photos ?? []).length > 0;
 
   let photoIndex = 0;
-  const groupSections = groups
-    .map((group) => {
-      const totalItems = group.videos.length + group.photos.length;
-      const groupHasPhotos = group.photos.length > 0;
-      const videoDims = group.videos.map((v) => videoDimensions(v, ctx));
-      const photoDims = group.photos.map((p) => photoDimensions(p, ctx));
-      const allDims = [...videoDims, ...photoDims];
-      const knownDims = allDims.filter(Boolean);
-      const isAllLandscapeGroup =
-        allDims.length > 0 &&
-        knownDims.length === allDims.length &&
-        knownDims.every((d) => d.width > d.height);
-      const hasKnownNonLandscape = knownDims.some((d) => d.width <= d.height);
-      const rowLandscapeFrame = isAllLandscapeGroup && groupHasPhotos ? landscapeFrameForDims(knownDims) : null;
+  function isLandscapeDim(d) { return Boolean(d && d.width > d.height); }
 
-      const videoCards = group.videos
-        .map((video, vIdx) => {
-          const nativeDim = videoDims[vIdx];
-          let frameDim = null;
-          if (isAllLandscapeGroup) {
-            // Every item in this category is landscape: never resize to portrait.
-            // Match the uniform landscape row frame when photos sit beside the video; keep native ratio otherwise.
-            frameDim = groupHasPhotos ? rowLandscapeFrame : nativeDim;
-          } else if (groupHasPhotos) {
-            // Confirmed portrait/mixed category (or fallback while unknown items load via CSS --row-frame-ratio).
-            if (hasKnownNonLandscape) frameDim = UNIFORM_PHOTO_FRAME;
-          } else if (nativeDim && nativeDim.width > nativeDim.height) {
-            frameDim = nativeDim;
-          } else if (nativeDim && nativeDim.height >= nativeDim.width) {
-            frameDim = hasAnyPhotos ? UNIFORM_PHOTO_FRAME : nativeDim;
-          }
-          const isPortrait = frameDim ? frameDim.height > frameDim.width : false;
-          const isLandscape = frameDim ? frameDim.width >= frameDim.height : false;
-          const cardClass = `media-card media-card--video video-card${isPortrait ? ' is-portrait' : isLandscape ? ' is-landscape' : ''}`;
-          const videoStyle = frameDim ? ` style="aspect-ratio: ${frameDim.width} / ${frameDim.height}"` : '';
-          const sizeAttrs = frameDim ? ` width="${frameDim.width}" height="${frameDim.height}"` : '';
-          const naturalAttrs = nativeDim ? ` data-natural-w="${nativeDim.width}" data-natural-h="${nativeDim.height}"` : '';
-          const posterUrl = video.poster ? ctx.mediaUrl(video.poster) : '';
-          const posterThumb = video.posterThumbnail ? ctx.mediaUrl(video.posterThumbnail) : '';
-          const poster = posterUrl
-            ? ` poster="${esc(posterThumb || posterUrl)}"${posterThumb ? ` data-full-poster="${esc(posterUrl)}"` : ''}`
-            : '';
-          // No source and no native controls until the poster is played. Nothing
-          // is drawn over the poster (no play glyph, no button): the photo itself
-          // is the play target, and the script attaches `controls` on playback.
-          const preload = 'none';
-          const rawSrc = ctx.mediaUrl(video.file);
-          const videoSrc = rawSrc;
-          const vTitle = String(video.title ?? '').trim();
-          const showSubTitle = vTitle && vTitle.toLowerCase() !== group.title.toLowerCase();
-          const hasCaption = Boolean(showSubTitle || video.description);
-          return `
-              <figure class="${cardClass}" data-category="${esc(group.title)}">
+  function renderMediaRow(videoEntries, photoEntries, title, orientation) {
+    const totalItems = videoEntries.length + photoEntries.length;
+    if (!totalItems) return '';
+    const groupHasPhotos = photoEntries.length > 0;
+    const allDims = [...videoEntries.map((e) => e.dim), ...photoEntries.map((e) => e.dim)];
+    const knownDims = allDims.filter(Boolean);
+    const isAllLandscapeGroup =
+      orientation === 'landscape' ||
+      (orientation !== 'portrait' &&
+        knownDims.length > 0 &&
+        knownDims.every((d) => d.width > d.height));
+    const hasKnownNonLandscape = knownDims.some((d) => d.width <= d.height);
+    const rowLandscapeFrame = isAllLandscapeGroup && groupHasPhotos ? landscapeFrameForDims(knownDims) : null;
+
+    const videoCards = videoEntries
+      .map((entry) => {
+        const video = entry.item;
+        const nativeDim = entry.dim;
+        let frameDim = null;
+        if (isAllLandscapeGroup) {
+          frameDim = groupHasPhotos ? rowLandscapeFrame : nativeDim;
+        } else if (groupHasPhotos) {
+          if (hasKnownNonLandscape) frameDim = UNIFORM_PHOTO_FRAME;
+        } else if (nativeDim && nativeDim.width > nativeDim.height) {
+          frameDim = nativeDim;
+        } else if (nativeDim && nativeDim.height >= nativeDim.width) {
+          frameDim = hasAnyPhotos ? UNIFORM_PHOTO_FRAME : nativeDim;
+        }
+        const isPortrait = frameDim ? frameDim.height > frameDim.width : false;
+        const isLandscape = frameDim ? frameDim.width >= frameDim.height : false;
+        const cardClass = `media-card media-card--video video-card${isPortrait ? ' is-portrait' : isLandscape ? ' is-landscape' : ''}`;
+        const videoStyle = frameDim ? ` style="aspect-ratio: ${frameDim.width} / ${frameDim.height}"` : '';
+        const sizeAttrs = frameDim ? ` width="${frameDim.width}" height="${frameDim.height}"` : '';
+        const naturalAttrs = nativeDim ? ` data-natural-w="${nativeDim.width}" data-natural-h="${nativeDim.height}"` : '';
+        const posterUrl = video.poster ? ctx.mediaUrl(video.poster) : '';
+        const posterThumb = video.posterThumbnail ? ctx.mediaUrl(video.posterThumbnail) : '';
+        const poster = posterUrl
+          ? ` poster="${esc(posterThumb || posterUrl)}"${posterThumb ? ` data-full-poster="${esc(posterUrl)}"` : ''}`
+          : '';
+        const preload = 'none';
+        const rawSrc = ctx.mediaUrl(video.file);
+        const videoSrc = rawSrc;
+        const vTitle = String(video.title ?? '').trim();
+        const showSubTitle = vTitle && vTitle.toLowerCase() !== title.toLowerCase();
+        const hasCaption = Boolean(showSubTitle || video.description);
+        return `
+              <figure class="${cardClass}" data-category="${esc(title)}" data-group-order="${entry.order}">
                 <div class="video-frame">
-                  <video controlsList="nodownload noremoteplayback" disablePictureInPicture playsinline preload="${preload}"${poster}${sizeAttrs}${naturalAttrs}${videoStyle} data-video-src="${esc(videoSrc)}" aria-label="${esc(vTitle || group.title)}"></video>
+                  <video controlsList="nodownload noremoteplayback" disablePictureInPicture playsinline preload="${preload}"${poster}${sizeAttrs}${naturalAttrs}${videoStyle} data-video-src="${esc(videoSrc)}" aria-label="${esc(vTitle || title)}"></video>
                 </div>${
                   hasCaption
                     ? `
@@ -524,20 +533,21 @@ function renderPortfolio(model, ctx) {
                     : ''
                 }
               </figure>`;
-        })
-        .join('');
+      })
+      .join('');
 
-      const photoCards = group.photos
-        .map((photo, pIdx) => {
-          const i = photoIndex++;
-          const pDim = photoDims[pIdx];
-          const source = imageSource(photo, ctx);
-          const src = source.full;
-          const alt = photo.alt || photo.title || group.title;
-          const caption = group.title;
-          const label = [group.title, photo.title].filter(Boolean).join(' · ');
-          return `
-              <figure class="media-card media-card--photo gallery-item" data-category="${esc(group.title)}">
+    const photoCards = photoEntries
+      .map((entry) => {
+        const photo = entry.item;
+        const pDim = entry.dim;
+        const i = photoIndex++;
+        const source = imageSource(photo, ctx);
+        const src = source.full;
+        const alt = photo.alt || photo.title || title;
+        const caption = title;
+        const label = [title, photo.title].filter(Boolean).join(' · ');
+        return `
+              <figure class="media-card media-card--photo gallery-item" data-category="${esc(title)}" data-group-order="${entry.order}">
                 <button class="gallery-btn" type="button" data-index="${i}" data-src="${esc(src)}"${viewerAttrs(source)}${(source.thumb || source.preview) ? ` data-thumb="${esc(source.thumb || source.preview)}"` : ''} data-alt="${esc(alt)}" data-caption="${esc(caption)}" aria-label="Open photo: ${esc(label)}">
                   ${responsiveImage(source, `<img src="${esc(source.src)}"${progressiveAttrs(source)} alt="${esc(alt)}"${dimensionAttrs(pDim)} loading="lazy" decoding="async" draggable="false">`)}
                 </button>${
@@ -549,33 +559,88 @@ function renderPortfolio(model, ctx) {
                     : ''
                 }
               </figure>`;
-        })
-        .join('');
+      })
+      .join('');
 
-      const navButtons =
-        totalItems > 1
-          ? `
+    const navButtons =
+      totalItems > 1
+        ? `
               <div class="media-row-nav">
-                <button class="row-arrow row-arrow--prev" type="button" data-row-dir="-1" aria-label="Scroll ${esc(group.title)} left">‹</button>
-                <button class="row-arrow row-arrow--next" type="button" data-row-dir="1" aria-label="Scroll ${esc(group.title)} right">›</button>
+                <button class="row-arrow row-arrow--prev" type="button" data-row-dir="-1" aria-label="Scroll ${esc(title)}${orientation ? ' ' + esc(orientation) : ''} left">‹</button>
+                <button class="row-arrow row-arrow--next" type="button" data-row-dir="1" aria-label="Scroll ${esc(title)}${orientation ? ' ' + esc(orientation) : ''} right">›</button>
               </div>`
-          : '';
+        : '';
 
-      const rowClass = `media-row${totalItems < 2 ? ' is-single' : ''}${isAllLandscapeGroup ? ' is-landscape-row' : ''}`;
-      const rowStyle = rowLandscapeFrame ? ` style="--row-frame-ratio: ${rowLandscapeFrame.width} / ${rowLandscapeFrame.height}"` : '';
+    const rowClasses = ['media-row'];
+    if (totalItems < 2) rowClasses.push('is-single');
+    if (isAllLandscapeGroup) rowClasses.push('is-landscape-row');
+    if (orientation === 'portrait') rowClasses.push('is-portrait-row');
+    const rowClass = rowClasses.join(' ');
+    const rowStyle = rowLandscapeFrame ? ` style="--row-frame-ratio: ${rowLandscapeFrame.width} / ${rowLandscapeFrame.height}"` : '';
+    const orientationAttr = orientation ? ` data-orientation="${orientation}"` : '';
 
-      return `
+    return { html: `<div class="${rowClass}" data-media-row${groupHasPhotos ? ' data-has-photos="1"' : ''}${rowStyle}${orientationAttr}>${videoCards}${photoCards}
+            </div>`, navButtons, totalItems, hasPhotos: groupHasPhotos, rowClass, rowStyle };
+  }
+
+  const groupSections = groups
+    .map((group) => {
+      const videoEntries = group.videos.map((v, i) => ({ item: v, dim: videoDimensions(v, ctx), order: i }));
+      const photoEntries = group.photos.map((p, i) => ({ item: p, dim: photoDimensions(p, ctx), order: group.videos.length + i }));
+      const allDims = [...videoEntries.map((e) => e.dim), ...photoEntries.map((e) => e.dim)];
+      const knownDims = allDims.filter(Boolean);
+      const hasPortrait = knownDims.some((d) => d.width <= d.height);
+      const hasLandscape = knownDims.some((d) => d.width > d.height);
+      const isMixed = hasPortrait && hasLandscape;
+
+      if (!isMixed) {
+        const row = renderMediaRow(videoEntries, photoEntries, group.title, '');
+        return `
           <section class="media-group reveal" data-group="${esc(group.title)}" aria-label="${esc(group.title)}">
             <div class="media-group-head">
-              <h3 class="media-group-title">${esc(group.title)}</h3>${navButtons}
+              <h3 class="media-group-title">${esc(group.title)}</h3>${row.navButtons}
             </div>
-            <div class="${rowClass}" data-media-row${groupHasPhotos ? ' data-has-photos="1"' : ''}${rowStyle}>${videoCards}${photoCards}
+            ${row.html}
+          </section>`;
+      }
+
+      // Mixed: split into portrait and landscape rows under same group header
+      const portraitVideos = [];
+      const landscapeVideos = [];
+      videoEntries.forEach((entry) => {
+        if (isLandscapeDim(entry.dim)) landscapeVideos.push(entry);
+        else portraitVideos.push(entry);
+      });
+      const portraitPhotos = [];
+      const landscapePhotos = [];
+      photoEntries.forEach((entry) => {
+        if (isLandscapeDim(entry.dim)) landscapePhotos.push(entry);
+        else portraitPhotos.push(entry);
+      });
+
+      const portraitRow = renderMediaRow(portraitVideos, portraitPhotos, group.title, 'portrait');
+      const landscapeRow = renderMediaRow(landscapeVideos, landscapePhotos, group.title, 'landscape');
+
+      function rowWithNav(row, orientation) {
+        if (!row || !row.html) return '';
+        return `
+            <div class="media-row-wrap" data-orientation="${orientation}">
+              ${row.html}${row.navButtons}
+            </div>`;
+      }
+
+      return `
+          <section class="media-group reveal media-group--mixed" data-group="${esc(group.title)}" aria-label="${esc(group.title)}">
+            <div class="media-group-head">
+              <h3 class="media-group-title">${esc(group.title)}</h3>
+            </div>
+            <div class="media-split-rows">${rowWithNav(portraitRow, 'portrait')}${rowWithNav(landscapeRow, 'landscape')}
             </div>
           </section>`;
     })
     .join('\n');
 
-  const labelHtml = renderTextOrRuns(model, 'portfolioLabel');
+    const labelHtml = renderTextOrRuns(model, 'portfolioLabel');
 
   const headerHtml = labelHtml
     ? `\n        <header class="section-head reveal">

@@ -726,6 +726,53 @@ test('all-landscape categories stay landscape while portrait/mixed categories us
   assert.equal(h.meeshoGroup.hidden, false);
 });
 
+test('mixed category without stored JSON dimensions dynamically splits landscape images out of portrait row on load', async () => {
+  const h = await createLightboxHarness({ filmCount: 3 });
+  const filmGroup = h.filmRow.parentElement;
+  await h.boot();
+
+  const [, , film] = h.videoNodes;
+  const [shrutiImg, portraitImg, offscreenImg] = h.filmPhotos;
+
+  // 1. Only the first visible landscape image ("Shruti") loads while siblings are still 0x0:
+  //    immediately frames as landscape rather than trapping it in 2:3 portrait.
+  shrutiImg.naturalWidth = 1600;
+  shrutiImg.naturalHeight = 1000;
+  shrutiImg.dispatchEvent(h.makeEvent('load', { bubbles: false }));
+  assert.equal(h.filmRow.classList.contains('is-landscape-row'), true);
+  assert.equal(h.filmRow.style['--row-frame-ratio'], '1600 / 1000');
+
+  // 2. A portrait image and portrait video in the same category report dimensions:
+  //    the category splits into portrait + landscape rows, moving Shruti into the landscape row.
+  portraitImg.naturalWidth = 1080;
+  portraitImg.naturalHeight = 1920;
+  portraitImg.dispatchEvent(h.makeEvent('load', { bubbles: false }));
+  film.vid.videoWidth = 1080;
+  film.vid.videoHeight = 1920;
+  film.vid.dispatchEvent(h.makeEvent('loadedmetadata', { bubbles: false }));
+
+  assert.equal(filmGroup.classList.contains('media-group--mixed'), true);
+  const splitRows = filmGroup.querySelectorAll('[data-media-row]');
+  assert.equal(splitRows.length, 2);
+  const [portraitRow, landscapeRow] = splitRows;
+  assert.equal(portraitRow.getAttribute('data-orientation'), 'portrait');
+  assert.equal(landscapeRow.getAttribute('data-orientation'), 'landscape');
+  assert.equal(portraitRow.classList.contains('is-landscape-row'), false);
+  assert.equal(landscapeRow.classList.contains('is-landscape-row'), true);
+  assert.equal(landscapeRow.style['--row-frame-ratio'], '1600 / 1000');
+  assert.equal(shrutiImg.closest('[data-media-row]'), landscapeRow);
+  assert.equal(portraitImg.closest('[data-media-row]'), portraitRow);
+  assert.equal(film.card.closest('[data-media-row]'), portraitRow);
+
+  // 3. When an initially unloaded offscreen card later loads as landscape, it also moves to the landscape row.
+  offscreenImg.naturalWidth = 1800;
+  offscreenImg.naturalHeight = 1000;
+  offscreenImg.dispatchEvent(h.makeEvent('load', { bubbles: false }));
+  assert.equal(offscreenImg.closest('[data-media-row]'), landscapeRow);
+  assert.equal(landscapeRow.querySelectorAll('.media-card').length, 2);
+  assert.equal(landscapeRow.style['--row-frame-ratio'], '1700 / 1000');
+});
+
 test('videos without posters never seek or prime playback on page visit', async () => {
   const h = await createLightboxHarness();
   await h.boot();

@@ -985,6 +985,26 @@ main section {
   display: none !important;
 }
 
+.media-group--mixed .media-split-rows {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(28px, 4vw, 44px);
+}
+
+.media-row-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.media-row-wrap .media-row {
+  margin-bottom: 0;
+}
+
+.media-row-wrap .media-row-nav {
+  align-self: flex-end;
+}
+
 .media-group-head {
   display: flex;
   align-items: center;

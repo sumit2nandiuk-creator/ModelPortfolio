@@ -857,7 +857,7 @@ test('photos in rows are uniform 2:3 size while all-landscape categories keep la
     await writeModel(ws.modelsDir, 'portrait-model', 'Portrait Model', {
       groups: ['Bridal', 'Serial', 'Campaign', 'Short Film', 'Meesho'],
       photos: [
-        // Mixed portrait + landscape category -> uniform 2:3 portrait
+        // Mixed portrait + landscape category -> split into portrait + landscape rows
         { file: 'https://modelportfolio.pages.dev/media/portrait-model/bridal-1.jpg', title: 'Bridal Look 1', category: 'Bridal', width: 1080, height: 1920 },
         { file: 'https://modelportfolio.pages.dev/media/portrait-model/bridal-2.jpg', title: 'Bridal Look 2', category: 'bridal', width: 1440, height: 1080 },
         // All-landscape photo category -> stays landscape (never resized to portrait)
@@ -867,7 +867,7 @@ test('photos in rows are uniform 2:3 size while all-landscape categories keep la
         { file: 'https://modelportfolio.pages.dev/media/portrait-model/film-still.jpg', title: 'Film Still', category: 'Short Film', width: 1920, height: 1080 },
       ],
       videos: [
-        // Mixed category with portrait items -> uniform 2:3 frame
+        // Mixed category with portrait items -> portrait row uniform 2:3, landscape row separate
         { file: 'https://modelportfolio.pages.dev/media/portrait-model/1-bridal.mov', title: 'Bridal', width: 1080, height: 1920 },
         // Landscape video in a category with NO photos beside it ("Serial") -> keeps natural 1280 / 720 landscape!
         { file: 'https://modelportfolio.pages.dev/media/portrait-model/2-serial.mp4', title: 'Lokkhi Jhanpi', category: 'Serial', width: 1280, height: 720 },
@@ -889,12 +889,24 @@ test('photos in rows are uniform 2:3 size while all-landscape categories keep la
     const shortFilmStart = html.indexOf('data-group="Short Film"');
     const meeshoStart = html.indexOf('data-group="Meesho"');
 
-    // 1. Bridal (has portrait items): NOT is-landscape-row; video gets uniform 2 / 3
-    const bridalHtml = html.slice(bridalStart, serialStart);
-    assert.match(bridalHtml, /data-media-row data-has-photos="1"/);
-    assert.doesNotMatch(bridalHtml, /is-landscape-row/);
-    assert.ok(bridalHtml.indexOf('media-card--video') < bridalHtml.indexOf('media-card--photo'));
-    assert.match(bridalHtml, /width="2" height="3" data-natural-w="1080" data-natural-h="1920" style="aspect-ratio: 2 \/ 3"/);
+    // 1. Bridal (mixed orientation) splits into portrait + landscape rows
+    const bridalSectionStart = html.lastIndexOf('<section', bridalStart);
+    const bridalHtml = html.slice(bridalSectionStart, serialStart);
+    assert.match(bridalHtml, /media-group--mixed/);
+    const bridalRows = [...bridalHtml.matchAll(/data-media-row[^>]*>/g)];
+    assert.equal(bridalRows.length, 2);
+    const portraitIdx = bridalHtml.indexOf('data-orientation="portrait"');
+    const landscapeIdx = bridalHtml.indexOf('data-orientation="landscape"');
+    assert.ok(portraitIdx !== -1 && landscapeIdx !== -1 && portraitIdx < landscapeIdx);
+    const bridalPortraitHtml = bridalHtml.slice(portraitIdx, landscapeIdx);
+    assert.match(bridalPortraitHtml, /data-media-row data-has-photos="1"/);
+    assert.match(bridalPortraitHtml, /is-portrait-row/);
+    assert.doesNotMatch(bridalPortraitHtml, /is-landscape-row/);
+    assert.ok(bridalPortraitHtml.indexOf('media-card--video') < bridalPortraitHtml.indexOf('media-card--photo'));
+    assert.match(bridalPortraitHtml, /width="2" height="3" data-natural-w="1080" data-natural-h="1920" style="aspect-ratio: 2 \/ 3"/);
+    const bridalLandscapeHtml = bridalHtml.slice(landscapeIdx);
+    assert.match(bridalLandscapeHtml, /is-landscape-row/);
+    assert.match(bridalLandscapeHtml, /--row-frame-ratio: 1440 \/ 1080/);
 
     // 2. Serial (landscape video, NO photos beside it): keeps native 1280 / 720 landscape frame!
     const serialHtml = html.slice(serialStart, campaignStart);

@@ -826,6 +826,9 @@ test('sections use balanced vertical padding without extra bottom gaps after sta
   assert.match(css, /\.section \{\s*padding: clamp\(40px, 6vw, 84px\) 0;\s*\}/);
   assert.doesNotMatch(css, /clamp\(88px,\s*12vw,\s*160px\)/);
   assert.match(css, /\.media-row \{[\s\S]*?padding: 8px 2px 34px;\s*margin: -8px -2px -34px;/);
+  assert.doesNotMatch(css, /\.media-row-wrap \.media-row \{\s*margin-bottom:\s*0/);
+  assert.match(css, /\.media-group--mixed \.media-split-rows \{[\s\S]*?gap: clamp\(16px, 2\.2vw, 24px\);/);
+  assert.match(css, /\.portfolio-groups \{[\s\S]*?gap: clamp\(24px, 4vw, 48px\);/);
   assert.match(css, /\.gallery-item \{\s*margin: 0;\s*\}/);
 });
 

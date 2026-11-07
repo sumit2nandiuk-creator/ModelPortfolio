@@ -973,7 +973,7 @@ main section {
 .portfolio-groups {
   display: flex;
   flex-direction: column;
-  gap: clamp(36px, 5vw, 60px);
+  gap: clamp(24px, 4vw, 48px);
 }
 
 .media-group {
@@ -988,21 +988,19 @@ main section {
 .media-group--mixed .media-split-rows {
   display: flex;
   flex-direction: column;
-  gap: clamp(28px, 4vw, 44px);
+  gap: clamp(16px, 2.2vw, 24px);
 }
 
 .media-row-wrap {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-
-.media-row-wrap .media-row {
-  margin-bottom: 0;
+  gap: 10px;
 }
 
 .media-row-wrap .media-row-nav {
   align-self: flex-end;
+  position: relative;
+  z-index: 1;
 }
 
 .media-group-head {
@@ -1010,7 +1008,7 @@ main section {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: clamp(14px, 2vw, 22px);
+  margin-bottom: clamp(12px, 1.8vw, 20px);
 }
 
 .media-group-title {

@@ -200,10 +200,27 @@
   var galleryItems = Array.prototype.slice.call(document.querySelectorAll('.gallery-item'));
   var mediaRows = Array.prototype.slice.call(document.querySelectorAll('[data-media-row]'));
 
+  function findNavForRow(row) {
+    if (!row || !row.closest) return null;
+    var wrap = row.closest('.media-row-wrap');
+    if (wrap) {
+      var wnav = wrap.querySelector('.media-row-nav');
+      if (wnav) return wnav;
+    }
+    var group = row.closest('.media-group');
+    if (group) {
+      var gnav = group.querySelector('.media-group-head .media-row-nav');
+      if (gnav) return gnav;
+      // Fallback for mixed groups where nav is sibling of row
+      var sibling = row.nextElementSibling;
+      if (sibling && sibling.classList.contains('media-row-nav')) return sibling;
+      return group.querySelector('.media-row-nav');
+    }
+    return null;
+  }
+
   function syncMediaRowNav(row) {
-    var group = row.closest ? row.closest('.media-group') : null;
-    if (!group) return;
-    var nav = group.querySelector('.media-row-nav');
+    var nav = findNavForRow(row);
     if (!nav) return;
     var maxScroll = Math.max(0, (row.scrollWidth || 0) - (row.clientWidth || 0));
     var canScroll = maxScroll > 4;
@@ -222,9 +239,9 @@
 
   mediaRows.forEach(function (row) {
     row.addEventListener('scroll', function () { syncMediaRowNav(row); }, { passive: true });
-    var group = row.closest ? row.closest('.media-group') : null;
-    if (!group) return;
-    var arrows = Array.prototype.slice.call(group.querySelectorAll('[data-row-dir]'));
+    var nav = findNavForRow(row);
+    if (!nav) return;
+    var arrows = Array.prototype.slice.call(nav.querySelectorAll('[data-row-dir]'));
     arrows.forEach(function (arrow) {
       arrow.addEventListener('click', function () {
         var dir = Number(arrow.getAttribute('data-row-dir')) || 1;

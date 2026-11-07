@@ -459,61 +459,56 @@ function renderPortfolio(model, ctx) {
   const hasAnyPhotos = (model.photos ?? []).length > 0;
 
   let photoIndex = 0;
-  const groupSections = groups
-    .map((group) => {
-      const totalItems = group.videos.length + group.photos.length;
-      const groupHasPhotos = group.photos.length > 0;
-      const videoDims = group.videos.map((v) => videoDimensions(v, ctx));
-      const photoDims = group.photos.map((p) => photoDimensions(p, ctx));
-      const allDims = [...videoDims, ...photoDims];
-      const knownDims = allDims.filter(Boolean);
-      const isAllLandscapeGroup =
-        allDims.length > 0 &&
-        knownDims.length === allDims.length &&
-        knownDims.every((d) => d.width > d.height);
-      const hasKnownNonLandscape = knownDims.some((d) => d.width <= d.height);
-      const rowLandscapeFrame = isAllLandscapeGroup && groupHasPhotos ? landscapeFrameForDims(knownDims) : null;
+  function isLandscapeDim(d) { return d && d.width > d.height; }
+  function isPortraitDim(d) { return d && d.width <= d.height; }
 
-      const videoCards = group.videos
-        .map((video, vIdx) => {
-          const nativeDim = videoDims[vIdx];
-          let frameDim = null;
-          if (isAllLandscapeGroup) {
-            // Every item in this category is landscape: never resize to portrait.
-            // Match the uniform landscape row frame when photos sit beside the video; keep native ratio otherwise.
-            frameDim = groupHasPhotos ? rowLandscapeFrame : nativeDim;
-          } else if (groupHasPhotos) {
-            // Confirmed portrait/mixed category (or fallback while unknown items load via CSS --row-frame-ratio).
-            if (hasKnownNonLandscape) frameDim = UNIFORM_PHOTO_FRAME;
-          } else if (nativeDim && nativeDim.width > nativeDim.height) {
-            frameDim = nativeDim;
-          } else if (nativeDim && nativeDim.height >= nativeDim.width) {
-            frameDim = hasAnyPhotos ? UNIFORM_PHOTO_FRAME : nativeDim;
-          }
-          const isPortrait = frameDim ? frameDim.height > frameDim.width : false;
-          const isLandscape = frameDim ? frameDim.width >= frameDim.height : false;
-          const cardClass = `media-card media-card--video video-card${isPortrait ? ' is-portrait' : isLandscape ? ' is-landscape' : ''}`;
-          const videoStyle = frameDim ? ` style="aspect-ratio: ${frameDim.width} / ${frameDim.height}"` : '';
-          const sizeAttrs = frameDim ? ` width="${frameDim.width}" height="${frameDim.height}"` : '';
-          const naturalAttrs = nativeDim ? ` data-natural-w="${nativeDim.width}" data-natural-h="${nativeDim.height}"` : '';
-          const posterUrl = video.poster ? ctx.mediaUrl(video.poster) : '';
-          const posterThumb = video.posterThumbnail ? ctx.mediaUrl(video.posterThumbnail) : '';
-          const poster = posterUrl
-            ? ` poster="${esc(posterThumb || posterUrl)}"${posterThumb ? ` data-full-poster="${esc(posterUrl)}"` : ''}`
-            : '';
-          // No source and no native controls until the poster is played. Nothing
-          // is drawn over the poster (no play glyph, no button): the photo itself
-          // is the play target, and the script attaches `controls` on playback.
-          const preload = 'none';
-          const rawSrc = ctx.mediaUrl(video.file);
-          const videoSrc = rawSrc;
-          const vTitle = String(video.title ?? '').trim();
-          const showSubTitle = vTitle && vTitle.toLowerCase() !== group.title.toLowerCase();
-          const hasCaption = Boolean(showSubTitle || video.description);
-          return `
-              <figure class="${cardClass}" data-category="${esc(group.title)}">
+  function renderMediaRow(rowVideos, rowVideoDims, rowPhotos, rowPhotoDims, title, orientation) {
+    const totalItems = rowVideos.length + rowPhotos.length;
+    if (!totalItems) return '';
+    const groupHasPhotos = rowPhotos.length > 0;
+    const allDims = [...rowVideoDims, ...rowPhotoDims];
+    const knownDims = allDims.filter(Boolean);
+    const isAllLandscapeGroup =
+      allDims.length > 0 &&
+      knownDims.length === allDims.length &&
+      knownDims.every((d) => d.width > d.height);
+    const hasKnownNonLandscape = knownDims.some((d) => d.width <= d.height);
+    const rowLandscapeFrame = isAllLandscapeGroup && groupHasPhotos ? landscapeFrameForDims(knownDims) : null;
+
+    const videoCards = rowVideos
+      .map((video, vIdx) => {
+        const nativeDim = rowVideoDims[vIdx];
+        let frameDim = null;
+        if (isAllLandscapeGroup) {
+          frameDim = groupHasPhotos ? rowLandscapeFrame : nativeDim;
+        } else if (groupHasPhotos) {
+          if (hasKnownNonLandscape) frameDim = UNIFORM_PHOTO_FRAME;
+        } else if (nativeDim && nativeDim.width > nativeDim.height) {
+          frameDim = nativeDim;
+        } else if (nativeDim && nativeDim.height >= nativeDim.width) {
+          frameDim = hasAnyPhotos ? UNIFORM_PHOTO_FRAME : nativeDim;
+        }
+        const isPortrait = frameDim ? frameDim.height > frameDim.width : false;
+        const isLandscape = frameDim ? frameDim.width >= frameDim.height : false;
+        const cardClass = `media-card media-card--video video-card${isPortrait ? ' is-portrait' : isLandscape ? ' is-landscape' : ''}`;
+        const videoStyle = frameDim ? ` style="aspect-ratio: ${frameDim.width} / ${frameDim.height}"` : '';
+        const sizeAttrs = frameDim ? ` width="${frameDim.width}" height="${frameDim.height}"` : '';
+        const naturalAttrs = nativeDim ? ` data-natural-w="${nativeDim.width}" data-natural-h="${nativeDim.height}"` : '';
+        const posterUrl = video.poster ? ctx.mediaUrl(video.poster) : '';
+        const posterThumb = video.posterThumbnail ? ctx.mediaUrl(video.posterThumbnail) : '';
+        const poster = posterUrl
+          ? ` poster="${esc(posterThumb || posterUrl)}"${posterThumb ? ` data-full-poster="${esc(posterUrl)}"` : ''}`
+          : '';
+        const preload = 'none';
+        const rawSrc = ctx.mediaUrl(video.file);
+        const videoSrc = rawSrc;
+        const vTitle = String(video.title ?? '').trim();
+        const showSubTitle = vTitle && vTitle.toLowerCase() !== title.toLowerCase();
+        const hasCaption = Boolean(showSubTitle || video.description);
+        return `
+              <figure class="${cardClass}" data-category="${esc(title)}">
                 <div class="video-frame">
-                  <video controlsList="nodownload noremoteplayback" disablePictureInPicture playsinline preload="${preload}"${poster}${sizeAttrs}${naturalAttrs}${videoStyle} data-video-src="${esc(videoSrc)}" aria-label="${esc(vTitle || group.title)}"></video>
+                  <video controlsList="nodownload noremoteplayback" disablePictureInPicture playsinline preload="${preload}"${poster}${sizeAttrs}${naturalAttrs}${videoStyle} data-video-src="${esc(videoSrc)}" aria-label="${esc(vTitle || title)}"></video>
                 </div>${
                   hasCaption
                     ? `
@@ -524,20 +519,20 @@ function renderPortfolio(model, ctx) {
                     : ''
                 }
               </figure>`;
-        })
-        .join('');
+      })
+      .join('');
 
-      const photoCards = group.photos
-        .map((photo, pIdx) => {
-          const i = photoIndex++;
-          const pDim = photoDims[pIdx];
-          const source = imageSource(photo, ctx);
-          const src = source.full;
-          const alt = photo.alt || photo.title || group.title;
-          const caption = group.title;
-          const label = [group.title, photo.title].filter(Boolean).join(' · ');
-          return `
-              <figure class="media-card media-card--photo gallery-item" data-category="${esc(group.title)}">
+    const photoCards = rowPhotos
+      .map((photo, pIdx) => {
+        const i = photoIndex++;
+        const pDim = rowPhotoDims[pIdx];
+        const source = imageSource(photo, ctx);
+        const src = source.full;
+        const alt = photo.alt || photo.title || title;
+        const caption = title;
+        const label = [title, photo.title].filter(Boolean).join(' · ');
+        return `
+              <figure class="media-card media-card--photo gallery-item" data-category="${esc(title)}">
                 <button class="gallery-btn" type="button" data-index="${i}" data-src="${esc(src)}"${viewerAttrs(source)}${(source.thumb || source.preview) ? ` data-thumb="${esc(source.thumb || source.preview)}"` : ''} data-alt="${esc(alt)}" data-caption="${esc(caption)}" aria-label="Open photo: ${esc(label)}">
                   ${responsiveImage(source, `<img src="${esc(source.src)}"${progressiveAttrs(source)} alt="${esc(alt)}"${dimensionAttrs(pDim)} loading="lazy" decoding="async" draggable="false">`)}
                 </button>${
@@ -549,33 +544,92 @@ function renderPortfolio(model, ctx) {
                     : ''
                 }
               </figure>`;
-        })
-        .join('');
+      })
+      .join('');
 
-      const navButtons =
-        totalItems > 1
-          ? `
+    const navButtons =
+      totalItems > 1
+        ? `
               <div class="media-row-nav">
-                <button class="row-arrow row-arrow--prev" type="button" data-row-dir="-1" aria-label="Scroll ${esc(group.title)} left">‹</button>
-                <button class="row-arrow row-arrow--next" type="button" data-row-dir="1" aria-label="Scroll ${esc(group.title)} right">›</button>
+                <button class="row-arrow row-arrow--prev" type="button" data-row-dir="-1" aria-label="Scroll ${esc(title)}${orientation ? ' ' + esc(orientation) : ''} left">‹</button>
+                <button class="row-arrow row-arrow--next" type="button" data-row-dir="1" aria-label="Scroll ${esc(title)}${orientation ? ' ' + esc(orientation) : ''} right">›</button>
               </div>`
-          : '';
+        : '';
 
-      const rowClass = `media-row${totalItems < 2 ? ' is-single' : ''}${isAllLandscapeGroup ? ' is-landscape-row' : ''}`;
-      const rowStyle = rowLandscapeFrame ? ` style="--row-frame-ratio: ${rowLandscapeFrame.width} / ${rowLandscapeFrame.height}"` : '';
+    const rowClass = `media-row${totalItems < 2 ? ' is-single' : ''}${isAllLandscapeGroup ? ' is-landscape-row' : ''}${orientation ? ' is-' + orientation + '-row' : ''}`;
+    const rowStyle = rowLandscapeFrame ? ` style="--row-frame-ratio: ${rowLandscapeFrame.width} / ${rowLandscapeFrame.height}"` : '';
+    const orientationAttr = orientation ? ` data-orientation="${orientation}"` : '';
 
-      return `
+    // For split groups we render row + its own nav; for single row we keep nav in head (legacy)
+    // To keep filtering simple, we return the row markup alone – caller wraps with group header
+    return { html: `<div class="${rowClass}" data-media-row${groupHasPhotos ? ' data-has-photos="1"' : ''}${rowStyle}${orientationAttr}>${videoCards}${photoCards}
+            </div>`, navButtons, totalItems, hasPhotos: groupHasPhotos, rowClass, rowStyle };
+  }
+
+  const groupSections = groups
+    .map((group) => {
+      const videoDims = group.videos.map((v) => videoDimensions(v, ctx));
+      const photoDims = group.photos.map((p) => photoDimensions(p, ctx));
+      const allDims = [...videoDims, ...photoDims];
+      const knownDims = allDims.filter(Boolean);
+      const hasPortrait = knownDims.some((d) => d.width <= d.height);
+      const hasLandscape = knownDims.some((d) => d.width > d.height);
+      const isMixed = hasPortrait && hasLandscape;
+
+      if (!isMixed) {
+        const row = renderMediaRow(group.videos, videoDims, group.photos, photoDims, group.title, '');
+        return `
           <section class="media-group reveal" data-group="${esc(group.title)}" aria-label="${esc(group.title)}">
             <div class="media-group-head">
-              <h3 class="media-group-title">${esc(group.title)}</h3>${navButtons}
+              <h3 class="media-group-title">${esc(group.title)}</h3>${row.navButtons}
             </div>
-            <div class="${rowClass}" data-media-row${groupHasPhotos ? ' data-has-photos="1"' : ''}${rowStyle}>${videoCards}${photoCards}
+            ${row.html}
+          </section>`;
+      }
+
+      // Mixed: split into portrait and landscape rows under same group header
+      const portraitVideos = [];
+      const portraitVideoDims = [];
+      const landscapeVideos = [];
+      const landscapeVideoDims = [];
+      group.videos.forEach((v, i) => {
+        const d = videoDims[i];
+        if (isLandscapeDim(d)) { landscapeVideos.push(v); landscapeVideoDims.push(d); }
+        else { portraitVideos.push(v); portraitVideoDims.push(d); }
+      });
+      const portraitPhotos = [];
+      const portraitPhotoDims = [];
+      const landscapePhotos = [];
+      const landscapePhotoDims = [];
+      group.photos.forEach((p, i) => {
+        const d = photoDims[i];
+        if (isLandscapeDim(d)) { landscapePhotos.push(p); landscapePhotoDims.push(d); }
+        else { portraitPhotos.push(p); portraitPhotoDims.push(d); }
+      });
+
+      const portraitRow = renderMediaRow(portraitVideos, portraitVideoDims, portraitPhotos, portraitPhotoDims, group.title, 'portrait');
+      const landscapeRow = renderMediaRow(landscapeVideos, landscapeVideoDims, landscapePhotos, landscapePhotoDims, group.title, 'landscape');
+
+      function rowWithNav(row, orientation) {
+        if (!row || !row.html) return '';
+        return `
+            <div class="media-row-wrap" data-orientation="${orientation}">
+              ${row.html}${row.navButtons}
+            </div>`;
+      }
+
+      return `
+          <section class="media-group reveal media-group--mixed" data-group="${esc(group.title)}" aria-label="${esc(group.title)}">
+            <div class="media-group-head">
+              <h3 class="media-group-title">${esc(group.title)}</h3>
+            </div>
+            <div class="media-split-rows">${rowWithNav(portraitRow, 'portrait')}${rowWithNav(landscapeRow, 'landscape')}
             </div>
           </section>`;
     })
     .join('\n');
 
-  const labelHtml = renderTextOrRuns(model, 'portfolioLabel');
+    const labelHtml = renderTextOrRuns(model, 'portfolioLabel');
 
   const headerHtml = labelHtml
     ? `\n        <header class="section-head reveal">
